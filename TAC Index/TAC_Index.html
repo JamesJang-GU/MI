@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TAC Air Freight Rate Index Dashboard</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+:root {
+    --navy: #12355b;
+    --blue: #0284c7;
+    --teal: #0f766e;
+    --red: #b91c1c;
+    --bg: #f3f6fb;
+    --card: #ffffff;
+    --line: #d9e2ec;
+    --text: #1f2937;
+    --muted: #64748b;
+    --warning-bg: #fff8e1;
+    --warning-text: #7a5a00;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; background: var(--bg); color: var(--text); }
+.wrap { max-width: 1560px; margin: 0 auto; padding: 24px; }
+.hero { background: linear-gradient(135deg, var(--navy), var(--teal)); color: #ffffff; border-radius: 18px; padding: 28px; margin-bottom: 20px; }
+.hero h1 { margin: 0 0 10px 0; font-size: 30px; }
+.hero-meta { font-size: 13px; line-height: 1.8; opacity: 0.96; }
+.hero-meta a { color: inherit; text-decoration: underline; }
+.layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; align-items: start; }
+.sidebar, .panel { background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 4px 14px rgba(18, 53, 91, 0.06); }
+.sidebar { padding: 18px; position: sticky; top: 18px; }
+.panel { padding: 18px; margin-bottom: 18px; }
+.sidebar-section { border-bottom: 1px solid #e5edf5; margin-bottom: 18px; padding-bottom: 18px; }
+.sidebar-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.sidebar-title { margin-bottom: 10px; color: var(--navy); font-size: 13px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; }
+.field { margin-bottom: 14px; }
+label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 12px; font-weight: 700; }
+select, input[type="date"] { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: #ffffff; }
+select[multiple] { min-height: 240px; }
+button { border: none; border-radius: 10px; padding: 10px 12px; cursor: pointer; background: var(--navy); color: #ffffff; font-weight: 700; }
+button:hover { opacity: 0.9; }
+.button-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.button-secondary { background: #475569; }
+.button-csv { background: #2563eb; }
+.button-png { background: var(--teal); }
+.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+.kpi { background: linear-gradient(180deg, #ffffff, #f8fbff); border: 1px solid var(--line); border-left: 6px solid var(--blue); border-radius: 14px; padding: 16px; }
+.kpi-label { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; }
+.kpi-value { margin-top: 8px; color: var(--navy); font-size: 23px; font-weight: 800; word-break: break-word; }
+.section-title { margin: 0 0 14px 0; color: var(--navy); font-size: 18px; }
+.section-note { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.toolbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 12px; }
+.chart { min-height: 500px; width: 100%; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { border: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; white-space: nowrap; }
+th { background: #f1f5f9; color: #334155; }
+.positive { color: #15803d; font-weight: 800; }
+.negative { color: var(--red); font-weight: 800; }
+.warning { display: none; margin-bottom: 18px; padding: 14px; border: 1px solid #f5d76e; border-radius: 12px; background: var(--warning-bg); color: var(--warning-text); }
+.loading, .empty { padding: 50px; color: var(--muted); text-align: center; font-weight: 700; }
+.hidden { display: none; }
+@media (max-width: 1150px) { .layout { grid-template-columns: 1fr; } .sidebar { position: static; } }
+@media (max-width: 900px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .wrap { padding: 14px; } .hero { padding: 20px; } .hero h1 { font-size: 24px; } .kpi-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <div class="hero">
+        <h1>✈️ TAC Air Freight Rate Index</h1>
+        <div class="hero-meta">
+            <div><strong>Source:</strong> <a href="https://www.tacindex.com/" target="_blank" rel="noopener noreferrer">TAC Index</a></div>
+            <div><strong>Latest Data Date:</strong> <span id="dataDate">-</span> &nbsp;|&nbsp; <strong>Last Sync:</strong> <span id="lastSync">-</span> &nbsp;|&nbsp; <strong>Generated:</strong> <span id="generatedAt">-</span></div>
+        </div>
+    </div>
+    <div id="warning" class="warning"></div>
+    <div id="loading" class="panel loading">GitHub Pages 데이터 파일을 불러오는 중입니다.</div>
+    <div id="dashboard" class="hidden">
+        <div class="layout">
+            <aside class="sidebar">
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Period</div>
+                    <div class="field"><label for="startDate">시작일</label><input id="startDate" type="date" onchange="renderDashboard()"></div>
+                    <div class="field"><label for="endDate">종료일</label><input id="endDate" type="date" onchange="renderDashboard()"></div>
+                    <div class="field">
+                        <label for="rangeSelect">기간 빠른 선택</label>
+                        <select id="rangeSelect" onchange="applyRangeAndRender()">
+                            <option value="0">전체 기간</option>
+                            <option value="90">최근 3개월</option>
+                            <option value="180">최근 6개월</option>
+                            <option value="365" selected>최근 1년</option>
+                            <option value="730">최근 2년</option>
+                            <option value="1825">최근 5년</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Routes</div>
+                    <div class="field"><label for="routeSelect">노선 복수 선택</label><select id="routeSelect" multiple onchange="renderDashboard()"></select></div>
+                    <div class="button-row">
+                        <button onclick="selectAllRoutes()">전체 선택</button>
+                        <button class="button-secondary" onclick="clearRoutes()">선택 해제</button>
+                    </div>
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Download</div>
+                    <div class="button-row">
+                        <button class="button-csv" onclick="downloadCsv()">CSV 다운로드</button>
+                        <button class="button-png" onclick="downloadChartPng()">차트 PNG</button>
+                    </div>
+                </div>
+            </aside>
+            <main>
+                <div class="kpi-grid">
+                    <div class="kpi"><div class="kpi-label">Latest Overall Index</div><div id="overallIndexKpi" class="kpi-value">-</div></div>
+                    <div class="kpi"><div class="kpi-label">Weekly Change</div><div id="weeklyChangeKpi" class="kpi-value">-</div></div>
+                    <div class="kpi"><div class="kpi-label">Selected Routes</div><div id="routeCountKpi" class="kpi-value">-</div></div>
+                    <div class="kpi"><div class="kpi-label">Displayed Records</div><div id="recordCountKpi" class="kpi-value">-</div></div>
+                </div>
+                <div class="panel">
+                    <div class="toolbar">
+                        <div>
+                            <h3 class="section-title">Overall TAC Index Trend</h3>
+                            <div class="section-note">TAC 사이트에서 추출한 전체 지수의 누적 Snapshot 추이입니다.</div>
+                        </div>
+                    </div>
+                    <div id="overallChart" class="chart"></div>
+                </div>
+                <div class="panel">
+                    <div class="toolbar">
+                        <div>
+                            <h3 class="section-title">Route Index Comparison</h3>
+                            <div class="section-note">선택된 노선의 항공운임 지수 추이입니다.</div>
+                        </div>
+                    </div>
+                    <div id="routeChart" class="chart"></div>
+                </div>
+                <div class="panel">
+                    <h3 class="section-title">Latest Route Breakdown</h3>
+                    <div id="routeTable" class="table-wrap"></div>
+                </div>
+            </main>
+        </div>
+    </div>
+</div>
+
+<script>
+let dashboardData = null;
+let filteredRouteRecords = [];
+let filteredOverallRecords = [];
+const COLORS = ["#1d4ed8", "#0f766e", "#b91c1c", "#7c3aed", "#c2410c", "#0369a1", "#15803d", "#be123c", "#9333ea", "#0891b2"];
+
+function showWarning(message) {
+    const warning = document.getElementById("warning");
+    warning.textContent = message;
+    warning.style.display = "block";
+}
+
+function hideWarning() {
+    document.getElementById("warning").style.display = "none";
+}
+
+function numberFormat(value, digits = 2) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return "-";
+    return number.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+function percentFormat(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return "-";
+    return (number > 0 ? "+" : "") + numberFormat(number, 2) + "%";
+}
+
+function getSelectedRoutes() {
+    const select = document.getElementById("routeSelect");
+    return Array.from(select.selectedOptions).map(option => option.value);
+}
+
+function selectAllRoutes() {
+    const select = document.getElementById("routeSelect");
+    Array.from(select.options).forEach(option => option.selected = true);
+    renderDashboard();
+}
+
+function clearRoutes() {
+    const select = document.getElementById("routeSelect");
+    Array.from(select.options).forEach(option => option.selected = false);
+    renderDashboard();
+}
+
+function getDateBounds() {
+    const dates = dashboardData.route_history.map(item => item.data_date).filter(Boolean).sort();
+    if (!dates.length) return { min: "", max: "" };
+    return { min: dates[0], max: dates[dates.length - 1] };
+}
+
+function populateRoutes() {
+    const select = document.getElementById("routeSelect");
+    select.innerHTML = "";
+    const routeList = dashboardData.route_list || [];
+    routeList.forEach(route => {
+        const label = route.route_name ? route.route_name : route.route_code;
+        const option = new Option(label, route.route_code);
+        option.selected = true;
+        select.add(option);
+    });
+}
+
+function setInitialDates() {
+    const bounds = getDateBounds();
+    const startDate = document.getElementById("startDate");
+    const endDate = document.getElementById("endDate");
+    startDate.min = bounds.min;
+    startDate.max = bounds.max;
+    endDate.min = bounds.min;
+    endDate.max = bounds.max;
+    if (!bounds.max) return;
+
+    endDate.value = bounds.max;
+    const end = new Date(bounds.max + "T00:00:00");
+    const start = new Date(end);
+    start.setDate(start.getDate() - Number(document.getElementById("rangeSelect").value));
+    const candidate = start.toISOString().substring(0, 10);
+    startDate.value = candidate < bounds.min ? bounds.min : candidate;
+}
+
+function applyRangeAndRender() {
+    const rangeDays = Number(document.getElementById("rangeSelect").value);
+    const bounds = getDateBounds();
+    if (!bounds.max) { renderDashboard(); return; }
+
+    const startDate = document.getElementById("startDate");
+    const endDate = document.getElementById("endDate");
+    endDate.value = bounds.max;
+
+    if (rangeDays === 0) {
+        startDate.value = bounds.min;
+        renderDashboard();
+        return;
+    }
+
+    const end = new Date(bounds.max + "T00:00:00");
+    end.setDate(end.getDate() - rangeDays);
+    const calculated = end.toISOString().substring(0, 10);
+    startDate.value = calculated < bounds.min ? bounds.min : calculated;
+    renderDashboard();
+}
+
+function filterByDates(records) {
+    const startDate = document.getElementById("startDate").value;
+    const endDate = document.getElementById("endDate").value;
+    return records.filter(record => {
+        const date = record.data_date;
+        if (!date) return false;
+        if (startDate && date < startDate) return false;
+        if (endDate && date > endDate) return false;
+        return true;
+    });
+}
+
+function groupByRoute(records) {
+    const groups = {};
+    records.forEach(record => {
+        const routeCode = record.route_code;
+        if (!groups[routeCode]) groups[routeCode] = [];
+        groups[routeCode].push(record);
+    });
+    Object.keys(groups).forEach(routeCode => {
+        groups[routeCode].sort((a, b) => a.data_date.localeCompare(b.data_date));
+    });
+    return groups;
+}
+
+function chartLayout(yAxisTitle) {
+    return {
+        template: "plotly_white",
+        height: 520,
+        margin: { l: 65, r: 25, t: 35, b: 60 },
+        hovermode: "x unified",
+        xaxis: { title: "Date", gridcolor: "#edf2f7" },
+        yaxis: { title: yAxisTitle, gridcolor: "#edf2f7", zerolinecolor: "#cbd5e1" },
+        legend: { orientation: "h", yanchor: "bottom", y: 1.02, x: 0 }
+    };
+}
+
+function emptyChart(elementId, message) {
+    const element = document.getElementById(elementId);
+    element.innerHTML = "";
+    const box = document.createElement("div");
+    box.className = "empty";
+    box.textContent = message;
+    element.appendChild(box);
+}
+
+function renderOverallChart() {
+    if (!filteredOverallRecords.length) {
+        emptyChart("overallChart", "표시할 Overall Index 데이터가 없습니다.");
+        return;
+    }
+    const valid = filteredOverallRecords.filter(record => Number.isFinite(Number(record.overall_index)));
+    if (!valid.length) {
+        emptyChart("overallChart", "Overall Index 수치가 저장되어 있지 않습니다.");
+        return;
+    }
+    const trace = {
+        x: valid.map(record => record.data_date),
+        y: valid.map(record => Number(record.overall_index)),
+        mode: "lines+markers",
+        type: "scatter",
+        name: "Overall TAC Index",
+        line: { color: "#0284c7", width: 3 },
+        marker: { size: 6 },
+        hovertemplate: "Date: %{x}<br>Overall Index: %{y:,.2f}<extra></extra>"
+    };
+    Plotly.react("overallChart", [trace], chartLayout("Index"), { responsive: true, displaylogo: false });
+}
+
+function renderRouteChart() {
+    if (!filteredRouteRecords.length) {
+        emptyChart("routeChart", "선택 조건에 해당하는 노선 데이터가 없습니다.");
+        return;
+    }
+    const grouped = groupByRoute(filteredRouteRecords);
+    const traces = Object.keys(grouped).map((routeCode, index) => {
+        const rows = grouped[routeCode];
+        const routeName = rows[0].route_name || routeCode;
+        return {
+            x: rows.map(row => row.data_date),
+            y: rows.map(row => Number(row.index_value)),
+            mode: "lines+markers",
+            type: "scatter",
+            name: routeName,
+            line: { color: COLORS[index % COLORS.length], width: 2.5 },
+            marker: { size: 5 },
+            hovertemplate: "Date: %{x}<br>Route: %{fullData.name}<br>Index: %{y:,.2f}<extra></extra>"
+        };
+    });
+    Plotly.react("routeChart", traces, chartLayout("Route Index"), { responsive: true, displaylogo: false });
+}
+
+function cellText(value) {
+    if (value === null || value === undefined || value === "") return "-";
+    return String(value);
+}
+
+function appendCell(row, value, className = "") {
+    const cell = document.createElement("td");
+    if (className) cell.className = className;
+    cell.textContent = cellText(value);
+    row.appendChild(cell);
+}
+
+function renderRouteTable() {
+    const container = document.getElementById("routeTable");
+    container.innerHTML = "";
+    if (!filteredRouteRecords.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "표시할 최신 노선 데이터가 없습니다.";
+        container.appendChild(empty);
+        return;
+    }
+    const latestByRoute = new Map();
+    filteredRouteRecords.forEach(record => {
+        const old = latestByRoute.get(record.route_code);
+        if (!old || record.data_date > old.data_date) latestByRoute.set(record.route_code, record);
+    });
+    const rows = Array.from(latestByRoute.values()).sort((a, b) => String(a.route_name).localeCompare(String(b.route_name)));
+    const table = document.createElement("table");
+    const thead = document.createElement("thead");
+    const headerRow = document.createElement("tr");
+    ["Route", "Data Date", "Index Value", "Weekly Change", "Monthly Change"].forEach(text => {
+        const th = document.createElement("th");
+        th.textContent = text;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+    const tbody = document.createElement("tbody");
+    rows.forEach(record => {
+        const row = document.createElement("tr");
+        const weekly = Number(record.weekly_change);
+        const monthly = Number(record.monthly_change);
+        appendCell(row, record.route_name || record.route_code);
+        appendCell(row, record.data_date);
+        appendCell(row, numberFormat(record.index_value, 2));
+        appendCell(row, Number.isFinite(weekly) ? percentFormat(weekly) : "-", weekly > 0 ? "positive" : weekly < 0 ? "negative" : "");
+        appendCell(row, Number.isFinite(monthly) ? percentFormat(monthly) : "-", monthly > 0 ? "positive" : monthly < 0 ? "negative" : "");
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+}
+
+function renderKpis() {
+    const latest = dashboardData.latest_summary || {};
+    document.getElementById("overallIndexKpi").textContent = numberFormat(latest.overall_index, 2);
+    const weeklyElement = document.getElementById("weeklyChangeKpi");
+    weeklyElement.textContent = percentFormat(latest.weekly_change);
+    const weekly = Number(latest.weekly_change);
+    weeklyElement.classList.remove("positive", "negative");
+    if (weekly > 0) weeklyElement.classList.add("positive");
+    else if (weekly < 0) weeklyElement.classList.add("negative");
+    document.getElementById("routeCountKpi").textContent = getSelectedRoutes().length.toLocaleString();
+    document.getElementById("recordCountKpi").textContent = filteredRouteRecords.length.toLocaleString();
+}
+
+function renderDashboard() {
+    if (!dashboardData) return;
+    const selectedRoutes = getSelectedRoutes();
+    filteredOverallRecords = filterByDates(dashboardData.overall_history || []);
+    filteredRouteRecords = filterByDates(dashboardData.route_history || []).filter(record => selectedRoutes.includes(record.route_code));
+    renderKpis();
+    renderOverallChart();
+    renderRouteChart();
+    renderRouteTable();
+}
+
+function downloadCsv() {
+    if (!filteredRouteRecords.length) { showWarning("다운로드할 노선 데이터가 없습니다."); return; }
+    const headers = ["data_date", "route_code", "route_name", "index_value", "weekly_change", "monthly_change"];
+    const csv = [
+        headers.join(","),
+        ...filteredRouteRecords.map(record => headers.map(header => '"' + String(record[header] ?? "").replaceAll('"', '""') + '"').join(","))
+    ].join("\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "TAC_Route_Index_Filtered.csv";
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+}
+
+function downloadChartPng() {
+    const chart = document.getElementById("routeChart");
+    if (!chart.data || !chart.data.length) { showWarning("다운로드할 노선 차트가 없습니다."); return; }
+    Plotly.downloadImage(chart, { format: "png", width: 1600, height: 900, filename: "TAC_Route_Index_Chart" });
+}
+
+async function initializeDashboard() {
+    try {
+        hideWarning();
+        const response = await fetch("./tac_index_data.json", { cache: "no-store" });
+        if (!response.ok) throw new Error("tac_index_data.json 파일을 불러오지 못했습니다.");
+        dashboardData = await response.json();
+        document.getElementById("generatedAt").textContent = dashboardData.generated_at || "-";
+        const latest = dashboardData.latest_summary || {};
+        const sync = dashboardData.last_sync || {};
+        document.getElementById("dataDate").textContent = latest.data_date || "-";
+        document.getElementById("lastSync").textContent = sync.finished_at || "-";
+        if (sync.status === "ERROR") {
+            showWarning("최신 TAC 수집이 실패하여 기존 SQLite 데이터로 대시보드를 생성했습니다. " + (sync.message || ""));
+        }
+        populateRoutes();
+        setInitialDates();
+        document.getElementById("loading").classList.add("hidden");
+        document.getElementById("dashboard").classList.remove("hidden");
+        renderDashboard();
+    } catch (error) {
+        const loading = document.getElementById("loading");
+        loading.innerHTML = "";
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "대시보드 데이터를 불러오지 못했습니다. GitHub Actions 실행 결과와 tac_index_data.json 배포 여부를 확인하세요.";
+        loading.appendChild(empty);
+        showWarning("데이터 로드 실패: " + error.message);
+        console.error(error);
+    }
+}
+
+window.addEventListener("DOMContentLoaded", initializeDashboard);
+</script>
+</body>
+</html>
