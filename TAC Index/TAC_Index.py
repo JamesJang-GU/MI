@@ -3,21 +3,18 @@
 TAC Air Freight Rate Index Static Dashboard
 ===========================================
 
-로컬 실행 (Flask 서버 띄우기):
-    python TAC_Index/TAC_Index.py --local
-
-GitHub Actions / GitHub Pages / run_all.py 배치 실행:
+실행 모드:
+1) GitHub Actions / run_all.py (배치 모드 - 기본값):
     python TAC_Index/TAC_Index.py
     python TAC_Index/TAC_Index.py --cron
 
-필수 패키지:
-    pip install pandas selenium webdriver-manager flask
+2) 로컬 개발 (Flask 웹서버 구동):
+    python TAC_Index/TAC_Index.py --local
 
-생성 파일:
-    - TAC_Index.db
-    - tac_index_data.json
-    - index.html
-    - tac_index_crawl.log
+특징:
+    - TAC_Index.db 파일이 없으면 자동 생성 (CREATE TABLE IF NOT EXISTS)
+    - 수집 후 tac_index_data.json 및 index.html 정적 대시보드 자동 빌드
+    - 배치 실행 시 프로세스 정상 종료 (sys.exit(0))
 """
 
 import argparse
@@ -240,10 +237,10 @@ def dataframe_to_records(dataframe, date_columns=None):
     )
 
 # =========================================================
-# 4. SQLite Database
+# 4. SQLite Database (없으면 자동 생성)
 # =========================================================
 def get_db_conn():
-    """SQLite 연결 및 테이블 초기화."""
+    """SQLite 연결 및 테이블 초기화 (DB 파일 부재 시 자동 생성)."""
     connection = sqlite3.connect(
         DB_PATH,
         timeout=30,
@@ -991,7 +988,9 @@ def extract_tac_payload(driver):
     return driver.execute_script(script)
 
 def parse_summary_from_page_text(page_text):
-    """페이지 텍스트에서 최신 발표일, 전체 지수, 주간 변동률을 찾는다."""
+    """
+    페이지 전체 텍스트에서 최신 발표일, 전체 지수, 주간 변동률을 찾는다.
+    """
     text = normalize_text(page_text)
 
     summary = {
@@ -1003,4 +1002,1103 @@ def parse_summary_from_page_text(page_text):
     date_patterns = [
         r"\b(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})\b",
         r"\b(\d{1,2}\s+[A-Za-z]+\s+\d{4})\b",
-        r"\b(\d{4}-\d{2}-\d{2})\
+        r"\b(\d{4}-\d{2}-\d{2})\b",
+        r"\b(\d{2}/\d{2}/\d{4})\b",
+    ]
+
+    for pattern in date_patterns:
+        match = re.search(pattern, text)
+
+        if match:
+            parsed = parse_date(match.group(1))
+
+            if parsed:
+                summary["latest_date"] = parsed.isoformat()
+                break
+
+    index_patterns = [
+        (
+            r"(?:overall\s+index|tac\s+index|index)"
+            r"\s*[:\-]?\s*"
+            r"([0-9][0-9,]*(?:\.\d+)?)"
+        ),
+        (
+            r"(?:index\s+level)"
+            r"\s*[:\-]?\s*"
+            r"([0-9][0-9,]*(?:\.\d+)?)"
+        ),
+    ]
+
+    for pattern in index_patterns:
+        match = re.search(
+            pattern,
+            text,
+            flags=re.IGNORECASE,
+        )
+
+        if match:
+            summary["overall_index"] = safe_float(
+                match.group(1)
+            )
+            break
+
+    weekly_patterns = [
+        (
+            r"(?:weekly\s+change|week\s+on\s+week|w/w)"
+            r"\s*[:\-]?\s*"
+            r"([+\-]?[0-9][0-9,]*(?:\.\d+)?)\s*%"
+        ),
+        (
+            r"([+\-]?[0-9][0-9,]*(?:\.\d+)?)\s*%"
+            r"\s*(?:weekly|w/w)"
+        ),
+    ]
+
+    for pattern in weekly_patterns:
+        match = re.search(
+            pattern,
+            text,
+            flags=re.IGNORECASE,
+        )
+
+        if match:
+            summary["weekly_change"] = safe_float(
+                match.group(1)
+            )
+            break
+
+    if not summary["latest_date"]:
+        summary["latest_date"] = datetime.now().strftime(
+            "%Y-%m-%d"
+        )
+
+    return summary
+
+def find_header_index(headers, keywords):
+    """헤더 목록에서 키워드와 일치하는 첫 번째 컬럼 위치를 찾는다."""
+    normalized_headers = [
+        normalize_text(header).lower()
+        for header in headers
+    ]
+
+    for index, header in enumerate(normalized_headers):
+        if any(
+            keyword in header
+            for keyword in keywords
+        ):
+            return index
+
+    return None
+
+def parse_route_table(table_data):
+    """하나의 테이블 후보를 TAC 노선 데이터 DataFrame으로 변환한다."""
+    headers = table_data.get("headers", [])
+    rows = table_data.get("rows", [])
+
+    if not rows or len(headers) < 2:
+        return pd.DataFrame()
+
+    route_index = find_header_index(
+        headers,
+        [
+            "route",
+            "lane",
+            "market",
+            "origin",
+            "sector",
+            "index name",
+        ],
+    )
+
+    value_index = find_header_index(
+        headers,
+        [
+            "index",
+            "rate",
+            "value",
+            "price",
+            "current",
+        ],
+    )
+
+    weekly_index = find_header_index(
+        headers,
+        [
+            "weekly",
+            "week on week",
+            "w/w",
+            "1w",
+        ],
+    )
+
+    monthly_index = find_header_index(
+        headers,
+        [
+            "monthly",
+            "month on month",
+            "m/m",
+            "1m",
+        ],
+    )
+
+    if route_index is None:
+        route_index = 0
+
+    if value_index is None:
+        value_index = 1 if len(headers) >= 2 else None
+
+    if value_index is None:
+        return pd.DataFrame()
+
+    output = []
+
+    for raw_row in rows:
+        row = list(raw_row) + [""] * (
+            len(headers) - len(raw_row)
+        )
+
+        if route_index >= len(row) or value_index >= len(row):
+            continue
+
+        route_name = normalize_text(row[route_index])
+        index_value = safe_float(row[value_index])
+
+        if not route_name or index_value is None:
+            continue
+
+        weekly_change = (
+            safe_float(row[weekly_index])
+            if weekly_index is not None
+            and weekly_index < len(row)
+            else None
+        )
+
+        monthly_change = (
+            safe_float(row[monthly_index])
+            if monthly_index is not None
+            and monthly_index < len(row)
+            else None
+        )
+
+        output.append(
+            {
+                "route_code": normalize_route_code(route_name),
+                "route_name": route_name,
+                "index_value": index_value,
+                "weekly_change": weekly_change,
+                "monthly_change": monthly_change,
+            }
+        )
+
+    dataframe = pd.DataFrame(output)
+
+    if dataframe.empty:
+        return dataframe
+
+    return dataframe.drop_duplicates(
+        subset=["route_code"],
+        keep="last",
+    ).reset_index(drop=True)
+
+def choose_best_route_dataframe(tables):
+    """가장 많은 유효 Route 데이터를 갖는 테이블을 선택한다."""
+    best_dataframe = pd.DataFrame()
+
+    for table in tables:
+        dataframe = parse_route_table(table)
+
+        if len(dataframe) > len(best_dataframe):
+            best_dataframe = dataframe
+
+    return best_dataframe
+
+def fetch_tac_index(
+    driver_path="",
+    headless=True,
+):
+    """TAC 사이트에서 최신 지수와 노선별 데이터를 수집한다."""
+    driver = None
+
+    try:
+        driver = get_driver(
+            driver_path=driver_path,
+            headless=headless,
+        )
+
+        log("[FETCH] TAC Index 웹사이트 접속 중")
+
+        driver.get(TAC_INDEX_URL)
+
+        wait_for_page_ready(driver)
+
+        time.sleep(PAGE_LOAD_WAIT_SECONDS)
+
+        payload = extract_tac_payload(driver)
+
+        page_text = payload.get("page_text", "")
+        tables = payload.get("tables", [])
+
+        summary = parse_summary_from_page_text(page_text)
+
+        dataframe = choose_best_route_dataframe(tables)
+
+        if dataframe.empty:
+            raise RuntimeError(
+                "TAC 사이트에서 유효한 노선별 지수 테이블을 "
+                "추출하지 못했습니다."
+            )
+
+        if summary.get("overall_index") is None:
+            summary["overall_index"] = float(
+                dataframe["index_value"].mean()
+            )
+
+            log(
+                "[WARN] 페이지에서 Overall Index를 직접 찾지 못해 "
+                "노선 지수 평균을 fallback으로 사용합니다."
+            )
+
+        log(
+            "[FETCH] TAC 데이터 수집 완료: "
+            f"routes={len(dataframe):,}, "
+            f"data_date={summary.get('latest_date')}"
+        )
+
+        return {
+            "df": dataframe,
+            "summary": summary,
+        }
+
+    finally:
+        if driver is not None:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+
+# =========================================================
+# 6. Crawl and Data Refresh
+# =========================================================
+def run_tac_sync(
+    driver_path="",
+    headless=True,
+):
+    """TAC 데이터를 수집하고 신규 Snapshot을 DB에 저장한다."""
+    with crawl_lock:
+        started_at = datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+        try:
+            bundle = fetch_tac_index(
+                driver_path=driver_path,
+                headless=headless,
+            )
+
+            snapshot_id, is_new = save_snapshot(bundle)
+
+            finished_at = datetime.now().strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+
+            dataframe = bundle.get("df", pd.DataFrame())
+            summary = bundle.get("summary", {})
+
+            save_crawl_audit(
+                started_at=started_at,
+                finished_at=finished_at,
+                status="SUCCESS",
+                message=(
+                    "NEW_SNAPSHOT"
+                    if is_new
+                    else "DUPLICATE_SNAPSHOT"
+                ),
+                snapshot_id=snapshot_id,
+                route_count=len(dataframe),
+                data_date=summary.get("latest_date"),
+            )
+
+            log(
+                "[SUCCESS] TAC 수집 완료: "
+                f"snapshot_id={snapshot_id}, "
+                f"new={is_new}, "
+                f"routes={len(dataframe):,}"
+            )
+
+            return {
+                "ok": True,
+                "snapshot_id": snapshot_id,
+                "is_new": is_new,
+                "route_count": len(dataframe),
+                "data_date": summary.get("latest_date"),
+            }
+
+        except Exception as error:
+            activate_file_logging()
+
+            logger.exception(
+                f"[ERROR] TAC 수집 실패: {error}"
+            )
+
+            finished_at = datetime.now().strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+
+            try:
+                save_crawl_audit(
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    status="ERROR",
+                    message=str(error),
+                    snapshot_id=None,
+                    route_count=0,
+                    data_date=None,
+                )
+            except Exception as audit_error:
+                logger.error(
+                    "[ERROR] 수집 실패 로그 저장 실패: "
+                    f"{audit_error}"
+                )
+
+            return {
+                "ok": False,
+                "error": str(error),
+            }
+
+# =========================================================
+# 7. Static JSON Export
+# =========================================================
+def build_static_json():
+    """SQLite의 누적 Snapshot 데이터를 GitHub Pages용 JSON으로 생성한다."""
+    history = load_history_df()
+    routes = load_route_history_df()
+
+    route_list = []
+
+    if not routes.empty:
+        route_list = (
+            routes[
+                ["route_code", "route_name"]
+            ]
+            .drop_duplicates()
+            .sort_values(
+                ["route_name", "route_code"]
+            )
+            .to_dict(orient="records")
+        )
+
+    latest_summary = {}
+
+    if not history.empty:
+        latest_row = history.iloc[-1]
+
+        latest_summary = {
+            "data_date": (
+                latest_row["data_date"]
+                .strftime("%Y-%m-%d")
+                if pd.notna(latest_row["data_date"])
+                else None
+            ),
+            "captured_at": (
+                latest_row["captured_at"]
+                .strftime("%Y-%m-%d %H:%M:%S")
+                if pd.notna(latest_row["captured_at"])
+                else None
+            ),
+            "overall_index": (
+                float(latest_row["overall_index"])
+                if pd.notna(latest_row["overall_index"])
+                else None
+            ),
+            "weekly_change": (
+                float(latest_row["weekly_change"])
+                if pd.notna(latest_row["weekly_change"])
+                else None
+            ),
+            "route_count": int(
+                latest_row["route_count"]
+            ),
+        }
+
+    payload = {
+        "generated_at": datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        ),
+        "source": {
+            "name": "TAC Index",
+            "url": TAC_INDEX_URL,
+        },
+        "last_sync": get_last_sync_meta(),
+        "latest_summary": latest_summary,
+        "route_list": route_list,
+        "overall_history": dataframe_to_records(
+            history,
+            date_columns=["data_date", "captured_at"],
+        ),
+        "route_history": dataframe_to_records(
+            routes,
+            date_columns=["data_date", "captured_at"],
+        ),
+        "record_count": {
+            "snapshots": int(len(history)),
+            "route_points": int(len(routes)),
+            "routes": int(len(route_list)),
+        },
+    }
+
+    atomic_write_text(
+        JSON_PATH,
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
+        ),
+    )
+
+    log(f"[STATIC] JSON 생성 완료: {JSON_PATH.name}")
+
+# =========================================================
+# 8. Static HTML
+# =========================================================
+STATIC_HTML = r"""<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>TAC Air Freight Rate Index Dashboard</title>
+
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+
+<style>
+:root {
+    --navy: #12355b;
+    --blue: #0284c7;
+    --teal: #0f766e;
+    --red: #b91c1c;
+    --bg: #f3f6fb;
+    --card: #ffffff;
+    --line: #d9e2ec;
+    --text: #1f2937;
+    --muted: #64748b;
+    --warning-bg: #fff8e1;
+    --warning-text: #7a5a00;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: "Segoe UI", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+}
+
+.wrap {
+    max-width: 1560px;
+    margin: 0 auto;
+    padding: 24px;
+}
+
+.hero {
+    background: linear-gradient(135deg, var(--navy), var(--teal));
+    color: #ffffff;
+    border-radius: 18px;
+    padding: 28px;
+    margin-bottom: 20px;
+}
+
+.hero h1 {
+    margin: 0 0 10px 0;
+    font-size: 30px;
+}
+
+.hero-meta {
+    font-size: 13px;
+    line-height: 1.8;
+    opacity: 0.96;
+}
+
+.hero-meta a {
+    color: inherit;
+    text-decoration: underline;
+}
+
+.layout {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+}
+
+.sidebar,
+.panel {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: 0 4px 14px rgba(18, 53, 91, 0.06);
+}
+
+.sidebar {
+    padding: 18px;
+    position: sticky;
+    top: 18px;
+}
+
+.panel {
+    padding: 18px;
+    margin-bottom: 18px;
+}
+
+.sidebar-section {
+    border-bottom: 1px solid #e5edf5;
+    margin-bottom: 18px;
+    padding-bottom: 18px;
+}
+
+.sidebar-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.sidebar-title {
+    margin-bottom: 10px;
+    color: var(--navy);
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+}
+
+.field {
+    margin-bottom: 14px;
+}
+
+label {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+select,
+input[type="date"] {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px;
+    background: #ffffff;
+}
+
+select[multiple] {
+    min-height: 240px;
+}
+
+button {
+    border: none;
+    border-radius: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+    background: var(--navy);
+    color: #ffffff;
+    font-weight: 700;
+}
+
+button:hover {
+    opacity: 0.9;
+}
+
+.button-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.button-secondary {
+    background: #475569;
+}
+
+.button-csv {
+    background: #2563eb;
+}
+
+.button-png {
+    background: var(--teal);
+}
+
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.kpi {
+    background: linear-gradient(180deg, #ffffff, #f8fbff);
+    border: 1px solid var(--line);
+    border-left: 6px solid var(--blue);
+    border-radius: 14px;
+    padding: 16px;
+}
+
+.kpi-label {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+}
+
+.kpi-value {
+    margin-top: 8px;
+    color: var(--navy);
+    font-size: 23px;
+    font-weight: 800;
+    word-break: break-word;
+}
+
+.section-title {
+    margin: 0 0 14px 0;
+    color: var(--navy);
+    font-size: 18px;
+}
+
+.section-note {
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.toolbar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.chart {
+    min-height: 500px;
+    width: 100%;
+}
+
+.table-wrap {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+th,
+td {
+    border: 1px solid #e5e7eb;
+    padding: 10px 12px;
+    text-align: left;
+    white-space: nowrap;
+}
+
+th {
+    background: #f1f5f9;
+    color: #334155;
+}
+
+.positive {
+    color: #15803d;
+    font-weight: 800;
+}
+
+.negative {
+    color: var(--red);
+    font-weight: 800;
+}
+
+.warning {
+    display: none;
+    margin-bottom: 18px;
+    padding: 14px;
+    border: 1px solid #f5d76e;
+    border-radius: 12px;
+    background: var(--warning-bg);
+    color: var(--warning-text);
+}
+
+.loading,
+.empty {
+    padding: 50px;
+    color: var(--muted);
+    text-align: center;
+    font-weight: 700;
+}
+
+.hidden {
+    display: none;
+}
+
+@media (max-width: 1150px) {
+    .layout {
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+        position: static;
+    }
+}
+
+@media (max-width: 900px) {
+    .kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .wrap {
+        padding: 14px;
+    }
+
+    .hero {
+        padding: 20px;
+    }
+
+    .hero h1 {
+        font-size: 24px;
+    }
+
+    .kpi-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+    <div class="hero">
+        <h1>✈️ TAC Air Freight Rate Index</h1>
+
+        <div class="hero-meta">
+            <div>
+                <strong>Source:</strong>
+                <a href="https://www.tacindex.com/"
+                   target="_blank"
+                   rel="noopener noreferrer">
+                    TAC Index
+                </a>
+            </div>
+
+            <div>
+                <strong>Latest Data Date:</strong>
+                <span id="dataDate">-</span>
+                &nbsp;|&nbsp;
+                <strong>Last Sync:</strong>
+                <span id="lastSync">-</span>
+                &nbsp;|&nbsp;
+                <strong>Generated:</strong>
+                <span id="generatedAt">-</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="warning" class="warning"></div>
+
+    <div id="loading" class="panel loading">
+        GitHub Pages 데이터 파일을 불러오는 중입니다.
+    </div>
+
+    <div id="dashboard" class="hidden">
+        <div class="layout">
+
+            <aside class="sidebar">
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Period</div>
+
+                    <div class="field">
+                        <label for="startDate">시작일</label>
+                        <input id="startDate"
+                               type="date"
+                               onchange="renderDashboard()">
+                    </div>
+
+                    <div class="field">
+                        <label for="endDate">종료일</label>
+                        <input id="endDate"
+                               type="date"
+                               onchange="renderDashboard()">
+                    </div>
+
+                    <div class="field">
+                        <label for="rangeSelect">기간 빠른 선택</label>
+                        <select id="rangeSelect"
+                                onchange="applyRangeAndRender()">
+                            <option value="0">전체 기간</option>
+                            <option value="90">최근 3개월</option>
+                            <option value="180">최근 6개월</option>
+                            <option value="365" selected>최근 1년</option>
+                            <option value="730">최근 2년</option>
+                            <option value="1825">최근 5년</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Routes</div>
+
+                    <div class="field">
+                        <label for="routeSelect">노선 복수 선택</label>
+                        <select id="routeSelect"
+                                multiple
+                                onchange="renderDashboard()">
+                        </select>
+                    </div>
+
+                    <div class="button-row">
+                        <button onclick="selectAllRoutes()">
+                            전체 선택
+                        </button>
+
+                        <button class="button-secondary"
+                                onclick="clearRoutes()">
+                            선택 해제
+                        </button>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Download</div>
+
+                    <div class="button-row">
+                        <button class="button-csv"
+                                onclick="downloadCsv()">
+                            CSV 다운로드
+                        </button>
+
+                        <button class="button-png"
+                                onclick="downloadChartPng()">
+                            차트 PNG
+                        </button>
+                    </div>
+                </div>
+            </aside>
+
+            <main>
+                <div class="kpi-grid">
+                    <div class="kpi">
+                        <div class="kpi-label">Latest Overall Index</div>
+                        <div id="overallIndexKpi"
+                             class="kpi-value">-</div>
+                    </div>
+
+                    <div class="kpi">
+                        <div class="kpi-label">Weekly Change</div>
+                        <div id="weeklyChangeKpi"
+                             class="kpi-value">-</div>
+                    </div>
+
+                    <div class="kpi">
+                        <div class="kpi-label">Selected Routes</div>
+                        <div id="routeCountKpi"
+                             class="kpi-value">-</div>
+                    </div>
+
+                    <div class="kpi">
+                        <div class="kpi-label">Displayed Records</div>
+                        <div id="recordCountKpi"
+                             class="kpi-value">-</div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="toolbar">
+                        <div>
+                            <h3 class="section-title">
+                                Overall TAC Index Trend
+                            </h3>
+                            <div class="section-note">
+                                TAC 사이트에서 추출한 전체 지수의
+                                누적 Snapshot 추이입니다.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="overallChart" class="chart"></div>
+                </div>
+
+                <div class="panel">
+                    <div class="toolbar">
+                        <div>
+                            <h3 class="section-title">
+                                Route Index Comparison
+                            </h3>
+                            <div class="section-note">
+                                선택된 노선의 항공운임 지수 추이입니다.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="routeChart" class="chart"></div>
+                </div>
+
+                <div class="panel">
+                    <h3 class="section-title">
+                        Latest Route Breakdown
+                    </h3>
+
+                    <div id="routeTable" class="table-wrap"></div>
+                </div>
+            </main>
+        </div>
+    </div>
+</div>
+
+<script>
+let dashboardData = null;
+let filteredRouteRecords = [];
+let filteredOverallRecords = [];
+
+const COLORS = [
+    "#1d4ed8",
+    "#0f766e",
+    "#b91c1c",
+    "#7c3aed",
+    "#c2410c",
+    "#0369a1",
+    "#15803d",
+    "#be123c",
+    "#9333ea",
+    "#0891b2"
+];
+
+function showWarning(message) {
+    const warning = document.getElementById("warning");
+    warning.textContent = message;
+    warning.style.display = "block";
+}
+
+function hideWarning() {
+    document.getElementById("warning").style.display = "none";
+}
+
+function numberFormat(value, digits = 2) {
+    const number = Number(value);
+
+    if (!Number.isFinite(number)) {
+        return "-";
+    }
+
+    return number.toLocaleString(
+        undefined,
+        {
+            minimumFractionDigits: digits,
+            maximumFractionDigits: digits
+        }
+    );
+}
+
+function percentFormat(value) {
+    const number = Number(value);
+
+    if (!Number.isFinite(number)) {
+        return "-";
+    }
+
+    const prefix = number > 0 ? "+" : "";
+
+    return prefix + numberFormat(number, 2) + "%";
+}
+
+function getSelectedRoutes() {
+    const select = document.getElementById("routeSelect");
+
+    return Array.from(select.selectedOptions).map(
+        option => option.value
+    );
+}
+
+function selectAllRoutes() {
+    const select = document.getElementById("routeSelect");
+
+    Array.from(select.options).forEach(option => {
+        option.selected = true;
+    });
+
+    renderDashboard();
+}
+
+function clearRoutes() {
+    const select = document.getElementById("routeSelect");
+
+    Array.from(select.options).forEach(option => {
+        option.selected = false;
+    });
+
+    renderDashboard();
+}
+
+function getDateBounds() {
+    const dates = dashboardData.route_history
+        .map(item => item.data_date)
+        .filter(Boolean)
+        .sort();
+
+    if (!dates.length) {
+        return {
+            min: "",
+            max: ""
+        };
+    }
+
+    return {
+        min: dates[0],
+        max: dates[dates.length - 1]
+    };
+}
+
+function populateRoutes() {
+    const select = document.getElementById("routeSelect");
+
+    select.innerHTML = "";
+
+    const routeList = dashboardData.route_list || [];
+
+    routeList.forEach(route => {
+        const label = route.route_name
+            ? route.route_name
+            : route.route_code;
+
+        const option = new Option(
+            label,
+            route.route_code
+        );
+
+        option.selected = true;
+
+        select.add(option);
+    });
+}
+
+function setInitialDates() {
+    const bounds = getDateBounds();
+    const startDate = document.getElementById("startDate");
+    const endDate = document.getElementById("endDate");
+
+    startDate.min = bounds.min;
+    startDate.max = bounds.max;
+    endDate.min = bounds.min;
+    endDate.max = bounds.max;
+
+    if (!bounds.max) {
+        return;
+    }
+
+    endDate.value = bounds.max;
+
+    const end = new
