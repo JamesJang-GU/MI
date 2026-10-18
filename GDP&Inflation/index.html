@@ -1,0 +1,1437 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GDP, Inflation &amp; GSCPI Dashboard</title>
+
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+
+<style>
+:root {
+    --navy:#12355b;
+    --blue:#1d4ed8;
+    --teal:#0f766e;
+    --red:#b91c1c;
+    --bg:#f3f6fb;
+    --card:#ffffff;
+    --line:#d9e2ec;
+    --text:#1f2937;
+    --muted:#6b7280;
+    --warn-bg:#fff8e1;
+    --warn-text:#7a5a00;
+}
+* { box-sizing:border-box; }
+body {
+    font-family:"Segoe UI", Arial, sans-serif;
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+}
+.wrap {
+    max-width:1520px;
+    margin:0 auto;
+    padding:24px;
+}
+.hero {
+    background:linear-gradient(135deg,var(--navy),var(--teal));
+    color:#ffffff;
+    padding:28px;
+    border-radius:18px;
+    margin-bottom:20px;
+}
+.hero h1 {
+    margin:0 0 10px 0;
+    font-size:30px;
+}
+.meta {
+    font-size:13px;
+    opacity:.96;
+    line-height:1.7;
+}
+.source-link {
+    color:inherit;
+    text-decoration:underline;
+}
+.tabs {
+    display:flex;
+    gap:10px;
+    margin-bottom:18px;
+}
+.tab {
+    display:inline-block;
+    padding:11px 18px;
+    border-radius:12px;
+    text-decoration:none;
+    background:#dbe4f0;
+    color:#16324f;
+    font-weight:700;
+    cursor:pointer;
+}
+.tab.active {
+    background:var(--navy);
+    color:#ffffff;
+}
+.panel {
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:18px;
+    box-shadow:0 4px 14px rgba(18,53,91,.06);
+    margin-bottom:18px;
+    width:100%;
+}
+.section-title {
+    margin:0 0 14px 0;
+    font-size:18px;
+    color:var(--navy);
+}
+.grid {
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:16px;
+}
+.row2 {
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:18px;
+}
+.kpi {
+    background:linear-gradient(180deg,#ffffff,#f8fbff);
+    border:1px solid var(--line);
+    border-left:6px solid var(--blue);
+    padding:16px;
+    border-radius:14px;
+}
+.kpi .label {
+    color:var(--muted);
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:.4px;
+}
+.kpi .value {
+    margin-top:8px;
+    font-size:23px;
+    font-weight:800;
+    color:var(--navy);
+    word-break:break-word;
+}
+label {
+    display:block;
+    font-size:13px;
+    color:var(--muted);
+    margin-bottom:6px;
+    font-weight:600;
+}
+select {
+    width:100%;
+    padding:11px;
+    border:1px solid var(--line);
+    border-radius:10px;
+    background:#ffffff;
+}
+button {
+    padding:10px 14px;
+    border:none;
+    background:var(--navy);
+    color:#ffffff;
+    border-radius:10px;
+    cursor:pointer;
+    font-weight:600;
+}
+button:hover { opacity:.9; }
+.select-tools,
+.btn-row {
+    display:flex;
+    gap:7px;
+    margin:0 0 8px 0;
+    flex-wrap:wrap;
+}
+.select-tools button {
+    padding:6px 10px;
+    font-size:12px;
+    background:#475569;
+}
+.select-tools button:first-child { background:var(--teal); }
+.icon-csv {
+    background:#2563eb;
+    font-size:12px;
+}
+.warning {
+    background:var(--warn-bg);
+    color:var(--warn-text);
+    border:1px solid #f5d76e;
+    padding:14px;
+    border-radius:12px;
+    margin-bottom:16px;
+    display:none;
+}
+.loading,
+.empty {
+    padding:50px;
+    text-align:center;
+    font-weight:700;
+    color:var(--muted);
+}
+.chart {
+    width:100%;
+    min-height:430px;
+}
+ul.exec {
+    margin:0;
+    padding-left:18px;
+}
+ul.exec li {
+    margin:10px 0;
+    line-height:1.6;
+}
+.subnote {
+    margin-top:8px;
+    color:var(--muted);
+    font-size:12px;
+    line-height:1.6;
+}
+.hidden { display:none; }
+
+@media (max-width:1050px) {
+    .grid { grid-template-columns:repeat(2,1fr); }
+    .row2 { grid-template-columns:1fr; }
+}
+@media (max-width:650px) {
+    .wrap { padding:14px; }
+    .hero { padding:20px; }
+    .hero h1 { font-size:24px; }
+    .grid { grid-template-columns:1fr; }
+    .tabs { flex-wrap:wrap; }
+}
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+    <div class="hero">
+        <h1>GDP, Inflation &amp; GSCPI</h1>
+        <div class="meta">
+            <div>
+                <b>출처</b> |
+                GDP / Inflation:
+                <a class="source-link"
+                   href="https://data.worldbank.org/"
+                   target="_blank"
+                   rel="noopener noreferrer">
+                    World Bank Open Data
+                </a>
+                /
+                GSCPI:
+                <a class="source-link"
+                   href="https://www.newyorkfed.org/research/policy/gscpi"
+                   target="_blank"
+                   rel="noopener noreferrer">
+                    Federal Reserve Bank of New York
+                </a>
+            </div>
+            <div>
+                <b>GitHub Actions 갱신 시각</b> |
+                <span id="generatedAt">데이터 로딩 중</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="warning" class="warning"></div>
+
+    <div class="tabs">
+        <a id="macroTab" class="tab active" onclick="showTab('macro')">
+            GDP + Inflation
+        </a>
+        <a id="gscpiTab" class="tab" onclick="showTab('gscpi')">
+            GSCPI
+        </a>
+    </div>
+
+    <div id="loading" class="loading">
+        GitHub Pages 데이터 파일을 불러오는 중입니다.
+    </div>
+
+    <div id="macroSection" class="hidden">
+
+        <div class="panel">
+            <h3 class="section-title">공통 필터</h3>
+
+            <div class="grid">
+                <div>
+                    <label for="regionSelect">지역 선택</label>
+                    <select id="regionSelect" onchange="onRegionChange()"></select>
+                </div>
+
+                <div>
+                    <label for="yearsSelect">기간 선택</label>
+                    <select id="yearsSelect" onchange="renderMacroDashboard()">
+                        <option value="5">최근 5개년</option>
+                        <option value="10" selected>최근 10개년</option>
+                        <option value="20">최근 20개년</option>
+                    </select>
+                </div>
+
+                <div style="grid-column:span 2;">
+                    <label for="countrySelect">국가 선택</label>
+
+                    <div class="select-tools">
+                        <button type="button" onclick="setAllCountries(true)">
+                            권역 전체 선택
+                        </button>
+                        <button type="button" onclick="setAllCountries(false)">
+                            선택 해제
+                        </button>
+                    </div>
+
+                    <select id="countrySelect"
+                            multiple
+                            size="8"
+                            onchange="renderMacroDashboard()">
+                    </select>
+                </div>
+            </div>
+
+            <div class="subnote">
+                최초 화면은 G7 및 한국을 기본으로 선택합니다.
+                지역 변경 시 해당 권역의 국가가 전체 선택됩니다.
+                Ctrl 또는 Shift 키를 활용하여 국가를 추가·제외할 수 있습니다.
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="kpi">
+                <div class="label">Selected Countries</div>
+                <div class="value" id="selectedCountriesKpi">-</div>
+            </div>
+            <div class="kpi">
+                <div class="label">GDP Latest Year</div>
+                <div class="value" id="latestGdpYearKpi">-</div>
+            </div>
+            <div class="kpi">
+                <div class="label">Inflation Latest Year</div>
+                <div class="value" id="latestInflationYearKpi">-</div>
+            </div>
+            <div class="kpi">
+                <div class="label">Selected Region</div>
+                <div class="value" id="selectedRegionKpi">-</div>
+            </div>
+        </div>
+
+        <div class="row2">
+            <div class="panel">
+                <h3 class="section-title">GDP 성장률 추이</h3>
+                <div class="btn-row">
+                    <button class="icon-csv" onclick="downloadMacroData('gdp')">
+                        CSV 다운로드
+                    </button>
+                </div>
+                <div id="gdpLine" class="chart"></div>
+            </div>
+
+            <div class="panel">
+                <h3 class="section-title">Inflation 추이</h3>
+                <div class="btn-row">
+                    <button class="icon-csv" onclick="downloadMacroData('inflation')">
+                        CSV 다운로드
+                    </button>
+                </div>
+                <div id="inflationLine" class="chart"></div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h3 class="section-title">GDP / Inflation 평균 비교</h3>
+            <div class="btn-row">
+                <button class="icon-csv" onclick="downloadMacroData('macro_compare')">
+                    CSV 다운로드
+                </button>
+            </div>
+            <div id="macroCompareChart" class="chart"></div>
+        </div>
+
+        <div class="row2">
+            <div class="panel">
+                <h3 class="section-title">국가별 최신 GDP 성장률 비교</h3>
+                <div id="gdpBar" class="chart"></div>
+            </div>
+
+            <div class="panel">
+                <h3 class="section-title">국가별 최신 Inflation 비교</h3>
+                <div id="inflationBar" class="chart"></div>
+            </div>
+        </div>
+
+        <div class="row2">
+            <div class="panel">
+                <h3 class="section-title">GDP 시사점</h3>
+                <ul class="exec" id="gdpInsights"></ul>
+            </div>
+
+            <div class="panel">
+                <h3 class="section-title">Inflation 시사점</h3>
+                <ul class="exec" id="inflationInsights"></ul>
+            </div>
+        </div>
+    </div>
+
+    <div id="gscpiSection" class="hidden">
+
+        <div class="panel">
+            <h3 class="section-title">GSCPI 필터</h3>
+
+            <div class="grid">
+                <div>
+                    <label for="gscpiYearsSelect">기간 선택</label>
+                    <select id="gscpiYearsSelect"
+                            onchange="renderGscpiDashboard()">
+                        <option value="5">최근 5개년</option>
+                        <option value="10" selected>최근 10개년</option>
+                        <option value="20">최근 20개년</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="kpi">
+                <div class="label">Latest Point</div>
+                <div class="value" id="latestGscpiKpi">-</div>
+            </div>
+            <div class="kpi">
+                <div class="label">Average, Last 12M</div>
+                <div class="value" id="avgGscpiKpi">-</div>
+            </div>
+            <div class="kpi">
+                <div class="label">Maximum, Last 12M</div>
+                <div class="value" id="maxGscpiKpi">-</div>
+            </div>
+            <div class="kpi">
+                <div class="label">Minimum, Last 12M</div>
+                <div class="value" id="minGscpiKpi">-</div>
+            </div>
+        </div>
+
+        <div class="row2">
+            <div class="panel">
+                <h3 class="section-title">GSCPI 추이</h3>
+                <div class="btn-row">
+                    <button class="icon-csv" onclick="downloadGscpiData()">
+                        CSV 다운로드
+                    </button>
+                </div>
+                <div id="gscpiLine" class="chart"></div>
+            </div>
+
+            <div class="panel">
+                <h3 class="section-title">최근 12개월 GSCPI 비교</h3>
+                <div id="gscpiBar" class="chart"></div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h3 class="section-title">GSCPI 시사점</h3>
+            <ul class="exec" id="gscpiInsights"></ul>
+        </div>
+    </div>
+</div>
+
+<script>
+const DEFAULT_COUNTRIES = [
+    "Canada",
+    "France",
+    "Germany",
+    "Italy",
+    "Japan",
+    "United Kingdom",
+    "United States",
+    "Korea, Rep."
+];
+
+let macroData = {
+    countries: [],
+    gdp: [],
+    inflation: []
+};
+
+let gscpiData = {
+    gscpi: []
+};
+
+let activeTab = "macro";
+
+function showWarning(message) {
+    const warning = document.getElementById("warning");
+    warning.textContent = message;
+    warning.style.display = "block";
+}
+
+function hideWarning() {
+    document.getElementById("warning").style.display = "none";
+}
+
+function numberFormat(value, digits = 2) {
+    const number = Number(value);
+
+    if (!Number.isFinite(number)) {
+        return "-";
+    }
+
+    return number.toLocaleString(
+        undefined,
+        {
+            minimumFractionDigits: digits,
+            maximumFractionDigits: digits
+        }
+    );
+}
+
+function chartLayout(title, yAxisTitle) {
+    return {
+        title: {
+            text: title || "",
+            font: {
+                size: 15,
+                color: "#12355b"
+            }
+        },
+        template: "plotly_white",
+        height: 440,
+        margin: {
+            l: 55,
+            r: 40,
+            t: title ? 60 : 30,
+            b: 65
+        },
+        xaxis: {
+            gridcolor: "#edf2f7"
+        },
+        yaxis: {
+            title: yAxisTitle || "",
+            gridcolor: "#edf2f7",
+            zerolinecolor: "#cbd5e1"
+        },
+        legend: {
+            orientation: "h",
+            yanchor: "bottom",
+            y: 1.03,
+            xanchor: "right",
+            x: 1
+        }
+    };
+}
+
+function emptyChart(elementId, message) {
+    const element = document.getElementById(elementId);
+    element.innerHTML = "";
+
+    const box = document.createElement("div");
+    box.className = "empty";
+    box.textContent = message;
+
+    element.appendChild(box);
+}
+
+function getSelectedCountries() {
+    const select = document.getElementById("countrySelect");
+
+    return Array.from(select.selectedOptions).map(
+        option => option.value
+    );
+}
+
+function uniqueRegions() {
+    const regions = macroData.countries
+        .map(item => item.region)
+        .filter(Boolean);
+
+    return [...new Set(regions)].sort();
+}
+
+function populateRegionSelect() {
+    const select = document.getElementById("regionSelect");
+    select.innerHTML = "";
+
+    select.add(new Option("전체", "전체"));
+
+    uniqueRegions().forEach(region => {
+        select.add(new Option(region, region));
+    });
+}
+
+function populateCountrySelect(selectedRegion, selectedCountries) {
+    const countrySelect = document.getElementById("countrySelect");
+
+    let countries = macroData.countries;
+
+    if (selectedRegion !== "전체") {
+        countries = countries.filter(
+            item => item.region === selectedRegion
+        );
+    }
+
+    const names = countries
+        .map(item => item.country)
+        .filter(Boolean)
+        .sort();
+
+    countrySelect.innerHTML = "";
+
+    names.forEach(country => {
+        const option = new Option(country, country);
+        option.selected = selectedCountries.includes(country);
+        countrySelect.add(option);
+    });
+}
+
+function setAllCountries(selected) {
+    const countrySelect = document.getElementById("countrySelect");
+
+    Array.from(countrySelect.options).forEach(option => {
+        option.selected = selected;
+    });
+
+    renderMacroDashboard();
+}
+
+function onRegionChange() {
+    const selectedRegion = document.getElementById(
+        "regionSelect"
+    ).value;
+
+    const countries = macroData.countries
+        .filter(item => {
+            return (
+                selectedRegion === "전체"
+                || item.region === selectedRegion
+            );
+        })
+        .map(item => item.country);
+
+    populateCountrySelect(selectedRegion, countries);
+    renderMacroDashboard();
+}
+
+function yearsFilter(data, years) {
+    if (!data || !data.length) {
+        return [];
+    }
+
+    const maxYear = Math.max(
+        ...data.map(item => Number(item.year))
+    );
+
+    const minYear = maxYear - years + 1;
+
+    return data.filter(item => Number(item.year) >= minYear);
+}
+
+function selectedMacroData(metric) {
+    const countries = getSelectedCountries();
+    const years = Number(
+        document.getElementById("yearsSelect").value
+    );
+
+    const source = metric === "gdp"
+        ? macroData.gdp
+        : macroData.inflation;
+
+    return yearsFilter(
+        source.filter(item => countries.includes(item.country)),
+        years
+    );
+}
+
+function latestByCountry(data, fieldName) {
+    const map = new Map();
+
+    data.forEach(item => {
+        const oldValue = map.get(item.country);
+
+        if (
+            !oldValue
+            || Number(item.year) > Number(oldValue.year)
+        ) {
+            map.set(item.country, item);
+        }
+    });
+
+    return Array.from(map.values()).sort(
+        (a, b) => Number(b[fieldName]) - Number(a[fieldName])
+    );
+}
+
+function groupByCountry(data) {
+    const grouped = {};
+
+    data.forEach(item => {
+        if (!grouped[item.country]) {
+            grouped[item.country] = [];
+        }
+
+        grouped[item.country].push(item);
+    });
+
+    Object.keys(grouped).forEach(country => {
+        grouped[country].sort(
+            (a, b) => Number(a.year) - Number(b.year)
+        );
+    });
+
+    return grouped;
+}
+
+function drawLineChart(
+    elementId,
+    data,
+    fieldName,
+    yAxisTitle,
+    colors
+) {
+    if (!data.length) {
+        emptyChart(elementId, "데이터 없음");
+        return;
+    }
+
+    const grouped = groupByCountry(data);
+
+    const traces = Object.keys(grouped).map(
+        (country, index) => {
+            const rows = grouped[country];
+
+            return {
+                x: rows.map(item => item.year),
+                y: rows.map(item => Number(item[fieldName])),
+                mode: "lines+markers",
+                type: "scatter",
+                name: country,
+                line: {
+                    width: 2.5,
+                    color: colors[index % colors.length]
+                },
+                marker: {
+                    size: 6
+                }
+            };
+        }
+    );
+
+    Plotly.react(
+        elementId,
+        traces,
+        chartLayout("", yAxisTitle),
+        {
+            responsive: true,
+            displaylogo: false
+        }
+    );
+}
+
+function drawBarChart(
+    elementId,
+    data,
+    fieldName,
+    yAxisTitle,
+    color
+) {
+    if (!data.length) {
+        emptyChart(elementId, "데이터 없음");
+        return;
+    }
+
+    const sorted = [...data].sort(
+        (a, b) => Number(a[fieldName]) - Number(b[fieldName])
+    );
+
+    const trace = {
+        x: sorted.map(item => Number(item[fieldName])),
+        y: sorted.map(item => item.country),
+        type: "bar",
+        orientation: "h",
+        marker: {
+            color: color
+        },
+        text: sorted.map(
+            item => numberFormat(item[fieldName], 2)
+        ),
+        textposition: "auto",
+        hovertemplate:
+            "%{y}<br>"
+            + yAxisTitle
+            + ": %{x:.2f}%<extra></extra>"
+    };
+
+    const layout = chartLayout("", yAxisTitle);
+    layout.margin.l = 145;
+
+    Plotly.react(
+        elementId,
+        [trace],
+        layout,
+        {
+            responsive: true,
+            displaylogo: false
+        }
+    );
+}
+
+function drawMacroCompareChart(gdp, inflation) {
+    const makeAverage = function(data, fieldName) {
+        const map = {};
+
+        data.forEach(item => {
+            if (!map[item.year]) {
+                map[item.year] = [];
+            }
+
+            map[item.year].push(Number(item[fieldName]));
+        });
+
+        const years = Object.keys(map)
+            .map(Number)
+            .sort((a, b) => a - b);
+
+        return {
+            years: years,
+            values: years.map(year => {
+                const values = map[year];
+
+                return values.reduce(
+                    (sum, value) => sum + value,
+                    0
+                ) / values.length;
+            })
+        };
+    };
+
+    const gdpAverage = makeAverage(gdp, "gdp_growth");
+    const inflationAverage = makeAverage(
+        inflation,
+        "inflation"
+    );
+
+    if (
+        !gdpAverage.years.length
+        && !inflationAverage.years.length
+    ) {
+        emptyChart("macroCompareChart", "데이터 없음");
+        return;
+    }
+
+    const traces = [];
+
+    if (gdpAverage.years.length) {
+        traces.push({
+            x: gdpAverage.years,
+            y: gdpAverage.values,
+            mode: "lines+markers",
+            type: "scatter",
+            name: "GDP 평균",
+            line: {
+                color: "#1d4ed8",
+                width: 3
+            },
+            marker: {
+                size: 7
+            },
+            yaxis: "y"
+        });
+    }
+
+    if (inflationAverage.years.length) {
+        traces.push({
+            x: inflationAverage.years,
+            y: inflationAverage.values,
+            mode: "lines+markers",
+            type: "scatter",
+            name: "Inflation 평균",
+            line: {
+                color: "#b91c1c",
+                width: 3
+            },
+            marker: {
+                size: 7
+            },
+            yaxis: "y2"
+        });
+    }
+
+    const layout = chartLayout("", "GDP 성장률 (%)");
+
+    layout.yaxis2 = {
+        title: "Inflation (%)",
+        overlaying: "y",
+        side: "right",
+        gridcolor: "#edf2f7"
+    };
+
+    Plotly.react(
+        "macroCompareChart",
+        traces,
+        layout,
+        {
+            responsive: true,
+            displaylogo: false
+        }
+    );
+}
+
+function buildMacroInsights(data, fieldName, metricName) {
+    if (!data.length) {
+        return [
+            "관련 데이터가 없어 정량적 시사점 도출이 제한됩니다."
+        ];
+    }
+
+    const latest = latestByCountry(data, fieldName);
+
+    const values = latest.map(
+        item => Number(item[fieldName])
+    );
+
+    const average = values.reduce(
+        (sum, value) => sum + value,
+        0
+    ) / values.length;
+
+    const maximum = latest.reduce(
+        (current, item) => {
+            return Number(item[fieldName]) > Number(current[fieldName])
+                ? item
+                : current;
+        },
+        latest[0]
+    );
+
+    const minimum = latest.reduce(
+        (current, item) => {
+            return Number(item[fieldName]) < Number(current[fieldName])
+                ? item
+                : current;
+        },
+        latest[0]
+    );
+
+    const yearly = {};
+
+    data.forEach(item => {
+        if (!yearly[item.year]) {
+            yearly[item.year] = [];
+        }
+
+        yearly[item.year].push(
+            Number(item[fieldName])
+        );
+    });
+
+    const years = Object.keys(yearly)
+        .map(Number)
+        .sort((a, b) => a - b);
+
+    let trend = "비교 가능한 연도 수 부족";
+
+    if (years.length >= 2) {
+        const recentYear = years[years.length - 1];
+        const previousYear = years[years.length - 2];
+
+        const recentAverage = yearly[recentYear].reduce(
+            (sum, value) => sum + value,
+            0
+        ) / yearly[recentYear].length;
+
+        const previousAverage = yearly[previousYear].reduce(
+            (sum, value) => sum + value,
+            0
+        ) / yearly[previousYear].length;
+
+        const difference = recentAverage - previousAverage;
+
+        trend = difference > 0
+            ? "전년 대비 평균 " + metricName + " "
+                + numberFormat(difference, 2) + "p 상승"
+            : difference < 0
+                ? "전년 대비 평균 " + metricName + " "
+                    + numberFormat(Math.abs(difference), 2) + "p 하락"
+                : "전년 대비 평균 " + metricName + " 유사한 수준 유지";
+    }
+
+    return [
+        "최신 평균 " + metricName + ": "
+            + numberFormat(average, 2) + "%",
+        "최고 국가: " + maximum.country + " ("
+            + numberFormat(maximum[fieldName], 2) + "%)",
+        "최저 국가: " + minimum.country + " ("
+            + numberFormat(minimum[fieldName], 2) + "%)",
+        "국가 간 격차: "
+            + numberFormat(
+                Number(maximum[fieldName])
+                - Number(minimum[fieldName]),
+                2
+            )
+            + "p",
+        trend
+    ];
+}
+
+function renderInsightList(elementId, insights) {
+    const element = document.getElementById(elementId);
+    element.innerHTML = "";
+
+    insights.forEach(insight => {
+        const item = document.createElement("li");
+        item.textContent = insight;
+        element.appendChild(item);
+    });
+}
+
+function renderMacroDashboard() {
+    if (!macroData.gdp.length && !macroData.inflation.length) {
+        return;
+    }
+
+    const selectedRegion = document.getElementById(
+        "regionSelect"
+    ).value;
+
+    const selectedCountries = getSelectedCountries();
+
+    const gdp = selectedMacroData("gdp");
+    const inflation = selectedMacroData("inflation");
+
+    document.getElementById("selectedCountriesKpi").textContent =
+        selectedCountries.length;
+
+    document.getElementById("selectedRegionKpi").textContent =
+        selectedRegion;
+
+    document.getElementById("latestGdpYearKpi").textContent =
+        gdp.length
+            ? Math.max(...gdp.map(item => Number(item.year)))
+            : "-";
+
+    document.getElementById(
+        "latestInflationYearKpi"
+    ).textContent = inflation.length
+        ? Math.max(...inflation.map(item => Number(item.year)))
+        : "-";
+
+    const colors = [
+        "#1d4ed8",
+        "#0f766e",
+        "#b91c1c",
+        "#7c3aed",
+        "#c2410c",
+        "#0369a1",
+        "#15803d",
+        "#be123c"
+    ];
+
+    drawLineChart(
+        "gdpLine",
+        gdp,
+        "gdp_growth",
+        "GDP 성장률 (%)",
+        colors
+    );
+
+    drawLineChart(
+        "inflationLine",
+        inflation,
+        "inflation",
+        "Inflation (%)",
+        colors.slice().reverse()
+    );
+
+    drawMacroCompareChart(gdp, inflation);
+
+    drawBarChart(
+        "gdpBar",
+        latestByCountry(gdp, "gdp_growth"),
+        "gdp_growth",
+        "GDP 성장률 (%)",
+        "#1d4ed8"
+    );
+
+    drawBarChart(
+        "inflationBar",
+        latestByCountry(inflation, "inflation"),
+        "inflation",
+        "Inflation (%)",
+        "#b91c1c"
+    );
+
+    renderInsightList(
+        "gdpInsights",
+        buildMacroInsights(gdp, "gdp_growth", "GDP 성장률")
+    );
+
+    renderInsightList(
+        "inflationInsights",
+        buildMacroInsights(inflation, "inflation", "Inflation")
+    );
+}
+
+function selectedGscpiData() {
+    const years = Number(
+        document.getElementById("gscpiYearsSelect").value
+    );
+
+    if (!gscpiData.gscpi.length) {
+        return [];
+    }
+
+    const maxYear = Math.max(
+        ...gscpiData.gscpi.map(item => Number(item.year))
+    );
+
+    const minYear = maxYear - years + 1;
+
+    return gscpiData.gscpi.filter(
+        item => Number(item.year) >= minYear
+    );
+}
+
+function buildGscpiInsights(data) {
+    if (!data.length) {
+        return [
+            "관련 데이터가 없어 공급망 시사점 도출이 제한됩니다."
+        ];
+    }
+
+    const sorted = [...data].sort(
+        (a, b) => new Date(a.date) - new Date(b.date)
+    );
+
+    const latest = sorted[sorted.length - 1];
+    const last12 = sorted.slice(-12);
+
+    const values = last12.map(item => Number(item.gscpi));
+
+    const average = values.reduce(
+        (sum, value) => sum + value,
+        0
+    ) / values.length;
+
+    const maximum = Math.max(...values);
+    const minimum = Math.min(...values);
+
+    let trend = "1년 비교 판단: 데이터 부족";
+
+    if (sorted.length >= 13) {
+        const previous = Number(
+            sorted[sorted.length - 13].gscpi
+        );
+
+        const difference = Number(latest.gscpi) - previous;
+
+        trend = difference > 0
+            ? "1년 전 대비 GSCPI "
+                + numberFormat(difference, 2) + "p 상승"
+            : difference < 0
+                ? "1년 전 대비 GSCPI "
+                    + numberFormat(Math.abs(difference), 2) + "p 하락"
+                : "1년 전 대비 GSCPI 유사한 수준 유지";
+    }
+
+    return [
+        "최신 시점: " + latest.date.substring(0, 7),
+        "최신 GSCPI: " + numberFormat(latest.gscpi, 2),
+        "최근 12개월 평균: " + numberFormat(average, 2),
+        "최근 12개월 범위: "
+            + numberFormat(minimum, 2)
+            + " ~ "
+            + numberFormat(maximum, 2),
+        "최근 수준 평가: "
+            + (
+                Number(latest.gscpi) > average
+                    ? "최근 12개월 평균 상회"
+                    : Number(latest.gscpi) < average
+                        ? "최근 12개월 평균 하회"
+                        : "최근 12개월 평균과 유사"
+            ),
+        trend
+    ];
+}
+
+function renderGscpiDashboard() {
+    const data = selectedGscpiData();
+
+    if (!data.length) {
+        emptyChart("gscpiLine", "데이터 없음");
+        emptyChart("gscpiBar", "데이터 없음");
+        return;
+    }
+
+    const sorted = [...data].sort(
+        (a, b) => new Date(a.date) - new Date(b.date)
+    );
+
+    const latest12 = sorted.slice(-12);
+    const values = latest12.map(item => Number(item.gscpi));
+    const latest = sorted[sorted.length - 1];
+
+    const average = values.reduce(
+        (sum, value) => sum + value,
+        0
+    ) / values.length;
+
+    document.getElementById("latestGscpiKpi").textContent =
+        latest.date.substring(0, 7);
+
+    document.getElementById("avgGscpiKpi").textContent =
+        numberFormat(average, 2);
+
+    document.getElementById("maxGscpiKpi").textContent =
+        numberFormat(Math.max(...values), 2);
+
+    document.getElementById("minGscpiKpi").textContent =
+        numberFormat(Math.min(...values), 2);
+
+    Plotly.react(
+        "gscpiLine",
+        [{
+            x: sorted.map(item => item.date),
+            y: sorted.map(item => Number(item.gscpi)),
+            type: "scatter",
+            mode: "lines+markers",
+            name: "GSCPI",
+            line: {
+                color: "#0f766e",
+                width: 3
+            },
+            marker: {
+                size: 5
+            },
+            hovertemplate:
+                "%{x|%Y-%m}<br>GSCPI: %{y:.2f}<extra></extra>"
+        }],
+        chartLayout("", "GSCPI"),
+        {
+            responsive: true,
+            displaylogo: false
+        }
+    );
+
+    Plotly.react(
+        "gscpiBar",
+        [{
+            x: latest12.map(item => item.date.substring(0, 7)),
+            y: latest12.map(item => Number(item.gscpi)),
+            type: "bar",
+            marker: {
+                color: "#0f766e"
+            },
+            hovertemplate:
+                "%{x}<br>GSCPI: %{y:.2f}<extra></extra>"
+        }],
+        chartLayout("", "GSCPI"),
+        {
+            responsive: true,
+            displaylogo: false
+        }
+    );
+
+    renderInsightList(
+        "gscpiInsights",
+        buildGscpiInsights(sorted)
+    );
+}
+
+function csvEscape(value) {
+    const text = String(value ?? "");
+    return '"' + text.replaceAll('"', '""') + '"';
+}
+
+function downloadCsv(rows, fileName) {
+    if (!rows.length) {
+        showWarning("다운로드할 데이터가 없습니다.");
+        return;
+    }
+
+    const columns = Object.keys(rows[0]);
+
+    const csv = [
+        columns.join(","),
+        ...rows.map(row => {
+            return columns.map(
+                column => csvEscape(row[column])
+            ).join(",");
+        })
+    ].join("\n");
+
+    const blob = new Blob(
+        ["\ufeff" + csv],
+        {
+            type: "text/csv;charset=utf-8;"
+        }
+    );
+
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+
+    anchor.href = url;
+    anchor.download = fileName;
+
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+
+    URL.revokeObjectURL(url);
+}
+
+function downloadMacroData(dataset) {
+    const gdp = selectedMacroData("gdp");
+    const inflation = selectedMacroData("inflation");
+
+    if (dataset === "gdp") {
+        downloadCsv(gdp, "worldbank_gdp_growth.csv");
+        return;
+    }
+
+    if (dataset === "inflation") {
+        downloadCsv(
+            inflation,
+            "worldbank_inflation.csv"
+        );
+        return;
+    }
+
+    const map = new Map();
+
+    gdp.forEach(item => {
+        const key = item.code + "|" + item.country + "|" + item.year;
+
+        map.set(key, {
+            code: item.code,
+            country: item.country,
+            region: item.region,
+            year: item.year,
+            gdp_growth: item.gdp_growth,
+            inflation: null
+        });
+    });
+
+    inflation.forEach(item => {
+        const key = item.code + "|" + item.country + "|" + item.year;
+
+        if (!map.has(key)) {
+            map.set(key, {
+                code: item.code,
+                country: item.country,
+                region: item.region,
+                year: item.year,
+                gdp_growth: null,
+                inflation: item.inflation
+            });
+        } else {
+            map.get(key).inflation = item.inflation;
+        }
+    });
+
+    const rows = Array.from(map.values()).sort((a, b) => {
+        const countryOrder = a.country.localeCompare(b.country);
+
+        return countryOrder !== 0
+            ? countryOrder
+            : Number(a.year) - Number(b.year);
+    });
+
+    downloadCsv(
+        rows,
+        "worldbank_gdp_inflation_comparison.csv"
+    );
+}
+
+function downloadGscpiData() {
+    downloadCsv(
+        selectedGscpiData(),
+        "newyorkfed_gscpi.csv"
+    );
+}
+
+function showTab(tabName) {
+    activeTab = tabName;
+
+    const macroSection = document.getElementById("macroSection");
+    const gscpiSection = document.getElementById("gscpiSection");
+    const macroTab = document.getElementById("macroTab");
+    const gscpiTab = document.getElementById("gscpiTab");
+
+    if (tabName === "macro") {
+        macroSection.classList.remove("hidden");
+        gscpiSection.classList.add("hidden");
+        macroTab.classList.add("active");
+        gscpiTab.classList.remove("active");
+        renderMacroDashboard();
+        return;
+    }
+
+    macroSection.classList.add("hidden");
+    gscpiSection.classList.remove("hidden");
+    macroTab.classList.remove("active");
+    gscpiTab.classList.add("active");
+    renderGscpiDashboard();
+}
+
+async function initializeDashboard() {
+    try {
+        hideWarning();
+
+        const responses = await Promise.all([
+            fetch("./macro_data.json", { cache: "no-store" }),
+            fetch("./gscpi_data.json", { cache: "no-store" }),
+            fetch("./dashboard_meta.json", { cache: "no-store" })
+        ]);
+
+        if (!responses.every(response => response.ok)) {
+            throw new Error(
+                "정적 데이터 JSON 파일을 불러오지 못했습니다."
+            );
+        }
+
+        macroData = await responses[0].json();
+        gscpiData = await responses[1].json();
+
+        const metaData = await responses[2].json();
+
+        document.getElementById("generatedAt").textContent =
+            metaData.generated_at || "-";
+
+        populateRegionSelect();
+
+        const initialCountries = DEFAULT_COUNTRIES.filter(country => {
+            return macroData.countries.some(
+                item => item.country === country
+            );
+        });
+
+        populateCountrySelect("전체", initialCountries);
+
+        document.getElementById("loading")
+            .classList.add("hidden");
+
+        showTab(activeTab);
+
+    } catch (error) {
+        const loading = document.getElementById("loading");
+
+        loading.textContent =
+            "대시보드 데이터 로드에 실패했습니다. "
+            + "GitHub Actions 실행 결과와 JSON 파일 배포 여부를 확인하세요.";
+
+        showWarning(
+            "데이터를 불러오지 못했습니다: " + error.message
+        );
+
+        console.error(error);
+    }
+}
+
+window.addEventListener(
+    "DOMContentLoaded",
+    initializeDashboard
+);
+</script>
+</body>
+</html>

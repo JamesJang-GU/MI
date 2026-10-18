@@ -1,0 +1,59 @@
+{
+  "generated_at": "2026-10-18 08:53:53",
+  "shipping": {
+    "title": "Shipping Index (SCFI / BDI)",
+    "path": "Shipping Index/index.html",
+    "category": "Sea",
+    "scfi_latest": "-",
+    "scfi_date": "-",
+    "bdi_latest": "-",
+    "bdi_date": "-",
+    "status": "No Data"
+  },
+  "alphaliner": {
+    "title": "Alphaliner TOP 100",
+    "path": "Alphaliner/index.html",
+    "category": "Sea",
+    "latest_date": "2026-10-18",
+    "total_teu": "32,688,538",
+    "total_ships": "-",
+    "top1_operator": "Mediterranean Shg Co (None%)",
+    "status": "Active"
+  },
+  "bunker": {
+    "title": "Bunker Price (VLSFO)",
+    "path": "BunkerPrice/index.html",
+    "category": "Sea",
+    "latest_date": "-",
+    "rotterdam": "-",
+    "singapore": "-",
+    "status": "Active"
+  },
+  "forwarder": {
+    "title": "Global Top 25 Forwarders",
+    "path": "Forwarder/index.html",
+    "category": "Sea",
+    "latest_year": "-",
+    "top1_ocean": "-",
+    "top1_air": "-",
+    "status": "No Data"
+  },
+  "tac": {
+    "title": "Air Freight (TAC Index)",
+    "path": "TAC Index/index.html",
+    "category": "Air",
+    "latest_date": "2026-09-01",
+    "overall_index": "4.74",
+    "weekly_change": "+2.07%",
+    "route_count": "3",
+    "status": "Active"
+  },
+  "macro": {
+    "title": "Macro Economies & GSCPI",
+    "path": "GDP&Inflation/index.html",
+    "category": "Macro",
+    "latest_date": "-",
+    "gscpi_latest": "-",
+    "status": "No Data"
+  }
+}

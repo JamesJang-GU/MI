@@ -1,0 +1,72 @@
+{
+  "generated_at": "2026-10-18 08:53:53",
+  "source": {
+    "name": "Baltic Exchange Airfreight Rate Index",
+    "publisher": "Air Cargo News",
+    "parent_url": "https://www.aircargonews.net/data-hub/industry-data/baltic-exchange-airfreight-rate-index/",
+    "embed_url": "https://e.infogram.com/_/SuAWaj6s2iFahJI4zPJw?src=embed",
+    "infogram_id": "SuAWaj6s2iFahJI4zPJw"
+  },
+  "definition": {
+    "overall_index": "Dashboard-derived average of latest available route rates. It is not an official TAC composite index.",
+    "weekly_change": "Dashboard-derived average percentage change versus the preceding available source period across routes.",
+    "unit": "USD/kg"
+  },
+  "last_sync": {
+    "started_at": "2026-10-18 08:53:52",
+    "finished_at": "2026-10-18 08:53:53",
+    "status": "SUCCESS",
+    "message": "NEW_SNAPSHOT",
+    "snapshot_id": 1,
+    "route_count": 3,
+    "data_date": "2026-09-01"
+  },
+  "history": [
+    {
+      "snapshot_id": 1,
+      "captured_at": "2026-10-18 08:53:53",
+      "data_date": "2026-09-01",
+      "overall_index": 4.739999999999999,
+      "weekly_change": 2.07229849560474,
+      "route_count": 3
+    }
+  ],
+  "latest_detail": [
+    {
+      "snapshot_id": 1,
+      "route_code": "Frankfurt-North America",
+      "origin": "Frankfurt",
+      "destination": "North America",
+      "index_value": 2.4,
+      "weekly_change": 0.8403361344537823,
+      "monthly_change": null,
+      "ytd_change": null,
+      "data_date": "2026-09-01",
+      "captured_at": "2026-10-18 08:53:53"
+    },
+    {
+      "snapshot_id": 1,
+      "route_code": "Hong Kong-Europe",
+      "origin": "Hong Kong",
+      "destination": "Europe",
+      "index_value": 4.8,
+      "weekly_change": 4.803493449781654,
+      "monthly_change": null,
+      "ytd_change": null,
+      "data_date": "2026-09-01",
+      "captured_at": "2026-10-18 08:53:53"
+    },
+    {
+      "snapshot_id": 1,
+      "route_code": "Hong Kong-North America",
+      "origin": "Hong Kong",
+      "destination": "North America",
+      "index_value": 7.02,
+      "weekly_change": 0.5730659025787843,
+      "monthly_change": null,
+      "ytd_change": null,
+      "data_date": "2026-09-01",
+      "captured_at": "2026-10-18 08:53:53"
+    }
+  ]
+}
