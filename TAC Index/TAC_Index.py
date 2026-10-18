@@ -682,8 +682,16 @@ def parse_route_table(table_data):
 
     route_idx = find_idx(
         ["route", "lane", "market", "origin", "sector", "index name"]
-    ) or 0
-    val_idx = find_idx(["index", "rate", "value", "price", "current"]) or 1
+    )
+    if route_idx is None:
+        route_idx = 0
+
+    val_idx = find_idx(
+        ["index", "rate", "value", "price", "current"]
+    )
+    if val_idx is None:
+        val_idx = 1
+
     w_idx = find_idx(["weekly", "week on week", "w/w", "1w"])
     m_idx = find_idx(["monthly", "month on month", "m/m", "1m"])
 
