@@ -1,89 +1,77 @@
-name: Update Market Intelligence Dashboard
+name: Update Shipping Index Dashboard
 
 on:
-  workflow_dispatch:
-
+  # 매주 월요일~금요일 한국시간 09:30 / 15:30 실행
   schedule:
-    # 매일 KST 00:00 실행
-    # GitHub Actions cron은 UTC 기준
-    - cron: "0 15 * * *"
+    - cron: "30 0 * * 1-5"
+    - cron: "30 6 * * 1-5"
+
+  # GitHub Actions 화면에서 수동 실행 가능
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  crawl-and-publish:
+  update-dashboard:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
 
     steps:
+      # 1. 저장소 코드 및 기존 DB 다운로드
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # 2. Python 설치
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      # 3. Chrome 설치
+      # ubuntu-latest에는 통상 Chrome이 포함되지만,
+      # 명시적으로 설치하여 Selenium 실행 실패 가능성을 낮춤
+      - name: Set up Google Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      # 4. 필요한 Python 라이브러리 설치
+      - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install pandas selenium
 
-      # Shipping Index Python 파일만 사전에 문법 검사
-      # 오류가 있으면 크롤러 실행 전에 여기서 실패하며 줄 번호가 표시됨
-      - name: Validate Shipping Index Python syntax
-        run: |
-          python -m py_compile "Shipping Index/ShippingIndex_SCFI&BDI.py"
-
-      - name: Run crawler and generate dashboards
+      # 5. KSG 크롤링 → DB 저장 → JSON/HTML 생성
+      - name: Crawl KSG and generate static dashboard
         env:
           KSG_ID: ${{ secrets.KSG_ID }}
           KSG_PW: ${{ secrets.KSG_PW }}
         run: |
-          python run_all.py
+          python "Shipping Index/ShippingIndex_SCFI&BDI.py"
 
-      - name: Check generated files
+      # 6. 생성 결과 확인
+      - name: Verify generated files
         run: |
-          echo "=== Main portal files ==="
-          test -f "index.html"
-          test -f "dashboard_summary.json"
-
-          echo "=== Shipping Index files ==="
-          test -f "Shipping Index/index.html"
+          ls -lh "Shipping Index"
+          test -f "Shipping Index/index_history.db"
           test -f "Shipping Index/shipping_index_data.json"
+          test -f "Shipping Index/index.html"
 
-          echo "=== Shipping JSON preview ==="
-          head -c 500 "Shipping Index/shipping_index_data.json"
-          echo ""
-
-          echo "=== Git status before staging ==="
-          git status --short
-
-      - name: Commit and push updated dashboard files
+      # 7. 변경된 DB / JSON / HTML을 GitHub 저장소로 push
+      - name: Commit and push dashboard data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # 상세 Shipping Index 대시보드에서 fetch()로 직접 읽는 필수 파일
-          # -f: .gitignore 규칙이 있어도 강제로 Git 추적 대상으로 추가
-          git add -f "Shipping Index/shipping_index_data.json"
-
-          # Shipping 상세 화면
+          git add "Shipping Index/index_history.db"
+          git add "Shipping Index/shipping_index_data.json"
           git add "Shipping Index/index.html"
 
-          # Market Intelligence Portal 메인 화면 및 요약 데이터
-          git add "index.html"
-          git add "dashboard_summary.json"
-
-          echo "=== Staged files ==="
-          git diff --cached --name-only
-
           if git diff --cached --quiet; then
-            echo "No dashboard file changes to commit."
+            echo "No dashboard changes to commit."
           else
-            git commit -m "Auto: update MI dashboard data [$(date -u +'%Y-%m-%d')]"
+            git commit -m "Update shipping index dashboard"
             git push
           fi
