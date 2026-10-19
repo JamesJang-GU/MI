@@ -46,6 +46,23 @@
     .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #94a3b8; }
     .status-dot.success { background: #16a34a; }
     .status-dot.error { background: #dc2626; }
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--navy);
+      margin: 28px 0 14px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-title::before {
+      content: "";
+      display: inline-block;
+      width: 4px;
+      height: 18px;
+      background: var(--blue);
+      border-radius: 2px;
+    }
     .kpi-grid {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -60,7 +77,7 @@
       box-shadow: 0 2px 8px rgba(16, 42, 67, 0.05);
     }
     .kpi-label { color: var(--muted); font-size: 13px; font-weight: 600; margin-bottom: 10px; }
-    .kpi-value { color: var(--navy); font-size: 26px; font-weight: 700; }
+    .kpi-value { color: var(--navy); font-size: 24px; font-weight: 700; }
     .kpi-sub { margin-top: 8px; color: var(--muted); font-size: 12px; }
     .chart-grid {
       display: grid;
@@ -72,11 +89,11 @@
     .chart-title { margin: 0 0 6px; color: var(--navy); font-size: 17px; }
     .chart-note { margin: 0 0 18px; color: var(--muted); font-size: 12px; }
     .chart-wrap { position: relative; height: 285px; }
-    .table-card { overflow: hidden; padding: 0; }
+    .table-card { overflow: hidden; padding: 0; margin-bottom: 24px; }
     .table-heading { padding: 20px 20px 12px; }
     .table-heading h2 { margin: 0; color: var(--navy); font-size: 18px; }
     .table-heading p { margin: 7px 0 0; color: var(--muted); font-size: 12px; }
-    .table-scroll { overflow-x: auto; max-height: 660px; overflow-y: auto; }
+    .table-scroll { overflow-x: auto; max-height: 600px; overflow-y: auto; }
     table { width: 100%; border-collapse: collapse; min-width: 900px; font-size: 13px; }
     thead { position: sticky; top: 0; z-index: 2; }
     th {
@@ -91,14 +108,40 @@
     tbody tr:hover { background: #f8fbfd; }
     .number { text-align: right; }
     .rank { color: var(--blue); font-weight: 700; }
-    .empty-message, .error-message {
-      padding: 28px;
+
+    /* Delta Badges & Colors */
+    .delta-pos { color: #dc2626; font-weight: 700; }
+    .delta-neg { color: #2563eb; font-weight: 700; }
+    .delta-zero { color: #64748b; font-weight: 600; }
+    .badge-rank-up {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #fee2e2;
+      color: #dc2626;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .badge-rank-down {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #dbeafe;
+      color: #2563eb;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .empty-message, .error-message, .info-box {
+      padding: 20px;
       border-radius: 10px;
       background: var(--white);
       border: 1px solid var(--border);
       color: var(--muted);
+      font-size: 13px;
     }
     .error-message { border-color: #fecaca; color: #b91c1c; background: #fef2f2; }
+    .info-box { background: #f8fafc; border-color: #e2e8f0; margin-bottom: 16px; }
     .footer { padding: 20px 0 5px; color: var(--muted); font-size: 12px; text-align: right; }
     @media (max-width: 980px) { .kpi-grid, .chart-grid { grid-template-columns: 1fr 1fr; } }
     @media (max-width: 620px) {
@@ -113,7 +156,7 @@
   <header class="header">
     <div class="header-inner">
       <h1>Alphaliner TOP 100 Liner Operators</h1>
-      <p>Global container liner operator capacity, fleet and orderbook monitoring dashboard</p>
+      <p>Global container liner operator capacity, fleet, orderbook & snapshot delta monitoring</p>
     </div>
   </header>
 
@@ -124,6 +167,7 @@
     </div>
 
     <section id="dashboard" style="display:none;">
+      <!-- Highlights KPI -->
       <div class="kpi-grid">
         <article class="card">
           <div class="kpi-label">TOP 100 총 선복량</div>
@@ -147,6 +191,34 @@
         </article>
       </div>
 
+      <!-- Delta Comparison Summary -->
+      <div class="section-title">직전 스냅샷 대비 변동 요약 (Snapshot Delta Summary)</div>
+      <div id="deltaSummaryContainer">
+        <div class="kpi-grid">
+          <article class="card">
+            <div class="kpi-label">총 선복량 증감 (Δ TEU)</div>
+            <div id="deltaTeuTotal" class="kpi-value">-</div>
+            <div id="deltaTeuSub" class="kpi-sub">vs previous snapshot</div>
+          </article>
+          <article class="card">
+            <div class="kpi-label">총 선박 수 증감 (Δ Ships)</div>
+            <div id="deltaShipsTotal" class="kpi-value">-</div>
+            <div id="deltaShipsSub" class="kpi-sub">vs previous snapshot</div>
+          </article>
+          <article class="card">
+            <div class="kpi-label">최대 선복량 증가 선사</div>
+            <div id="topGainName" class="kpi-value">-</div>
+            <div id="topGainVal" class="kpi-sub">-</div>
+          </article>
+          <article class="card">
+            <div class="kpi-label">최대 선복량 감소 선사</div>
+            <div id="topLossName" class="kpi-value">-</div>
+            <div id="topLossVal" class="kpi-sub">-</div>
+          </article>
+        </div>
+      </div>
+
+      <!-- Charts -->
       <div class="chart-grid">
         <section class="card chart-card">
           <h2 class="chart-title">상위 10개 선사 선복량</h2>
@@ -165,9 +237,36 @@
         </section>
       </div>
 
+      <!-- Delta Comparison Table -->
+      <section class="card table-card" id="deltaTableCard">
+        <div class="table-heading">
+          <h2>직전 스냅샷 대비 선사별 상세 변동 (Delta Detail)</h2>
+          <p id="deltaTableNote">비교 대상 스냅샷 데이터를 불러오는 중...</p>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>순위 변동</th>
+                <th>Operator</th>
+                <th class="number">현재 TEU</th>
+                <th class="number">직전 TEU</th>
+                <th class="number">증감 (Δ TEU)</th>
+                <th class="number">현재 점유율</th>
+                <th class="number">직전 점유율</th>
+                <th class="number">점유율 증감 (Δ %p)</th>
+              </tr>
+            </thead>
+            <tbody id="deltaTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Latest TOP 100 Full Table -->
       <section class="card table-card">
         <div class="table-heading">
-          <h2>최신 TOP 100 선사 순위</h2>
+          <h2>최신 TOP 100 선사 전체 순위</h2>
           <p id="tableNote">-</p>
         </div>
         <div class="table-scroll">
@@ -214,6 +313,36 @@
       });
     }
 
+    function fmtDelta(val, isPct = false) {
+      if (val === null || val === undefined || isNaN(val)) return "-";
+      const num = Number(val);
+      const sign = num > 0 ? "+" : "";
+      if (isPct) {
+        return sign + num.toFixed(2) + "%p";
+      }
+      return sign + numberFormat(num);
+    }
+
+    function deltaSpan(val, isPct = false) {
+      if (val === null || val === undefined || isNaN(val) || val === 0) {
+        return '<span class="delta-zero">-</span>';
+      }
+      const num = Number(val);
+      const cls = num > 0 ? "delta-pos" : "delta-neg";
+      const arrow = num > 0 ? "▲ " : "▼ ";
+      return `<span class="${cls}">${arrow}${fmtDelta(num, isPct)}</span>`;
+    }
+
+    function rankMoveBadge(diff) {
+      if (!diff || isNaN(diff) || diff === 0) {
+        return '<span class="delta-zero">-</span>';
+      }
+      if (diff > 0) {
+        return `<span class="badge-rank-up">▲ Up ${diff}</span>`;
+      }
+      return `<span class="badge-rank-down">▼ Down ${Math.abs(diff)}</span>`;
+    }
+
     function escapeHtml(value) {
       return String(value ?? "")
         .replace(/&/g, "&amp;")
@@ -232,7 +361,7 @@
         '<br><br>GitHub 저장소의 <code>Alphaliner/alphaliner_data.json</code> 파일 생성 여부를 확인해 주세요.</div>';
     }
 
-    function renderKpis(rows, history) {
+    function renderKpis(rows) {
       const totalTeu = rows.reduce((sum, row) => sum + Number(row.total_teu || 0), 0);
       const totalShips = rows.reduce((sum, row) => sum + Number(row.total_ships || 0), 0);
       const leader = rows.length ? rows[0] : null;
@@ -247,6 +376,98 @@
         document.getElementById("leaderSub").textContent =
           numberFormat(leader.total_teu) + " TEU" + (shareText ? (" · " + shareText) : "");
       }
+    }
+
+    function renderDeltaAnalysis(latestRows, prevRows) {
+      if (!prevRows || !prevRows.length) {
+        document.getElementById("deltaSummaryContainer").innerHTML =
+          '<div class="info-box">비교 가능한 이전 스냅샷이 아직 누적되지 않았습니다. (스냅샷이 2회 이상 저장되면 자동으로 활성화됩니다)</div>';
+        document.getElementById("deltaTableCard").style.display = "none";
+        return;
+      }
+
+      document.getElementById("deltaTableCard").style.display = "block";
+
+      const prevMap = new Map();
+      prevRows.forEach(r => prevMap.set(r.operator_name, r));
+
+      const curTotalTeu = latestRows.reduce((sum, r) => sum + Number(r.total_teu || 0), 0);
+      const prevTotalTeu = prevRows.reduce((sum, r) => sum + Number(r.total_teu || 0), 0);
+      const diffTotalTeu = curTotalTeu - prevTotalTeu;
+
+      const curTotalShips = latestRows.reduce((sum, r) => sum + Number(r.total_ships || 0), 0);
+      const prevTotalShips = prevRows.reduce((sum, r) => sum + Number(r.total_ships || 0), 0);
+      const diffTotalShips = curTotalShips - prevTotalShips;
+
+      // Delta 요약 카드
+      const deltaTeuEl = document.getElementById("deltaTeuTotal");
+      deltaTeuEl.innerHTML = deltaSpan(diffTotalTeu);
+
+      const deltaShipsEl = document.getElementById("deltaShipsTotal");
+      deltaShipsEl.innerHTML = deltaSpan(diffTotalShips);
+
+      const deltaList = [];
+      latestRows.forEach(cur => {
+        const prev = prevMap.get(cur.operator_name);
+        const prevTeu = prev ? Number(prev.total_teu || 0) : 0;
+        const curTeu = Number(cur.total_teu || 0);
+        const diffTeu = prev ? (curTeu - prevTeu) : curTeu;
+
+        const prevShare = prev ? Number(prev.market_share || 0) : 0;
+        const curShare = Number(cur.market_share || 0);
+        const diffShare = prev ? (curShare - prevShare) : curShare;
+
+        const prevRank = prev ? Number(prev.rank) : null;
+        const rankDiff = prevRank ? (prevRank - Number(cur.rank)) : 0; // 양수면 순위 상승
+
+        deltaList.push({
+          rank: cur.rank,
+          operator_name: cur.operator_name,
+          curTeu: curTeu,
+          prevTeu: prevTeu,
+          diffTeu: diffTeu,
+          curShare: curShare,
+          prevShare: prevShare,
+          diffShare: diffShare,
+          rankDiff: rankDiff,
+          hasPrev: !!prev
+        });
+      });
+
+      // 최대 증가 / 감소 선사
+      const sortedByGain = [...deltaList].filter(d => d.hasPrev).sort((a, b) => b.diffTeu - a.diffTeu);
+      if (sortedByGain.length) {
+        const topGain = sortedByGain[0];
+        const topLoss = sortedByGain[sortedByGain.length - 1];
+
+        document.getElementById("topGainName").textContent = topGain.operator_name;
+        document.getElementById("topGainVal").innerHTML = deltaSpan(topGain.diffTeu) + " TEU";
+
+        document.getElementById("topLossName").textContent = topLoss.operator_name;
+        document.getElementById("topLossVal").innerHTML = deltaSpan(topLoss.diffTeu) + " TEU";
+      }
+
+      // Delta 테이블 렌더링
+      const prevDate = prevRows[0]?.data_date || "-";
+      document.getElementById("deltaTableNote").textContent =
+        `기준일: ${latestRows[0]?.data_date || "-"} vs 직전 기준일: ${prevDate}`;
+
+      const tbody = document.getElementById("deltaTableBody");
+      tbody.innerHTML = deltaList.map(item => {
+        return `
+          <tr>
+            <td class="rank">${escapeHtml(item.rank)}</td>
+            <td>${rankMoveBadge(item.rankDiff)}</td>
+            <td><strong>${escapeHtml(item.operator_name)}</strong></td>
+            <td class="number">${numberFormat(item.curTeu)}</td>
+            <td class="number">${item.hasPrev ? numberFormat(item.prevTeu) : "-"}</td>
+            <td class="number">${item.hasPrev ? deltaSpan(item.diffTeu) : '<span class="badge-rank-up">NEW</span>'}</td>
+            <td class="number">${decimalFormat(item.curShare, 2)}%</td>
+            <td class="number">${item.hasPrev ? decimalFormat(item.prevShare, 2) + "%" : "-"}</td>
+            <td class="number">${item.hasPrev ? deltaSpan(item.diffShare, true) : "-"}</td>
+          </tr>
+        `;
+      }).join("");
     }
 
     function renderTopOperatorsChart(rows) {
@@ -375,20 +596,22 @@
         }
 
         const data = await response.json();
-        const rows = Array.isArray(data.latest_detail) ? data.latest_detail : [];
+        const latestRows = Array.isArray(data.latest_detail) ? data.latest_detail : [];
+        const prevRows = Array.isArray(data.previous_detail) ? data.previous_detail : [];
         const history = Array.isArray(data.history) ? data.history : [];
 
-        if (!rows.length) {
+        if (!latestRows.length) {
           throw new Error("latest_detail 데이터가 0건입니다.");
         }
 
         const lastSync = data.last_sync || {};
-        const latestDate = rows[0]?.data_date || lastSync.data_date || "-";
+        const latestDate = latestRows[0]?.data_date || lastSync.data_date || "-";
 
-        renderKpis(rows, history);
-        renderTopOperatorsChart(rows);
+        renderKpis(latestRows);
+        renderDeltaAnalysis(latestRows, prevRows);
+        renderTopOperatorsChart(latestRows);
         renderHistoryChart(history);
-        renderTable(rows, latestDate);
+        renderTable(latestRows, latestDate);
 
         document.getElementById("generatedAt").textContent = data.generated_at || "-";
         document.getElementById("statusDot").className = "status-dot success";
