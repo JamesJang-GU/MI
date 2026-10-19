@@ -53,6 +53,14 @@
       margin: 0 auto;
     }
 
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 15px;
+    }
+
     h1 {
       margin: 0;
       font-size: 32px;
@@ -63,6 +71,24 @@
       margin: 9px 0 0;
       color: #d9eafd;
       font-size: 15px;
+    }
+
+    .btn-download {
+      background-color: var(--white);
+      color: var(--blue);
+      border: 1px solid var(--white);
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+
+    .btn-download:hover {
+      background-color: var(--light-blue);
+      border-color: var(--light-blue);
     }
 
     main {
@@ -205,14 +231,18 @@
     .chart {
       width: 100%;
       min-height: 440px;
+      margin-top: 20px;
     }
 
     .controls {
       display: flex;
-      align-items: end;
-      gap: 14px;
+      gap: 20px;
       flex-wrap: wrap;
-      margin-bottom: 16px;
+      margin-bottom: 20px;
+      background: #f8fafc;
+      padding: 15px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
     }
 
     .control-group {
@@ -228,7 +258,7 @@
     }
 
     select {
-      min-width: 200px;
+      min-width: 160px;
       border: 1px solid var(--border);
       border-radius: 7px;
       padding: 10px 12px;
@@ -237,8 +267,31 @@
       font-size: 14px;
     }
 
+    .checkbox-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      max-height: 100px;
+      overflow-y: auto;
+      padding: 5px;
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 8px 12px;
+    }
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 13px;
+      cursor: pointer;
+      user-select: none;
+    }
+
     .table-wrap {
       overflow-x: auto;
+      max-height: 500px;
     }
 
     table {
@@ -260,6 +313,9 @@
       background: #f8fafc;
       font-size: 12px;
       font-weight: 700;
+      position: sticky;
+      top: 0;
+      z-index: 10;
     }
 
     td.numeric,
@@ -317,8 +373,13 @@
 <body>
   <header>
     <div class="inner">
-      <h1>Shipping Index Dashboard</h1>
-      <p>Shanghai Containerized Freight Index (SCFI) · Baltic Dry Index (BDI)</p>
+      <div class="header-top">
+        <div>
+          <h1>Shipping Index Dashboard</h1>
+          <p>Shanghai Containerized Freight Index (SCFI) · Baltic Dry Index (BDI)</p>
+        </div>
+        <button class="btn-download" type="button" onclick="downloadCSV()">📥 CSV 다운로드</button>
+      </div>
     </div>
   </header>
 
@@ -363,20 +424,29 @@
 
       <div class="controls">
         <div class="control-group">
-          <label for="regionSelect">지역 / 항로 선택</label>
-
-          <select
-            id="regionSelect"
-            onchange="renderDashboard()"
-          >
-            <option value="">전체</option>
+          <label for="yearSelect">연도 선택 (기간)</label>
+          <select id="yearSelect" onchange="renderDashboard()">
+            <option value="">전체 연도</option>
           </select>
+        </div>
+
+        <div class="control-group" style="flex: 1; min-width: 280px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label>항로 복수 선택</label>
+            <div>
+              <button type="button" onclick="toggleAllRegions(true)" style="font-size: 11px; cursor: pointer; border:1px solid var(--border); background:#fff; padding:2px 6px; border-radius:4px;">전체 선택</button>
+              <button type="button" onclick="toggleAllRegions(false)" style="font-size: 11px; cursor: pointer; border:1px solid var(--border); background:#fff; padding:2px 6px; border-radius:4px;">해제</button>
+            </div>
+          </div>
+          <div id="regionCheckboxes" class="checkbox-container">
+            <!-- 체크박스 동적 생성 -->
+          </div>
         </div>
       </div>
 
       <div class="kpi-grid">
         <div class="kpi">
-          <span class="kpi-label">최신 지수</span>
+          <span class="kpi-label">최신 지수 (평균/대표)</span>
           <span id="latestValue" class="kpi-value">-</span>
           <span id="latestValueDate" class="kpi-sub">-</span>
         </div>
@@ -404,26 +474,23 @@
     </section>
 
     <section class="panel">
-      <h2>최근 데이터</h2>
+      <h2>날짜별 항로별 시세표</h2>
 
       <p class="section-description">
-        선택된 지수 및 지역 기준으로 최신 20개 데이터를 표시합니다.
+        세로축은 날짜, 가로축은 선택된 항로별 데이터로 나열됩니다.
       </p>
 
       <div class="table-wrap">
         <table>
-          <thead>
+          <thead id="dataTableHead">
             <tr>
               <th>일자</th>
-              <th>지수</th>
-              <th>지역 / 항로</th>
-              <th class="numeric">값</th>
             </tr>
           </thead>
 
           <tbody id="dataTableBody">
             <tr>
-              <td colspan="4" class="empty-message">
+              <td class="empty-message">
                 데이터 로딩 중...
               </td>
             </tr>
@@ -452,14 +519,9 @@
     };
 
     function formatNumber(value, decimals = 2) {
-      if (
-        value === null ||
-        value === undefined ||
-        Number.isNaN(Number(value))
-      ) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) {
         return "-";
       }
-
       return Number(value).toLocaleString("ko-KR", {
         minimumFractionDigits: decimals,
         maximumFractionDigits: decimals
@@ -467,28 +529,16 @@
     }
 
     function formatInteger(value) {
-      if (
-        value === null ||
-        value === undefined ||
-        Number.isNaN(Number(value))
-      ) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) {
         return "-";
       }
-
       return Number(value).toLocaleString("ko-KR");
     }
 
     function formatDate(dateString) {
-      if (!dateString) {
-        return "-";
-      }
-
+      if (!dateString) return "-";
       const date = new Date(dateString + "T00:00:00");
-
-      if (Number.isNaN(date.getTime())) {
-        return dateString;
-      }
-
+      if (Number.isNaN(date.getTime())) return dateString;
       return date.toLocaleDateString("ko-KR", {
         year: "numeric",
         month: "2-digit",
@@ -510,195 +560,155 @@
       const statusTitle = document.getElementById("statusTitle");
       const lastUpdated = document.getElementById("lastUpdated");
 
-      statusDot.className = isSuccess
-        ? "status-dot"
-        : "status-dot error";
-
+      statusDot.className = isSuccess ? "status-dot" : "status-dot error";
       statusTitle.textContent = title;
       lastUpdated.textContent = message;
     }
 
     function getCurrentIndexData() {
       if (!dashboardData || !dashboardData.indexes) {
-        return {
-          regions: [],
-          records: [],
-          record_count: 0,
-          latest_date: null,
-          last_sync: null
-        };
+        return { regions: [], records: [], record_count: 0, latest_date: null };
       }
-
-      return dashboardData.indexes[currentIndex] || {
-        regions: [],
-        records: [],
-        record_count: 0,
-        latest_date: null,
-        last_sync: null
-      };
+      return dashboardData.indexes[currentIndex] || { regions: [], records: [], record_count: 0, latest_date: null };
     }
 
-    function populateRegionSelect() {
-      const select = document.getElementById("regionSelect");
+    function populateControls() {
       const indexData = getCurrentIndexData();
-      const currentValue = select.value;
+      
+      // 연도 옵션 채우기
+      const yearSelect = document.getElementById("yearSelect");
+      const currentYearVal = yearSelect.value;
+      const years = [...new Set(indexData.records.map(r => String(r.DATE).substring(0, 4)))].sort().reverse();
 
-      select.innerHTML = '<option value="">전체</option>';
-
-      indexData.regions.forEach(function(region) {
-        const option = document.createElement("option");
-
-        option.value = region;
-        option.textContent = region;
-
-        select.appendChild(option);
+      yearSelect.innerHTML = '<option value="">전체 연도</option>';
+      years.forEach(year => {
+        const opt = document.createElement("option");
+        opt.value = year;
+        opt.textContent = year + "년";
+        yearSelect.appendChild(opt);
       });
-
-      if (indexData.regions.includes(currentValue)) {
-        select.value = currentValue;
+      if (years.includes(currentYearVal)) {
+        yearSelect.value = currentYearVal;
       }
+
+      // 항로 체크박스 채우기
+      const container = document.getElementById("regionCheckboxes");
+      // 기존에 체크되어 있던 항로 기억
+      const checkedRegions = Array.from(container.querySelectorAll("input[type='checkbox']:checked")).map(cb => cb.value);
+      
+      container.innerHTML = "";
+      indexData.regions.forEach((region, idx) => {
+        const label = document.createElement("label");
+        label.className = "checkbox-label";
+
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = region;
+        // 처음 로드시이거나 이전 선택 항목에 포함되어 있으면 체크
+        if (checkedRegions.length === 0 || checkedRegions.includes(region)) {
+          cb.checked = true;
+        }
+        cb.onchange = renderDashboard;
+
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(region));
+        container.appendChild(label);
+      });
+    }
+
+    function toggleAllRegions(checkStatus) {
+      const checkboxes = document.querySelectorAll("#regionCheckboxes input[type='checkbox']");
+      checkboxes.forEach(cb => cb.checked = checkStatus);
+      renderDashboard();
+    }
+
+    function getSelectedRegions() {
+      const checkboxes = document.querySelectorAll("#regionCheckboxes input[type='checkbox']:checked");
+      return Array.from(checkboxes).map(cb => cb.value);
     }
 
     function getFilteredRecords() {
       const indexData = getCurrentIndexData();
+      const selectedYear = document.getElementById("yearSelect").value;
+      const selectedRegions = getSelectedRegions();
 
-      const region = document.getElementById(
-        "regionSelect"
-      ).value;
+      let records = Array.isArray(indexData.records) ? [...indexData.records] : [];
 
-      let records = Array.isArray(indexData.records)
-        ? [...indexData.records]
-        : [];
-
-      if (region) {
-        records = records.filter(function(record) {
-          return record.REGION === region;
-        });
+      // 연도 필터
+      if (selectedYear) {
+        records = records.filter(r => String(r.DATE).startsWith(selectedYear));
       }
 
-      records.sort(function(a, b) {
-        return String(a.DATE).localeCompare(String(b.DATE));
-      });
+      // 항로 필터
+      if (selectedRegions.length > 0) {
+        records = records.filter(r => selectedRegions.includes(r.REGION));
+      }
 
+      records.sort((a, b) => String(a.DATE).localeCompare(String(b.DATE)));
       return records;
     }
 
     function updateKpis(records) {
-      const latestValueElement =
-        document.getElementById("latestValue");
+      const latestValueElement = document.getElementById("latestValue");
+      const latestValueDateElement = document.getElementById("latestValueDate");
+      const previousValueElement = document.getElementById("previousValue");
+      const previousValueDateElement = document.getElementById("previousValueDate");
+      const changeValueElement = document.getElementById("changeValue");
+      const changeRateElement = document.getElementById("changeRate");
+      const recordCountElement = document.getElementById("recordCount");
+      const regionCountElement = document.getElementById("regionCount");
 
-      const latestValueDateElement =
-        document.getElementById("latestValueDate");
-
-      const previousValueElement =
-        document.getElementById("previousValue");
-
-      const previousValueDateElement =
-        document.getElementById("previousValueDate");
-
-      const changeValueElement =
-        document.getElementById("changeValue");
-
-      const changeRateElement =
-        document.getElementById("changeRate");
-
-      const recordCountElement =
-        document.getElementById("recordCount");
-
-      const regionCountElement =
-        document.getElementById("regionCount");
-
-      const indexData = getCurrentIndexData();
-
-      recordCountElement.textContent = formatInteger(
-        records.length
-      );
-
-      regionCountElement.textContent =
-        "지역 / 항로 " +
-        formatInteger(indexData.regions.length) +
-        "개";
+      const selectedRegions = getSelectedRegions();
+      recordCountElement.textContent = formatInteger(records.length);
+      regionCountElement.textContent = "선택 항로 " + formatInteger(selectedRegions.length) + "개";
 
       if (records.length === 0) {
         latestValueElement.textContent = "-";
         latestValueDateElement.textContent = "데이터 없음";
-
         previousValueElement.textContent = "-";
         previousValueDateElement.textContent = "데이터 없음";
-
         changeValueElement.textContent = "-";
         changeRateElement.textContent = "-";
         changeValueElement.className = "kpi-value neutral";
-
         return;
       }
 
-      const latest = records[records.length - 1];
+      // 날짜별로 그룹화하여 가장 최근 날짜의 평균값 계산 등을 수행
+      const dateMap = {};
+      records.forEach(r => {
+        if (!dateMap[r.DATE]) dateMap[r.DATE] = [];
+        dateMap[r.DATE].push(Number(r.VALUE));
+      });
 
-      const previous = records.length >= 2
-        ? records[records.length - 2]
-        : null;
+      const dates = Object.keys(dateMap).sort();
+      const latestDate = dates[dates.length - 1];
+      const previousDate = dates.length >= 2 ? dates[dates.length - 2] : null;
 
-      latestValueElement.textContent = formatNumber(
-        latest.VALUE
-      );
+      const latestAvg = dateMap[latestDate].reduce((a, b) => a + b, 0) / dateMap[latestDate].length;
+      latestValueElement.textContent = formatNumber(latestAvg);
+      latestValueDateElement.textContent = formatDate(latestDate) + " (평균)";
 
-      latestValueDateElement.textContent = formatDate(
-        latest.DATE
-      );
-
-      if (!previous) {
+      if (!previousDate) {
         previousValueElement.textContent = "-";
-        previousValueDateElement.textContent =
-          "비교 데이터 없음";
-
+        previousValueDateElement.textContent = "비교 데이터 없음";
         changeValueElement.textContent = "-";
-        changeRateElement.textContent =
-          "비교 데이터 없음";
-
+        changeRateElement.textContent = "-";
         changeValueElement.className = "kpi-value neutral";
-
         return;
       }
 
-      const difference =
-        Number(latest.VALUE) -
-        Number(previous.VALUE);
+      const prevAvg = dateMap[previousDate].reduce((a, b) => a + b, 0) / dateMap[previousDate].length;
+      previousValueElement.textContent = formatNumber(prevAvg);
+      previousValueDateElement.textContent = formatDate(previousDate) + " (평균)";
 
-      const percentChange =
-        Number(previous.VALUE) !== 0
-          ? (difference / Number(previous.VALUE)) * 100
-          : null;
+      const diff = latestAvg - prevAvg;
+      const rate = prevAvg !== 0 ? (diff / prevAvg) * 100 : 0;
+      const sign = diff > 0 ? "+" : "";
+      const styleClass = diff > 0 ? "positive" : diff < 0 ? "negative" : "neutral";
 
-      const sign = difference > 0 ? "+" : "";
-
-      const styleClass = difference > 0
-        ? "positive"
-        : difference < 0
-          ? "negative"
-          : "neutral";
-
-      previousValueElement.textContent = formatNumber(
-        previous.VALUE
-      );
-
-      previousValueDateElement.textContent = formatDate(
-        previous.DATE
-      );
-
-      changeValueElement.textContent =
-        sign + formatNumber(difference);
-
-      changeValueElement.className =
-        "kpi-value " + styleClass;
-
-      if (percentChange === null) {
-        changeRateElement.textContent =
-          "변화율 계산 불가";
-      } else {
-        changeRateElement.textContent =
-          sign + formatNumber(percentChange, 2) + "%";
-      }
+      changeValueElement.textContent = sign + formatNumber(diff);
+      changeValueElement.className = "kpi-value " + styleClass;
+      changeRateElement.textContent = sign + formatNumber(rate, 2) + "%";
     }
 
     function renderChart(records) {
@@ -706,168 +716,137 @@
 
       if (records.length === 0) {
         Plotly.purge(chartElement);
-
         chartElement.innerHTML = `
           <div class="empty-message">
-            선택한 조건에 해당하는 데이터가 없습니다.<br>
-            GitHub Actions 실행 로그와
-            index_history.db의 index_raw 테이블을 확인해 주세요.
+            선택한 조건에 해당하는 데이터가 없습니다.
           </div>
         `;
-
         return;
       }
 
-      const selectedRegion =
-        document.getElementById("regionSelect").value;
-
       const groupedRecords = {};
-
-      records.forEach(function(record) {
-        const groupName = selectedRegion
-          ? selectedRegion
-          : record.REGION;
-
-        if (!groupedRecords[groupName]) {
-          groupedRecords[groupName] = [];
+      records.forEach(record => {
+        if (!groupedRecords[record.REGION]) {
+          groupedRecords[record.REGION] = [];
         }
-
-        groupedRecords[groupName].push(record);
+        groupedRecords[record.REGION].push(record);
       });
 
-      const traces = Object.keys(groupedRecords).map(
-        function(region) {
-          const regionRecords = groupedRecords[region];
-
-          return {
-            x: regionRecords.map(function(record) {
-              return record.DATE;
-            }),
-            y: regionRecords.map(function(record) {
-              return Number(record.VALUE);
-            }),
-            type: "scatter",
-            mode: "lines+markers",
-            name: region,
-            line: {
-              width: 2.5,
-              color: selectedRegion
-                ? INDEX_COLORS[currentIndex]
-                : undefined
-            },
-            marker: {
-              size: 5
-            },
-            hovertemplate:
-              "<b>" + escapeHtml(region) + "</b><br>" +
-              "일자: %{x}<br>" +
-              "값: %{y:,.2f}<extra></extra>"
-          };
-        }
-      );
+      const traces = Object.keys(groupedRecords).map(region => {
+        const regRecords = groupedRecords[region];
+        return {
+          x: regRecords.map(r => r.DATE),
+          y: regRecords.map(r => Number(r.VALUE)),
+          type: "scatter",
+          mode: "lines+markers",
+          name: region,
+          line: { width: 2 },
+          marker: { size: 4 },
+          hovertemplate: "<b>" + escapeHtml(region) + "</b><br>일자: %{x}<br>값: %{y:,.2f}<extra></extra>"
+        };
+      });
 
       const layout = {
-        margin: {
-          l: 70,
-          r: 30,
-          t: 30,
-          b: 60
-        },
+        margin: { l: 70, r: 30, t: 30, b: 60 },
         paper_bgcolor: "#ffffff",
         plot_bgcolor: "#ffffff",
         hovermode: "x unified",
-        showlegend: !selectedRegion,
-        legend: {
-          orientation: "h",
-          y: -0.25
-        },
-        xaxis: {
-          title: "일자",
-          showgrid: false,
-          tickformat: "%Y-%m-%d"
-        },
-        yaxis: {
-          title: "Index Value",
-          gridcolor: "#e5edf5",
-          zerolinecolor: "#d9e2ec"
-        }
+        showlegend: true,
+        legend: { orientation: "h", y: -0.3 },
+        xaxis: { title: "일자", showgrid: false },
+        yaxis: { title: "Index Value", gridcolor: "#e5edf5", zerolinecolor: "#d9e2ec" }
       };
 
-      const config = {
-        responsive: true,
-        displaylogo: false,
-        modeBarButtonsToRemove: [
-          "lasso2d",
-          "select2d",
-          "autoScale2d"
-        ]
-      };
-
-      Plotly.newPlot(
-        chartElement,
-        traces,
-        layout,
-        config
-      );
+      Plotly.newPlot(chartElement, traces, layout, { responsive: true, displaylogo: false });
     }
 
     function renderTable(records) {
-      const tableBody = document.getElementById(
-        "dataTableBody"
-      );
+      const tableHead = document.getElementById("dataTableHead");
+      const tableBody = document.getElementById("dataTableBody");
 
-      if (records.length === 0) {
-        tableBody.innerHTML = `
-          <tr>
-            <td colspan="4" class="empty-message">
-              표시할 데이터가 없습니다.
-            </td>
-          </tr>
-        `;
+      const selectedRegions = getSelectedRegions();
 
+      if (records.length === 0 || selectedRegions.length === 0) {
+        tableHead.innerHTML = "<tr><th>일자</th></tr>";
+        tableBody.innerHTML = '<tr><td class="empty-message">표시할 데이터가 없습니다.</td></tr>';
         return;
       }
 
-      const latestRecords = [...records]
-        .sort(function(a, b) {
-          return String(b.DATE).localeCompare(String(a.DATE));
-        })
-        .slice(0, 20);
+      // 피벗 구조 만들기: 세로축 = 날짜, 가로축 = 항로
+      const pivotData = {};
+      records.forEach(r => {
+        if (!pivotData[r.DATE]) pivotData[r.DATE] = {};
+        pivotData[r.DATE][r.REGION] = r.VALUE;
+      });
 
-      tableBody.innerHTML = latestRecords.map(
-        function(record) {
-          return `
-            <tr>
-              <td>${escapeHtml(formatDate(record.DATE))}</td>
-              <td>${escapeHtml(record.INDEX_NAME)}</td>
-              <td>${escapeHtml(record.REGION)}</td>
-              <td class="numeric">
-                ${escapeHtml(formatNumber(record.VALUE))}
-              </td>
-            </tr>
-          `;
-        }
-      ).join("");
+      const dates = Object.keys(pivotData).sort().reverse(); // 최신 날짜가 위로
+
+      // 헤더 구성
+      let headHtml = '<tr><th>일자</th>';
+      selectedRegions.forEach(reg => {
+        headHtml += `<th class="numeric">${escapeHtml(reg)}</th>`;
+      });
+      headHtml += '</tr>';
+      tableHead.innerHTML = headHtml;
+
+      // 바디 구성
+      let bodyHtml = "";
+      dates.forEach(date => {
+        bodyHtml += `<tr><td>${escapeHtml(formatDate(date))}</td>`;
+        selectedRegions.forEach(reg => {
+          const val = pivotData[date][reg];
+          bodyHtml += `<td class="numeric">${val !== undefined ? escapeHtml(formatNumber(val)) : "-"}</td>`;
+        });
+        bodyHtml += `</tr>`;
+      });
+      tableBody.innerHTML = bodyHtml;
+    }
+
+    function downloadCSV() {
+      const records = getFilteredRecords();
+      const selectedRegions = getSelectedRegions();
+
+      if (records.length === 0 || selectedRegions.length === 0) {
+        alert("다운로드할 데이터가 없습니다.");
+        return;
+      }
+
+      const pivotData = {};
+      records.forEach(r => {
+        if (!pivotData[r.DATE]) pivotData[r.DATE] = {};
+        pivotData[r.DATE][r.REGION] = r.VALUE;
+      });
+
+      const dates = Object.keys(pivotData).sort().reverse();
+
+      let csvRows = [];
+      // 헤더
+      let headers = ["DATE", ...selectedRegions];
+      csvRows.push(headers.join(","));
+
+      // 데이터 행
+      dates.forEach(date => {
+        let row = [date];
+        selectedRegions.forEach(reg => {
+          let val = pivotData[date][reg];
+          row.push(val !== undefined ? val : "");
+        });
+        csvRows.push(row.join(","));
+      });
+
+      const csvString = csvRows.join("\n");
+      const blob = new Blob(["\uFEFF" + csvString], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.setAttribute("href", url);
+      a.setAttribute("download", `${currentIndex}_dashboard_data.csv`);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     }
 
     function renderDashboard() {
-      const indexData = getCurrentIndexData();
       const records = getFilteredRecords();
-
-      document.getElementById("dashboardTitle").textContent =
-        currentIndex + " Dashboard";
-
-      document.getElementById(
-        "dashboardDescription"
-      ).textContent = INDEX_DESCRIPTIONS[currentIndex];
-
-      if (!indexData.records || indexData.records.length === 0) {
-        updateKpis([]);
-        renderChart([]);
-        renderTable([]);
-        return;
-      }
-
       updateKpis(records);
       renderChart(records);
       renderTable(records);
@@ -876,76 +855,41 @@
     function selectIndex(indexName) {
       currentIndex = indexName;
 
-      document.getElementById("scfiTab").classList.toggle(
-        "active",
-        indexName === "SCFI"
-      );
+      document.getElementById("scfiTab").classList.toggle("active", indexName === "SCFI");
+      document.getElementById("bdiTab").classList.toggle("active", indexName === "BDI");
 
-      document.getElementById("bdiTab").classList.toggle(
-        "active",
-        indexName === "BDI"
-      );
-
-      populateRegionSelect();
+      populateControls();
       renderDashboard();
     }
 
     async function loadDashboardData() {
       try {
-        const response = await fetch(
-          "shipping_index_data.json?ts=" + Date.now(),
-          {
-            cache: "no-store"
-          }
-        );
+        const response = await fetch("shipping_index_data.json?ts=" + Date.now(), {
+          cache: "no-store"
+        });
 
         if (!response.ok) {
-          throw new Error(
-            "JSON request failed: HTTP " + response.status
-          );
+          throw new Error("JSON request failed: HTTP " + response.status);
         }
 
         dashboardData = await response.json();
+        const generatedAt = dashboardData.generated_at ? dashboardData.generated_at : "-";
 
-        const generatedAt = dashboardData.generated_at
-          ? dashboardData.generated_at
-          : "-";
+        setStatus(true, "데이터 로드 완료", "최종 갱신: " + generatedAt);
 
-        setStatus(
-          true,
-          "데이터 로드 완료",
-          "최종 갱신: " + generatedAt
-        );
-
-        populateRegionSelect();
+        populateControls();
         renderDashboard();
 
       } catch (error) {
         console.error(error);
-
-        setStatus(
-          false,
-          "데이터 로드 실패",
-          "shipping_index_data.json 파일을 불러올 수 없습니다."
-        );
-
-        document.getElementById(
-          "dashboardDescription"
-        ).textContent =
-          "대시보드 데이터를 불러오는 중 오류가 발생했습니다.";
-
-        updateKpis([]);
-        renderChart([]);
-        renderTable([]);
+        setStatus(false, "데이터 로드 실패", "shipping_index_data.json 파일을 불러올 수 없습니다.");
+        document.getElementById("dashboardDescription").textContent = "대시보드 데이터를 불러오는 중 오류가 발생했습니다.";
       }
     }
 
-    document.addEventListener(
-      "DOMContentLoaded",
-      function() {
-        loadDashboardData();
-      }
-    );
+    document.addEventListener("DOMContentLoaded", function() {
+      loadDashboardData();
+    });
   </script>
 </body>
 </html>
