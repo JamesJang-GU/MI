@@ -1,1 +1,600 @@
-<h1>Alphaliner Dashboard Template (alphaliner.html) Missing</h1>
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alphaliner TOP 100 Dashboard</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root {
+      --navy: #102a43;
+      --blue: #1677c8;
+      --blue-light: #eaf4fb;
+      --sky: #38a3db;
+      --green: #16876e;
+      --red: #c23b3b;
+      --text: #243b53;
+      --muted: #627d98;
+      --border: #d9e2ec;
+      --background: #f5f8fb;
+      --white: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--text);
+      font-family: Arial, "Noto Sans KR", sans-serif;
+    }
+
+    .header {
+      background: linear-gradient(120deg, #102a43, #1677c8);
+      color: #ffffff;
+      padding: 30px 24px;
+    }
+
+    .header-inner {
+      max-width: 1440px;
+      margin: 0 auto;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 700;
+    }
+
+    .header p {
+      margin: 9px 0 0;
+      color: #d9efff;
+      font-size: 14px;
+    }
+
+    .container {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .status {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 20px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #94a3b8;
+    }
+
+    .status-dot.success {
+      background: #16a34a;
+    }
+
+    .status-dot.error {
+      background: #dc2626;
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(16, 42, 67, 0.05);
+    }
+
+    .kpi-label {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+
+    .kpi-value {
+      color: var(--navy);
+      font-size: 26px;
+      font-weight: 700;
+    }
+
+    .kpi-sub {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .chart-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .chart-card {
+      min-height: 390px;
+    }
+
+    .chart-title {
+      margin: 0 0 6px;
+      color: var(--navy);
+      font-size: 17px;
+    }
+
+    .chart-note {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .chart-wrap {
+      position: relative;
+      height: 285px;
+    }
+
+    .table-card {
+      overflow: hidden;
+      padding: 0;
+    }
+
+    .table-heading {
+      padding: 20px 20px 12px;
+    }
+
+    .table-heading h2 {
+      margin: 0;
+      color: var(--navy);
+      font-size: 18px;
+    }
+
+    .table-heading p {
+      margin: 7px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .table-scroll {
+      overflow-x: auto;
+      max-height: 660px;
+      overflow-y: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 900px;
+      font-size: 13px;
+    }
+
+    thead {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+
+    th {
+      background: #eaf4fb;
+      color: #334e68;
+      padding: 12px 14px;
+      text-align: left;
+      white-space: nowrap;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 11px 14px;
+      border-bottom: 1px solid #edf2f7;
+      white-space: nowrap;
+    }
+
+    tbody tr:hover {
+      background: #f8fbfd;
+    }
+
+    .number {
+      text-align: right;
+    }
+
+    .rank {
+      color: var(--blue);
+      font-weight: 700;
+    }
+
+    .empty-message,
+    .error-message {
+      padding: 28px;
+      border-radius: 10px;
+      background: var(--white);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .error-message {
+      border-color: #fecaca;
+      color: #b91c1c;
+      background: #fef2f2;
+    }
+
+    .footer {
+      padding: 20px 0 5px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+    }
+
+    @media (max-width: 980px) {
+      .kpi-grid,
+      .chart-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .container {
+        padding: 16px;
+      }
+
+      .header {
+        padding: 24px 16px;
+      }
+
+      .header h1 {
+        font-size: 22px;
+      }
+
+      .kpi-grid,
+      .chart-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <h1>Alphaliner TOP 100 Liner Operators</h1>
+      <p>Global container liner operator capacity, fleet and orderbook monitoring dashboard</p>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="status">
+      <span id="statusDot" class="status-dot"></span>
+      <span id="statusText">Alphaliner 데이터를 불러오는 중입니다.</span>
+    </div>
+
+    <section id="dashboard" style="display:none;">
+      <div class="kpi-grid">
+        <article class="card">
+          <div class="kpi-label">TOP 100 총 선복량</div>
+          <div id="totalTeu" class="kpi-value">-</div>
+          <div class="kpi-sub">Total Capacity</div>
+        </article>
+
+        <article class="card">
+          <div class="kpi-label">운항 선사 수</div>
+          <div id="operatorCount" class="kpi-value">-</div>
+          <div class="kpi-sub">Operators in latest snapshot</div>
+        </article>
+
+        <article class="card">
+          <div class="kpi-label">총 선박 수</div>
+          <div id="totalShips" class="kpi-value">-</div>
+          <div class="kpi-sub">Total Ships</div>
+        </article>
+
+        <article class="card">
+          <div class="kpi-label">1위 선사</div>
+          <div id="leaderName" class="kpi-value">-</div>
+          <div id="leaderSub" class="kpi-sub">-</div>
+        </article>
+      </div>
+
+      <div class="chart-grid">
+        <section class="card chart-card">
+          <h2 class="chart-title">상위 10개 선사 선복량</h2>
+          <p class="chart-note">Latest snapshot · 단위: TEU</p>
+          <div class="chart-wrap">
+            <canvas id="topOperatorsChart"></canvas>
+          </div>
+        </section>
+
+        <section class="card chart-card">
+          <h2 class="chart-title">TOP 100 총 선복량 추이</h2>
+          <p class="chart-note">Historical snapshots · 단위: Million TEU</p>
+          <div class="chart-wrap">
+            <canvas id="historyChart"></canvas>
+          </div>
+        </section>
+      </div>
+
+      <section class="card table-card">
+        <div class="table-heading">
+          <h2>최신 TOP 100 선사 순위</h2>
+          <p id="tableNote">-</p>
+        </div>
+
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Operator</th>
+                <th class="number">Total TEU</th>
+                <th class="number">Ships</th>
+                <th class="number">Market Share</th>
+                <th class="number">Orderbook TEU</th>
+                <th class="number">Orderbook / Existing</th>
+              </tr>
+            </thead>
+            <tbody id="operatorTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <section id="messageBox"></section>
+
+    <div class="footer">
+      Source: <a href="https://alphaliner.axsmarine.com/PublicTop100/" target="_blank" rel="noopener">Alphaliner TOP 100</a>
+      · Generated: <span id="generatedAt">-</span>
+    </div>
+  </main>
+
+  <script>
+    let topOperatorsChart = null;
+    let historyChart = null;
+
+    function numberFormat(value) {
+      const number = Number(value || 0);
+      return new Intl.NumberFormat("en-US").format(number);
+    }
+
+    function decimalFormat(value, digits = 2) {
+      const number = Number(value || 0);
+      return number.toLocaleString("en-US", {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function showError(message) {
+      document.getElementById("statusDot").className = "status-dot error";
+      document.getElementById("statusText").textContent = "데이터 로드 오류";
+      document.getElementById("messageBox").innerHTML =
+        '<div class="error-message"><strong>Alphaliner Dashboard 데이터를 표시할 수 없습니다.</strong><br>' +
+        escapeHtml(message) +
+        '<br><br>GitHub 저장소의 <code>Alphaliner/alphaliner_data.json</code> 파일 생성 여부를 확인해 주세요.</div>';
+    }
+
+    function renderKpis(rows, history) {
+      const totalTeu = rows.reduce((sum, row) => sum + Number(row.total_teu || 0), 0);
+      const totalShips = rows.reduce((sum, row) => sum + Number(row.total_ships || 0), 0);
+      const leader = rows.length ? rows[0] : null;
+
+      document.getElementById("totalTeu").textContent = numberFormat(totalTeu) + " TEU";
+      document.getElementById("operatorCount").textContent = numberFormat(rows.length);
+      document.getElementById("totalShips").textContent = numberFormat(totalShips);
+
+      if (leader) {
+        document.getElementById("leaderName").textContent = leader.operator_name || "-";
+        document.getElementById("leaderSub").textContent =
+          numberFormat(leader.total_teu) + " TEU · " +
+          decimalFormat(leader.market_share, 2) + "% share";
+      }
+    }
+
+    function renderTopOperatorsChart(rows) {
+      const top10 = rows.slice(0, 10);
+
+      if (topOperatorsChart) {
+        topOperatorsChart.destroy();
+      }
+
+      topOperatorsChart = new Chart(
+        document.getElementById("topOperatorsChart"),
+        {
+          type: "bar",
+          data: {
+            labels: top10.map(row => row.operator_name),
+            datasets: [{
+              label: "Total TEU",
+              data: top10.map(row => Number(row.total_teu || 0)),
+              backgroundColor: "#1677c8",
+              borderRadius: 5
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: "y",
+            plugins: {
+              legend: {
+                display: false
+              },
+              tooltip: {
+                callbacks: {
+                  label: context => numberFormat(context.raw) + " TEU"
+                }
+              }
+            },
+            scales: {
+              x: {
+                ticks: {
+                  callback: value => (Number(value) / 1000000).toFixed(1) + "M"
+                },
+                grid: {
+                  color: "#edf2f7"
+                }
+              },
+              y: {
+                grid: {
+                  display: false
+                }
+              }
+            }
+          }
+        }
+      );
+    }
+
+    function renderHistoryChart(history) {
+      if (historyChart) {
+        historyChart.destroy();
+      }
+
+      const labels = history.map(row => row.data_date || "");
+      const values = history.map(row => Number(row.total_teu || 0) / 1000000);
+
+      historyChart = new Chart(
+        document.getElementById("historyChart"),
+        {
+          type: "line",
+          data: {
+            labels: labels,
+            datasets: [{
+              label: "Total Capacity",
+              data: values,
+              borderColor: "#16876e",
+              backgroundColor: "rgba(22, 135, 110, 0.15)",
+              fill: true,
+              tension: 0.3,
+              pointRadius: 3,
+              pointHoverRadius: 5
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                display: false
+              },
+              tooltip: {
+                callbacks: {
+                  label: context => decimalFormat(context.raw, 2) + " Million TEU"
+                }
+              }
+            },
+            scales: {
+              y: {
+                ticks: {
+                  callback: value => value + "M"
+                },
+                grid: {
+                  color: "#edf2f7"
+                }
+              },
+              x: {
+                grid: {
+                  display: false
+                }
+              }
+            }
+          }
+        }
+      );
+    }
+
+    function renderTable(rows, latestDate) {
+      const tbody = document.getElementById("operatorTableBody");
+
+      tbody.innerHTML = rows.map(row => {
+        const marketShare = row.market_share === null || row.market_share === undefined
+          ? "-"
+          : decimalFormat(row.market_share, 2) + "%";
+
+        const orderbookPct = row.orderbook_pct_existing === null || row.orderbook_pct_existing === undefined
+          ? "-"
+          : decimalFormat(row.orderbook_pct_existing, 1) + "%";
+
+        return `
+          <tr>
+            <td class="rank">${escapeHtml(row.rank)}</td>
+            <td><strong>${escapeHtml(row.operator_name)}</strong></td>
+            <td class="number">${numberFormat(row.total_teu)}</td>
+            <td class="number">${row.total_ships === null || row.total_ships === undefined ? "-" : numberFormat(row.total_ships)}</td>
+            <td class="number">${marketShare}</td>
+            <td class="number">${row.orderbook_teu === null || row.orderbook_teu === undefined ? "-" : numberFormat(row.orderbook_teu)}</td>
+            <td class="number">${orderbookPct}</td>
+          </tr>
+        `;
+      }).join("");
+
+      document.getElementById("tableNote").textContent =
+        "기준일: " + (latestDate || "-") + " · " + numberFormat(rows.length) + "개 선사";
+    }
+
+    async function loadDashboard() {
+      try {
+        const response = await fetch("./alphaliner_data.json?v=" + Date.now(), {
+          cache: "no-store"
+        });
+
+        if (!response.ok) {
+          throw new Error("alphaliner_data.json HTTP " + response.status);
+        }
+
+        const data = await response.json();
+        const rows = Array.isArray(data.latest_detail) ? data.latest_detail : [];
+        const history = Array.isArray(data.history) ? data.history : [];
+
+        if (!rows.length) {
+          throw new Error(
+            "latest_detail 데이터가 0건입니다. 크롤링 결과와 SQLite Snapshot 저장 상태를 확인해 주세요."
+          );
+        }
+
+        const lastSync = data.last_sync || {};
+        const latestDate = rows[0]?.data_date || lastSync.data_date || "-";
+
+        renderKpis(rows, history);
+        renderTopOperatorsChart(rows);
+        renderHistoryChart(history);
+        renderTable(rows, latestDate);
+
+        document.getElementById("generatedAt").textContent =
+          data.generated_at || "-";
+
+        document.getElementById("statusDot").className = "status-dot success";
+        document.getElementById("statusText").textContent =
+          "정상 로드 · 기준일: " + latestDate +
+          " · 최종 실행 상태: " + (lastSync.status || "N/A");
+
+        document.getElementById("dashboard").style.display = "block";
+      } catch (error) {
+        console.error(error);
+        showError(error.message || String(error));
+      }
+    }
+
+    loadDashboard();
+  </script>
+</body>
+</html>
