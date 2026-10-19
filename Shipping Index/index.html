@@ -1,1015 +1,859 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Shipping Index Dashboard</title>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+  <meta
+    name="description"
+    content="SCFI 및 BDI 해운 운임·시황 지수 정적 대시보드"
+  >
 
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <title>Shipping Index Dashboard | SCFI & BDI</title>
 
-<style>
-:root{
-  --bg:#eef3f8;
-  --surface:#ffffff;
-  --border:#dbe4ee;
-  --text:#1f2937;
-  --muted:#64748b;
-  --primary:#2563eb;
-  --shadow:0 8px 28px rgba(15,23,42,.08);
-}
-*{box-sizing:border-box}
-body{
-  margin:0;
-  font-family:"Segoe UI",Arial,sans-serif;
-  background:linear-gradient(180deg,#f7fafc 0%,var(--bg) 100%);
-  color:var(--text);
-}
-.page-wrap{max-width:1600px;margin:auto;padding:24px}
-.layout{
-  display:grid;
-  grid-template-columns:330px minmax(0,1fr);
-  gap:22px;
-  align-items:start;
-}
-.sidebar,.card,.main-header{
-  background:var(--surface);
-  border:1px solid var(--border);
-  border-radius:18px;
-  box-shadow:var(--shadow);
-}
-.sidebar{padding:20px;position:sticky;top:20px}
-.main-header{padding:22px 24px;margin-bottom:20px}
-.card{padding:20px;margin-bottom:20px}
-.sidebar-section{
-  border-bottom:1px solid #e5edf5;
-  padding-bottom:18px;
-  margin-bottom:18px;
-}
-.sidebar-section:last-child{border:0;padding:0;margin:0}
-.sidebar-label{
-  font-size:12px;
-  font-weight:800;
-  letter-spacing:.5px;
-  color:#475569;
-  text-transform:uppercase;
-  margin-bottom:10px;
-}
-.main-title{margin:0 0 10px;font-size:30px;color:#0f172a}
-.meta{font-size:13px;line-height:1.8;color:var(--muted)}
-.meta a{color:var(--primary);font-weight:700;text-decoration:none}
-.index-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.index-tab,.btn{
-  border:1px solid #cbd5e1;
-  background:#fff;
-  border-radius:10px;
-  padding:10px;
-  min-height:40px;
-  text-align:center;
-  cursor:pointer;
-  color:#334155;
-  font-size:13px;
-  font-weight:800;
-}
-.index-tab.active,.btn.primary{
-  color:#fff;
-  border-color:var(--primary);
-  background:var(--primary);
-}
-.field-block{margin-bottom:14px}
-.field-label{
-  display:block;
-  margin-bottom:6px;
-  font-size:12px;
-  font-weight:700;
-  color:#334155;
-}
-select,input[type="date"],input[type="number"]{
-  width:100%;
-  min-height:40px;
-  padding:9px 10px;
-  border:1px solid #cbd5e1;
-  border-radius:10px;
-  background:#fff;
-}
-select[multiple]{min-height:230px}
-input[type="color"]{
-  width:45px;
-  height:32px;
-  padding:2px;
-  border:1px solid #cbd5e1;
-  border-radius:7px;
-}
-.actions{display:flex;gap:8px;flex-wrap:wrap}
-.metrics-grid{
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
-  gap:14px;
-}
-.metric{
-  background:#f8fafc;
-  border:1px solid #e5edf5;
-  border-radius:14px;
-  padding:16px;
-}
-.metric-label{
-  color:var(--muted);
-  font-size:12px;
-  font-weight:800;
-  text-transform:uppercase;
-}
-.metric-value{
-  margin-top:7px;
-  font-size:24px;
-  font-weight:800;
-  color:#0f172a;
-}
-.section-title{margin:0 0 14px;font-size:18px;color:#0f172a}
-.toolbar{
-  display:flex;
-  gap:12px;
-  align-items:center;
-  justify-content:space-between;
-  flex-wrap:wrap;
-  margin-bottom:10px;
-}
-.chart{min-height:570px}
-.table-wrap{overflow:auto}
-table{width:100%;border-collapse:collapse;font-size:13px}
-th,td{
-  padding:10px 12px;
-  text-align:left;
-  white-space:nowrap;
-  border:1px solid #e5e7eb;
-}
-th{background:#f1f5f9;color:#334155}
-.peak{color:#b91c1c;font-weight:800}
-.trough{color:#1d4ed8;font-weight:800}
-.spread{color:#7c3aed;font-weight:800}
-.color-row{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:8px;
-  margin:7px 0;
-}
-.color-row label{
-  max-width:230px;
-  font-size:12px;
-  overflow:hidden;
-  white-space:nowrap;
-  text-overflow:ellipsis;
-}
-.loading,.empty{
-  padding:48px;
-  text-align:center;
-  color:var(--muted);
-  font-weight:700;
-}
-@media(max-width:1100px){
-  .layout{grid-template-columns:1fr}
-  .sidebar{position:static}
-}
-@media(max-width:650px){
-  .page-wrap{padding:14px}
-  .main-title{font-size:24px}
-}
-</style>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+
+  <style>
+    :root {
+      --navy: #102a43;
+      --blue: #1f5fa8;
+      --light-blue: #eef5fb;
+      --border: #d9e2ec;
+      --text: #243b53;
+      --muted: #627d98;
+      --bg: #f5f7fa;
+      --white: #ffffff;
+      --danger: #b42318;
+      --success: #027a48;
+      --warning: #b54708;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, "Noto Sans KR", "Malgun Gothic", sans-serif;
+    }
+
+    header {
+      padding: 30px 20px;
+      color: var(--white);
+      background: linear-gradient(135deg, #102a43, #1f5fa8);
+    }
+
+    header .inner,
+    main {
+      width: 100%;
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 32px;
+      letter-spacing: -0.5px;
+    }
+
+    header p {
+      margin: 9px 0 0;
+      color: #d9eafd;
+      font-size: 15px;
+    }
+
+    main {
+      padding: 22px 16px 40px;
+    }
+
+    .panel,
+    .status,
+    .kpi {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--white);
+      box-shadow: 0 3px 12px rgba(16, 42, 67, 0.06);
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+      padding: 13px 16px;
+      font-size: 13px;
+    }
+
+    .status-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+
+    .status-dot.error {
+      background: var(--danger);
+    }
+
+    .status-text {
+      color: var(--muted);
+    }
+
+    .panel {
+      margin-bottom: 18px;
+      padding: 20px;
+    }
+
+    h2 {
+      margin: 0 0 16px;
+      color: var(--navy);
+      font-size: 20px;
+    }
+
+    .section-description {
+      margin: -6px 0 18px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .index-tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .tab-button {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 18px;
+      color: var(--text);
+      background: var(--white);
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 700;
+      transition: all 0.2s ease;
+    }
+
+    .tab-button:hover {
+      border-color: var(--blue);
+      color: var(--blue);
+    }
+
+    .tab-button.active {
+      border-color: var(--blue);
+      color: var(--white);
+      background: var(--blue);
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+
+    .kpi {
+      min-height: 118px;
+      padding: 16px;
+    }
+
+    .kpi-label {
+      display: block;
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .kpi-value {
+      display: block;
+      color: var(--navy);
+      font-size: 27px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .kpi-sub {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .positive {
+      color: var(--success);
+    }
+
+    .negative {
+      color: var(--danger);
+    }
+
+    .neutral {
+      color: var(--muted);
+    }
+
+    .chart {
+      width: 100%;
+      min-height: 440px;
+    }
+
+    .controls {
+      display: flex;
+      align-items: end;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .control-group label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    select {
+      min-width: 200px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 10px 12px;
+      color: var(--text);
+      background: var(--white);
+      font-size: 14px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    th {
+      color: var(--muted);
+      background: #f8fafc;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    td.numeric,
+    th.numeric {
+      text-align: right;
+    }
+
+    .empty-message {
+      padding: 30px 18px;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      background: #f8fafc;
+      text-align: center;
+      line-height: 1.7;
+    }
+
+    footer {
+      padding: 20px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    @media (max-width: 900px) {
+      .kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 560px) {
+      header {
+        padding: 24px 16px;
+      }
+
+      h1 {
+        font-size: 25px;
+      }
+
+      .panel {
+        padding: 16px;
+      }
+
+      .kpi-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .chart {
+        min-height: 370px;
+      }
+    }
+  </style>
 </head>
 
 <body>
-<div class="page-wrap">
-  <div class="layout">
+  <header>
+    <div class="inner">
+      <h1>Shipping Index Dashboard</h1>
+      <p>Shanghai Containerized Freight Index (SCFI) · Baltic Dry Index (BDI)</p>
+    </div>
+  </header>
 
-    <aside class="sidebar">
-      <div class="sidebar-section">
-        <div class="sidebar-label">Index</div>
-        <div class="index-tabs">
-          <button id="tabSCFI"
-                  class="index-tab active"
-                  onclick="changeIndex('SCFI')">
-            SCFI
-          </button>
-          <button id="tabBDI"
-                  class="index-tab"
-                  onclick="changeIndex('BDI')">
-            BDI
-          </button>
-        </div>
+  <main>
+    <section class="status">
+      <div class="status-left">
+        <span id="statusDot" class="status-dot"></span>
+        <strong id="statusTitle">데이터 로딩 중</strong>
       </div>
 
-      <div class="sidebar-section">
-        <div class="sidebar-label">Date Range</div>
+      <div id="lastUpdated" class="status-text">
+        shipping_index_data.json 확인 중...
+      </div>
+    </section>
 
-        <div class="field-block">
-          <label class="field-label" for="startDate">시작일</label>
-          <input id="startDate"
-                 type="date"
-                 onchange="renderDashboard()">
-        </div>
+    <section class="panel">
+      <div class="index-tabs">
+        <button
+          id="scfiTab"
+          class="tab-button active"
+          type="button"
+          onclick="selectIndex('SCFI')"
+        >
+          SCFI
+        </button>
 
-        <div class="field-block">
-          <label class="field-label" for="endDate">종료일</label>
-          <input id="endDate"
-                 type="date"
-                 onchange="renderDashboard()">
-        </div>
-
-        <div class="field-block">
-          <label class="field-label" for="yearRange">연도 범위</label>
-          <select id="yearRange" onchange="renderDashboard()">
-            <option value="0">전체 기간</option>
-            <option value="1">최근 1년</option>
-            <option value="3">최근 3년</option>
-            <option value="5">최근 5년</option>
-            <option value="10">최근 10년</option>
-          </select>
-        </div>
+        <button
+          id="bdiTab"
+          class="tab-button"
+          type="button"
+          onclick="selectIndex('BDI')"
+        >
+          BDI
+        </button>
       </div>
 
-      <div class="sidebar-section">
-        <div class="sidebar-label">Routes</div>
-
-        <div class="field-block">
-          <label class="field-label" for="regionSelect">
-            항목 복수 선택
-          </label>
-          <select id="regionSelect"
-                  multiple
-                  onchange="onRegionChange()">
-          </select>
-        </div>
-
-        <div class="actions">
-          <button class="btn primary" onclick="selectAllRegions()">
-            전체 선택
-          </button>
-          <button class="btn" onclick="clearRegions()">
-            선택 해제
-          </button>
-        </div>
-      </div>
-
-      <div class="sidebar-section">
-        <div class="sidebar-label">Chart Style</div>
-
-        <div class="field-block">
-          <label class="field-label" for="lineWidth">선 두께</label>
-          <input id="lineWidth"
-                 type="number"
-                 min="0.5"
-                 max="10"
-                 step="0.5"
-                 value="2.5"
-                 onchange="renderDashboard()">
-        </div>
-
-        <div class="field-block">
-          <label class="field-label" for="palette">색상 테마</label>
-          <select id="palette" onchange="resetPaletteAndRender()">
-            <option value="Auto">Auto</option>
-            <option value="Grey">Grey</option>
-            <option value="Red">Red</option>
-            <option value="Blue">Blue</option>
-          </select>
-        </div>
-
-        <div class="field-block">
-          <label class="field-label">항목별 색상</label>
-          <div id="colorPanel"></div>
-        </div>
-      </div>
-    </aside>
-
-    <main>
-      <div class="main-header">
-        <h1 class="main-title">Shipping Index Dashboard</h1>
-
-        <div class="meta">
-          <strong>Source:</strong>
-          <a href="https://www.ksg.co.kr/"
-             target="_blank"
-             rel="noopener noreferrer">
-            Korea Shipping Gazette
-          </a>
-          &nbsp;|&nbsp;
-          <strong>Current Index:</strong>
-          <span id="currentIndex">SCFI</span>
-          &nbsp;|&nbsp;
-          <strong>Last sync:</strong>
-          <span id="lastSync">-</span>
-          &nbsp;|&nbsp;
-          <strong>GitHub Actions generated:</strong>
-          <span id="generatedAt">-</span>
-        </div>
-      </div>
-
-      <div id="loading" class="card loading">
+      <h2 id="dashboardTitle">SCFI Dashboard</h2>
+      <p id="dashboardDescription" class="section-description">
         데이터를 불러오는 중입니다.
-      </div>
+      </p>
 
-      <div id="dashboard" style="display:none;">
-
-        <div class="card">
-          <div class="section-title">Current Highlights</div>
-
-          <div class="metrics-grid">
-            <div class="metric">
-              <div class="metric-label">조회 시작일</div>
-              <div id="shownStart" class="metric-value">-</div>
-            </div>
-
-            <div class="metric">
-              <div class="metric-label">조회 종료일</div>
-              <div id="shownEnd" class="metric-value">-</div>
-            </div>
-
-            <div class="metric">
-              <div class="metric-label">선택 항목 수</div>
-              <div id="regionCount" class="metric-value">-</div>
-            </div>
-
-            <div class="metric">
-              <div class="metric-label">표시 데이터 수</div>
-              <div id="shownRows" class="metric-value">-</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="toolbar">
-            <div>
-              <div class="section-title" style="margin-bottom:4px;">
-                항목별 비교 차트
-              </div>
-              <div class="meta">
-                선택한 복수 항목을 한 화면에서 비교합니다.
-              </div>
-            </div>
-
-            <div class="actions">
-              <button class="btn primary" onclick="downloadCsv()">
-                CSV 다운로드
-              </button>
-              <button class="btn" onclick="downloadChartHtml()">
-                차트 HTML
-              </button>
-              <button class="btn" onclick="downloadChartPng()">
-                PNG
-              </button>
-            </div>
-          </div>
-
-          <div id="chart" class="chart"></div>
-        </div>
-
-        <div class="card">
-          <div class="toolbar">
-            <div class="section-title" style="margin:0;">
-              항목별 최고점 / 최저점 / 스프레드
-            </div>
-
-            <select id="sortMode"
-                    style="width:190px;"
-                    onchange="renderHighlights()">
-              <option value="region">항목명</option>
-              <option value="peak_desc">최고값 내림차순</option>
-              <option value="trough_asc">최저값 오름차순</option>
-              <option value="spread_desc">스프레드 내림차순</option>
-            </select>
-          </div>
-
-          <div id="highlightTable" class="table-wrap"></div>
+      <div class="controls">
+        <div class="control-group">
+          <label for="regionSelect">지역 / 항로 선택</label>
+          <select id="regionSelect" onchange="renderDashboard()">
+            <option value="">전체</option>
+          </select>
         </div>
       </div>
-    </main>
-  </div>
-</div>
 
-<script>
-let dashboardData = null;
-let selectedIndex = "SCFI";
-let filteredRecords = [];
-let currentRegions = [];
-let regionColors = {};
+      <div class="kpi-grid">
+        <div class="kpi">
+          <span class="kpi-label">최신 지수</span>
+          <span id="latestValue" class="kpi-value">-</span>
+          <span id="latestValueDate" class="kpi-sub">-</span>
+        </div>
 
-const BDI_LABEL_MAP = {
-  "BDI":"BDI (Baltic Exchange Dry Index)",
-  "BCI":"BCI (Baltic Capesize Index)",
-  "BPI":"BPI (Baltic Panamax Index)",
-  "BSI":"BSI (Baltic Supramax Index)",
-  "BHSI":"BHSI (Baltic Handysize Index)",
-  "BDTI":"BDTI (Baltic Dirty Tanker Index)",
-  "BCTI":"BCTI (Baltic Clean Tanker Index)"
-};
+        <div class="kpi">
+          <span class="kpi-label">직전 값</span>
+          <span id="previousValue" class="kpi-value">-</span>
+          <span id="previousValueDate" class="kpi-sub">-</span>
+        </div>
 
-function regionLabel(region) {
-  return selectedIndex === "BDI"
-    ? (BDI_LABEL_MAP[region] || region)
-    : region;
-}
+        <div class="kpi">
+          <span class="kpi-label">기간 변화</span>
+          <span id="changeValue" class="kpi-value neutral">-</span>
+          <span id="changeRate" class="kpi-sub">-</span>
+        </div>
 
-function getPalette(name) {
-  const palettes = {
-    Auto:[
-      "#e53935","#fb8c00","#fdd835","#43a047",
-      "#00acc1","#1e88e5","#3949ab","#8e24aa",
-      "#d81b60","#6d4c41","#00897b","#7cb342"
-    ],
-    Grey:["#111827","#374151","#6b7280","#9ca3af","#d1d5db"],
-    Red:["#7f1d1d","#b91c1c","#dc2626","#ef4444","#f87171","#ec4899"],
-    Blue:["#0f172a","#1d4ed8","#2563eb","#3b82f6","#60a5fa","#0ea5e9"]
-  };
+        <div class="kpi">
+          <span class="kpi-label">데이터 건수</span>
+          <span id="recordCount" class="kpi-value">-</span>
+          <span id="regionCount" class="kpi-sub">-</span>
+        </div>
+      </div>
 
-  return palettes[name] || palettes.Auto;
-}
+      <div id="chart" class="chart"></div>
+    </section>
 
-function selectedRegions() {
-  const select = document.getElementById("regionSelect");
+    <section class="panel">
+      <h2>최근 데이터</h2>
+      <p class="section-description">
+        선택된 지수 및 지역 기준으로 최신 20개 데이터를 표시합니다.
+      </p>
 
-  return Array.from(select.selectedOptions).map(
-    option => option.value
-  );
-}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>일자</th>
+              <th>지수</th>
+              <th>지역 / 항로</th>
+              <th class="numeric">값</th>
+            </tr>
+          </thead>
+          <tbody id="dataTableBody">
+            <tr>
+              <td colspan="4" class="empty-message">데이터 로딩 중...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
 
-function selectAllRegions() {
-  Array.from(document.getElementById("regionSelect").options)
-    .forEach(option => option.selected = true);
+  <footer>
+    Market Intelligence Dashboard · Data source: Internal Shipping Index Database
+  </footer>
 
-  renderColorPanel();
-  renderDashboard();
-}
+  <script>
+    let dashboardData = null;
+    let currentIndex = "SCFI";
 
-function clearRegions() {
-  Array.from(document.getElementById("regionSelect").options)
-    .forEach(option => option.selected = false);
+    const INDEX_DESCRIPTIONS = {
+      SCFI: "상하이발 컨테이너 운임 흐름을 지역 및 항로별로 확인합니다.",
+      BDI: "벌크선 시황을 대표하는 Baltic Dry Index 및 세부 지수 흐름을 확인합니다."
+    };
 
-  renderColorPanel();
-  renderDashboard();
-}
+    const INDEX_COLORS = {
+      SCFI: "#1f5fa8",
+      BDI: "#027a48"
+    };
 
-function onRegionChange() {
-  renderColorPanel();
-  renderDashboard();
-}
+    function formatNumber(value, decimals = 2) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) {
+        return "-";
+      }
 
-function resetPaletteAndRender() {
-  regionColors = {};
-  renderColorPanel();
-  renderDashboard();
-}
-
-function changeIndex(indexName) {
-  selectedIndex = indexName;
-  regionColors = {};
-
-  document.getElementById("tabSCFI").classList.toggle(
-    "active",
-    indexName === "SCFI"
-  );
-
-  document.getElementById("tabBDI").classList.toggle(
-    "active",
-    indexName === "BDI"
-  );
-
-  document.getElementById("currentIndex").textContent =
-    indexName;
-
-  populateRegions(true);
-  setDateBounds();
-  renderDashboard();
-}
-
-function populateRegions(selectAll) {
-  const select = document.getElementById("regionSelect");
-  const indexData = dashboardData.indexes[selectedIndex] || {};
-  const regions = indexData.regions || [];
-
-  select.innerHTML = "";
-
-  regions.forEach(region => {
-    const option = new Option(
-      regionLabel(region),
-      region
-    );
-
-    option.selected = selectAll;
-    select.add(option);
-  });
-
-  renderColorPanel();
-}
-
-function renderColorPanel() {
-  const panel = document.getElementById("colorPanel");
-  const regions = selectedRegions();
-  const colors = getPalette(
-    document.getElementById("palette").value
-  );
-
-  panel.innerHTML = "";
-
-  regions.forEach((region, index) => {
-    if (!regionColors[region]) {
-      regionColors[region] =
-        colors[index % colors.length];
+      return Number(value).toLocaleString("ko-KR", {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals
+      });
     }
 
-    const wrapper = document.createElement("div");
-    wrapper.className = "color-row";
+    function formatInteger(value) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) {
+        return "-";
+      }
 
-    const label = document.createElement("label");
-    label.textContent = regionLabel(region);
-
-    const color = document.createElement("input");
-    color.type = "color";
-    color.value = regionColors[region];
-
-    color.addEventListener("change", event => {
-      regionColors[region] = event.target.value;
-      renderDashboard();
-    });
-
-    wrapper.appendChild(label);
-    wrapper.appendChild(color);
-    panel.appendChild(wrapper);
-  });
-}
-
-function getColor(region, index) {
-  if (regionColors[region]) {
-    return regionColors[region];
-  }
-
-  const colors = getPalette(
-    document.getElementById("palette").value
-  );
-
-  return colors[index % colors.length];
-}
-
-function setDateBounds() {
-  const indexData = dashboardData.indexes[selectedIndex] || {};
-  const records = indexData.records || [];
-
-  if (!records.length) {
-    return;
-  }
-
-  const dates = records
-    .map(record => record.DATE)
-    .filter(Boolean)
-    .sort();
-
-  if (!dates.length) {
-    return;
-  }
-
-  const start = document.getElementById("startDate");
-  const end = document.getElementById("endDate");
-
-  start.min = dates[0];
-  start.max = dates[dates.length - 1];
-  end.min = dates[0];
-  end.max = dates[dates.length - 1];
-
-  start.value = dates[0];
-  end.value = dates[dates.length - 1];
-}
-
-function currentRecords() {
-  const indexData = dashboardData.indexes[selectedIndex] || {};
-  const records = indexData.records || [];
-  const regions = selectedRegions();
-
-  const startDate = document.getElementById("startDate").value;
-  const endDate = document.getElementById("endDate").value;
-
-  const rangeYears = Number(
-    document.getElementById("yearRange").value
-  );
-
-  let output = records.filter(record => {
-    return regions.includes(record.REGION);
-  });
-
-  if (startDate) {
-    output = output.filter(
-      record => record.DATE >= startDate
-    );
-  }
-
-  if (endDate) {
-    output = output.filter(
-      record => record.DATE <= endDate
-    );
-  }
-
-  if (rangeYears > 0 && output.length > 0) {
-    const maxYear = Math.max(
-      ...output.map(record => Number(record.YEAR))
-    );
-
-    const minYear = maxYear - rangeYears + 1;
-
-    output = output.filter(
-      record => Number(record.YEAR) >= minYear
-    );
-  }
-
-  return output.sort((a, b) => {
-    if (a.DATE === b.DATE) {
-      return String(a.REGION).localeCompare(
-        String(b.REGION)
-      );
+      return Number(value).toLocaleString("ko-KR");
     }
 
-    return String(a.DATE).localeCompare(
-      String(b.DATE)
-    );
-  });
-}
+    function formatDate(dateString) {
+      if (!dateString) {
+        return "-";
+      }
 
-function renderDashboard() {
-  if (!dashboardData) {
-    return;
-  }
+      const date = new Date(dateString + "T00:00:00");
 
-  filteredRecords = currentRecords();
-  currentRegions = selectedRegions();
+      if (Number.isNaN(date.getTime())) {
+        return dateString;
+      }
 
-  const indexData = dashboardData.indexes[selectedIndex] || {};
-  const sync = indexData.last_sync || {};
+      return date.toLocaleDateString("ko-KR", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      });
+    }
 
-  document.getElementById("lastSync").textContent =
-    sync.finished_at || "-";
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
 
-  document.getElementById("regionCount").textContent =
-    currentRegions.length.toLocaleString();
+    function setStatus(isSuccess, title, message) {
+      const statusDot = document.getElementById("statusDot");
+      const statusTitle = document.getElementById("statusTitle");
+      const lastUpdated = document.getElementById("lastUpdated");
 
-  document.getElementById("shownRows").textContent =
-    filteredRecords.length.toLocaleString();
+      statusDot.className = isSuccess
+        ? "status-dot"
+        : "status-dot error";
 
-  document.getElementById("shownStart").textContent =
-    filteredRecords.length
-      ? filteredRecords[0].DATE
-      : "-";
+      statusTitle.textContent = title;
+      lastUpdated.textContent = message;
+    }
 
-  document.getElementById("shownEnd").textContent =
-    filteredRecords.length
-      ? filteredRecords[filteredRecords.length - 1].DATE
-      : "-";
+    function getCurrentIndexData() {
+      if (!dashboardData || !dashboardData.indexes) {
+        return {
+          regions: [],
+          records: [],
+          record_count: 0,
+          latest_date: null,
+          last_sync: null
+        };
+      }
 
-  renderChart();
-  renderHighlights();
-}
-
-function renderChart() {
-  const chart = document.getElementById("chart");
-
-  if (!filteredRecords.length) {
-    chart.innerHTML = "";
-
-    const empty = document.createElement("div");
-    empty.className = "empty";
-    empty.textContent =
-      "선택 조건에 해당하는 데이터가 없습니다.";
-
-    chart.appendChild(empty);
-    return;
-  }
-
-  const width = Number(
-    document.getElementById("lineWidth").value
-  ) || 2.5;
-
-  const traces = currentRegions.map(
-    (region, index) => {
-      const rows = filteredRecords.filter(
-        record => record.REGION === region
-      );
-
-      return {
-        x: rows.map(row => row.DATE),
-        y: rows.map(row => Number(row.VALUE)),
-        type: "scatter",
-        mode: "lines",
-        name: regionLabel(region),
-        line: {
-          width: width,
-          color: getColor(region, index)
-        },
-        hovertemplate:
-          "날짜=%{x}<br>"
-          + "항목=%{fullData.name}<br>"
-          + "지수=%{y:,.2f}<extra></extra>"
+      return dashboardData.indexes[currentIndex] || {
+        regions: [],
+        records: [],
+        record_count: 0,
+        latest_date: null,
+        last_sync: null
       };
     }
-  );
 
-  Plotly.react(
-    "chart",
-    traces,
-    {
-      template: "plotly_white",
-      height: 600,
-      margin: {l:65,r:25,t:45,b:55},
-      hovermode: "x unified",
-      xaxis: {title: "Date"},
-      yaxis: {
-        title: "Index",
-        tickformat: ","
-      },
-      legend: {
-        orientation: "h",
-        yanchor: "bottom",
-        y: 1.02,
-        x: 0
+    function populateRegionSelect() {
+      const select = document.getElementById("regionSelect");
+      const indexData = getCurrentIndexData();
+      const currentValue = select.value;
+
+      select.innerHTML = '<option value="">전체</option>';
+
+      indexData.regions.forEach(function(region) {
+        const option = document.createElement("option");
+        option.value = region;
+        option.textContent = region;
+        select.appendChild(option);
+      });
+
+      if (indexData.regions.includes(currentValue)) {
+        select.value = currentValue;
       }
-    },
-    {
-      responsive: true,
-      displaylogo: false
-    }
-  );
-}
-
-function numberText(value) {
-  return Number(value).toLocaleString(
-    undefined,
-    {
-      maximumFractionDigits: 2
-    }
-  );
-}
-
-function appendCell(row, value, className = "") {
-  const cell = document.createElement("td");
-
-  if (className) {
-    cell.className = className;
-  }
-
-  cell.textContent = value;
-  row.appendChild(cell);
-}
-
-function renderHighlights() {
-  const container = document.getElementById(
-    "highlightTable"
-  );
-
-  container.innerHTML = "";
-
-  if (!filteredRecords.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty";
-    empty.textContent = "표시할 데이터가 없습니다.";
-    container.appendChild(empty);
-    return;
-  }
-
-  const rows = currentRegions.map(region => {
-    const records = filteredRecords.filter(
-      record => record.REGION === region
-    );
-
-    if (!records.length) {
-      return null;
     }
 
-    const sorted = [...records].sort(
-      (a, b) => Number(a.VALUE) - Number(b.VALUE)
-    );
+    function getFilteredRecords() {
+      const indexData = getCurrentIndexData();
+      const region = document.getElementById("regionSelect").value;
 
-    const trough = sorted[0];
-    const peak = sorted[sorted.length - 1];
+      let records = Array.isArray(indexData.records)
+        ? [...indexData.records]
+        : [];
 
-    return {
-      region: region,
-      peakDate: peak.DATE,
-      peakValue: Number(peak.VALUE),
-      troughDate: trough.DATE,
-      troughValue: Number(trough.VALUE),
-      spread: Number(peak.VALUE) - Number(trough.VALUE)
-    };
-  }).filter(Boolean);
-
-  const mode = document.getElementById("sortMode").value;
-
-  rows.sort((a, b) => {
-    if (mode === "peak_desc") {
-      return b.peakValue - a.peakValue;
-    }
-
-    if (mode === "trough_asc") {
-      return a.troughValue - b.troughValue;
-    }
-
-    if (mode === "spread_desc") {
-      return b.spread - a.spread;
-    }
-
-    return a.region.localeCompare(b.region);
-  });
-
-  const table = document.createElement("table");
-  const thead = document.createElement("thead");
-  const headRow = document.createElement("tr");
-
-  [
-    "항목",
-    "최고 일자",
-    "최고 값",
-    "최저 일자",
-    "최저 값",
-    "스프레드"
-  ].forEach(label => {
-    const th = document.createElement("th");
-    th.textContent = label;
-    headRow.appendChild(th);
-  });
-
-  thead.appendChild(headRow);
-  table.appendChild(thead);
-
-  const tbody = document.createElement("tbody");
-
-  rows.forEach(item => {
-    const row = document.createElement("tr");
-
-    appendCell(row, regionLabel(item.region));
-    appendCell(row, item.peakDate);
-    appendCell(row, numberText(item.peakValue), "peak");
-    appendCell(row, item.troughDate);
-    appendCell(row, numberText(item.troughValue), "trough");
-    appendCell(row, numberText(item.spread), "spread");
-
-    tbody.appendChild(row);
-  });
-
-  table.appendChild(tbody);
-  container.appendChild(table);
-}
-
-function downloadCsv() {
-  if (!filteredRecords.length) {
-    alert("다운로드할 데이터가 없습니다.");
-    return;
-  }
-
-  const headers = [
-    "DATE",
-    "YEAR",
-    "REGION",
-    "VALUE",
-    "INDEX_NAME"
-  ];
-
-  const csv = [
-    headers.join(","),
-    ...filteredRecords.map(row => {
-      return headers.map(key => {
-        const text = String(row[key] ?? "");
-
-        return '"' + text.replaceAll('"', '""') + '"';
-      }).join(",");
-    })
-  ].join("\n");
-
-  const blob = new Blob(
-    ["\ufeff" + csv],
-    {
-      type: "text/csv;charset=utf-8;"
-    }
-  );
-
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-
-  anchor.href = url;
-  anchor.download = selectedIndex + "_Filtered.csv";
-
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-
-  URL.revokeObjectURL(url);
-}
-
-function downloadChartHtml() {
-  const chart = document.getElementById("chart");
-
-  if (!chart.data || !chart.layout) {
-    alert("다운로드할 차트가 없습니다.");
-    return;
-  }
-
-  const html = `
-<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-</head>
-<body>
-<div id="chart" style="width:100%;height:95vh;"></div>
-<script>
-const data = ${JSON.stringify(chart.data)};
-const layout = ${JSON.stringify(chart.layout)};
-Plotly.newPlot("chart", data, layout, {responsive:true});
-</script>
-</body>
-</html>`;
-
-  const blob = new Blob(
-    [html],
-    {
-      type: "text/html;charset=utf-8;"
-    }
-  );
-
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-
-  anchor.href = url;
-  anchor.download = selectedIndex + "_Chart.html";
-
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-
-  URL.revokeObjectURL(url);
-}
-
-function downloadChartPng() {
-  const chart = document.getElementById("chart");
-
-  if (!chart.data) {
-    alert("다운로드할 차트가 없습니다.");
-    return;
-  }
-
-  Plotly.downloadImage(chart, {
-    format: "png",
-    width: 1600,
-    height: 900,
-    filename: selectedIndex + "_Chart"
-  });
-}
-
-async function initializeDashboard() {
-  try {
-    const response = await fetch(
-      "./shipping_index_data.json",
-      {
-        cache: "no-store"
+      if (region) {
+        records = records.filter(function(record) {
+          return record.REGION === region;
+        });
       }
-    );
 
-    if (!response.ok) {
-      throw new Error(
-        "shipping_index_data.json을 읽을 수 없습니다."
+      records.sort(function(a, b) {
+        return String(a.DATE).localeCompare(String(b.DATE));
+      });
+
+      return records;
+    }
+
+    function updateKpis(records) {
+      const latestValueElement = document.getElementById("latestValue");
+      const latestValueDateElement = document.getElementById("latestValueDate");
+      const previousValueElement = document.getElementById("previousValue");
+      const previousValueDateElement = document.getElementById("previousValueDate");
+      const changeValueElement = document.getElementById("changeValue");
+      const changeRateElement = document.getElementById("changeRate");
+      const recordCountElement = document.getElementById("recordCount");
+      const regionCountElement = document.getElementById("regionCount");
+
+      const indexData = getCurrentIndexData();
+
+      recordCountElement.textContent = formatInteger(records.length);
+      regionCountElement.textContent =
+        "지역 / 항로 " + formatInteger(indexData.regions.length) + "개";
+
+      if (records.length === 0) {
+        latestValueElement.textContent = "-";
+        latestValueDateElement.textContent = "데이터 없음";
+        previousValueElement.textContent = "-";
+        previousValueDateElement.textContent = "데이터 없음";
+        changeValueElement.textContent = "-";
+        changeRateElement.textContent = "-";
+        changeValueElement.className = "kpi-value neutral";
+        return;
+      }
+
+      const latest = records[records.length - 1];
+      const previous = records.length >= 2
+        ? records[records.length - 2]
+        : null;
+
+      latestValueElement.textContent = formatNumber(latest.VALUE);
+      latestValueDateElement.textContent = formatDate(latest.DATE);
+
+      if (!previous) {
+        previousValueElement.textContent = "-";
+        previousValueDateElement.textContent = "비교 데이터 없음";
+        changeValueElement.textContent = "-";
+        changeRateElement.textContent = "비교 데이터 없음";
+        changeValueElement.className = "kpi-value neutral";
+        return;
+      }
+
+      const difference = Number(latest.VALUE) - Number(previous.VALUE);
+      const percentChange = Number(previous.VALUE) !== 0
+        ? (difference / Number(previous.VALUE)) * 100
+        : null;
+
+      const sign = difference > 0 ? "+" : "";
+      const styleClass = difference > 0
+        ? "positive"
+        : difference < 0
+          ? "negative"
+          : "neutral";
+
+      previousValueElement.textContent = formatNumber(previous.VALUE);
+      previousValueDateElement.textContent = formatDate(previous.DATE);
+
+      changeValueElement.textContent = sign + formatNumber(difference);
+      changeValueElement.className = "kpi-value " + styleClass;
+
+      if (percentChange === null) {
+        changeRateElement.textContent = "변화율 계산 불가";
+      } else {
+        changeRateElement.textContent =
+          sign + formatNumber(percentChange, 2) + "%";
+      }
+    }
+
+    function renderChart(records) {
+      const chartElement = document.getElementById("chart");
+
+      if (records.length === 0) {
+        Plotly.purge(chartElement);
+
+        chartElement.innerHTML = `
+          <div class="empty-message">
+            선택한 조건에 해당하는 데이터가 없습니다.<br>
+            데이터베이스의 shipping_indices 테이블 및 REGION 값을 확인해 주세요.
+          </div>
+        `;
+
+        return;
+      }
+
+      const selectedRegion = document.getElementById("regionSelect").value;
+
+      const groupedRecords = {};
+
+      records.forEach(function(record) {
+        const groupName = selectedRegion
+          ? selectedRegion
+          : record.REGION;
+
+        if (!groupedRecords[groupName]) {
+          groupedRecords[groupName] = [];
+        }
+
+        groupedRecords[groupName].push(record);
+      });
+
+      const traces = Object.keys(groupedRecords).map(function(region, index) {
+        const regionRecords = groupedRecords[region];
+
+        return {
+          x: regionRecords.map(function(record) {
+            return record.DATE;
+          }),
+          y: regionRecords.map(function(record) {
+            return Number(record.VALUE);
+          }),
+          type: "scatter",
+          mode: "lines+markers",
+          name: region,
+          line: {
+            width: 2.5,
+            color: selectedRegion
+              ? INDEX_COLORS[currentIndex]
+              : undefined
+          },
+          marker: {
+            size: 5
+          },
+          hovertemplate:
+            "<b>" + escapeHtml(region) + "</b><br>" +
+            "일자: %{x}<br>" +
+            "값: %{y:,.2f}<extra></extra>"
+        };
+      });
+
+      const layout = {
+        margin: {
+          l: 70,
+          r: 30,
+          t: 30,
+          b: 60
+        },
+        paper_bgcolor: "#ffffff",
+        plot_bgcolor: "#ffffff",
+        hovermode: "x unified",
+        showlegend: !selectedRegion,
+        legend: {
+          orientation: "h",
+          y: -0.25
+        },
+        xaxis: {
+          title: "일자",
+          showgrid: false,
+          tickformat: "%Y-%m-%d"
+        },
+        yaxis: {
+          title: "Index Value",
+          gridcolor: "#e5edf5",
+          zerolinecolor: "#d9e2ec"
+        }
+      };
+
+      const config = {
+        responsive: true,
+        displaylogo: false,
+        modeBarButtonsToRemove: [
+          "lasso2d",
+          "select2d",
+          "autoScale2d"
+        ]
+      };
+
+      Plotly.newPlot(chartElement, traces, layout, config);
+    }
+
+    function renderTable(records) {
+      const tableBody = document.getElementById("dataTableBody");
+
+      if (records.length === 0) {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="4" class="empty-message">
+              표시할 데이터가 없습니다.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      const latestRecords = [...records]
+        .sort(function(a, b) {
+          return String(b.DATE).localeCompare(String(a.DATE));
+        })
+        .slice(0, 20);
+
+      tableBody.innerHTML = latestRecords.map(function(record) {
+        return `
+          <tr>
+            <td>${escapeHtml(formatDate(record.DATE))}</td>
+            <td>${escapeHtml(record.INDEX_NAME)}</td>
+            <td>${escapeHtml(record.REGION)}</td>
+            <td class="numeric">${escapeHtml(formatNumber(record.VALUE))}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function renderDashboard() {
+      const indexData = getCurrentIndexData();
+      const records = getFilteredRecords();
+
+      document.getElementById("dashboardTitle").textContent =
+        currentIndex + " Dashboard";
+
+      document.getElementById("dashboardDescription").textContent =
+        INDEX_DESCRIPTIONS[currentIndex];
+
+      if (!indexData.records || indexData.records.length === 0) {
+        updateKpis([]);
+        renderChart([]);
+        renderTable([]);
+        return;
+      }
+
+      updateKpis(records);
+      renderChart(records);
+      renderTable(records);
+    }
+
+    function selectIndex(indexName) {
+      currentIndex = indexName;
+
+      document.getElementById("scfiTab").classList.toggle(
+        "active",
+        indexName === "SCFI"
       );
+
+      document.getElementById("bdiTab").classList.toggle(
+        "active",
+        indexName === "BDI"
+      );
+
+      populateRegionSelect();
+      renderDashboard();
     }
 
-    dashboardData = await response.json();
+    async function loadDashboardData() {
+      try {
+        const response = await fetch(
+          "shipping_index_data.json?ts=" + Date.now(),
+          { cache: "no-store" }
+        );
 
-    document.getElementById("generatedAt").textContent =
-      dashboardData.generated_at || "-";
+        if (!response.ok) {
+          throw new Error(
+            "JSON request failed: HTTP " + response.status
+          );
+        }
 
-    populateRegions(true);
-    setDateBounds();
+        dashboardData = await response.json();
 
-    document.getElementById("loading").style.display =
-      "none";
+        const generatedAt = dashboardData.generated_at
+          ? dashboardData.generated_at
+          : "-";
 
-    document.getElementById("dashboard").style.display =
-      "block";
+        setStatus(
+          true,
+          "데이터 로드 완료",
+          "최종 갱신: " + generatedAt
+        );
 
-    renderDashboard();
+        populateRegionSelect();
+        renderDashboard();
 
-  } catch (error) {
-    const loading = document.getElementById("loading");
+      } catch (error) {
+        console.error(error);
 
-    loading.innerHTML = "";
+        setStatus(
+          false,
+          "데이터 로드 실패",
+          "shipping_index_data.json 파일을 불러올 수 없습니다."
+        );
 
-    const empty = document.createElement("div");
-    empty.className = "empty";
-    empty.textContent =
-      "데이터 로드에 실패했습니다. "
-      + "GitHub Actions 실행 및 배포 파일을 확인하세요.";
+        document.getElementById("dashboardDescription").textContent =
+          "대시보드 데이터를 불러오는 중 오류가 발생했습니다.";
 
-    loading.appendChild(empty);
+        updateKpis([]);
+        renderChart([]);
+        renderTable([]);
+      }
+    }
 
-    console.error(error);
-  }
-}
-
-window.addEventListener(
-  "DOMContentLoaded",
-  initializeDashboard
-);
-</script>
+    document.addEventListener("DOMContentLoaded", function() {
+      loadDashboardData();
+    });
+  </script>
 </body>
 </html>

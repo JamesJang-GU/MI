@@ -1,16 +1,21 @@
 {
-  "generated_at": "2026-10-19 04:45:48",
+  "status": "success",
+  "generated_at": "2026-10-19 05:50:55",
+  "source_database": "index_history.db",
   "indexes": {
     "SCFI": {
       "regions": [],
       "records": [],
-      "last_sync": "2026-10-19 04:45:48"
+      "record_count": 0,
+      "latest_date": null,
+      "last_sync": "2026-10-19 05:50:55"
     },
     "BDI": {
       "regions": [],
       "records": [],
-      "last_sync": "2026-10-19 04:45:48"
+      "record_count": 0,
+      "latest_date": null,
+      "last_sync": "2026-10-19 05:50:55"
     }
-  },
-  "status": "success"
+  }
 }
