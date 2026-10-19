@@ -10,9 +10,8 @@ import pandas as pd
 # =============================================================================
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-BASE_DIR = SCRIPT_DIR.parent
 
-DB_PATH = BASE_DIR / "index_history.db"
+DB_PATH = SCRIPT_DIR / "index_history.db"
 JSON_PATH = SCRIPT_DIR / "shipping_index_data.json"
 HTML_PATH = SCRIPT_DIR / "index.html"
 
