@@ -2,6 +2,7 @@
 """
 Alphaliner TOP 100 Liner Operators Static Dashboard Crawler (GitHub Optimized)
 - Direct ExtJS Store extraction (Top100description)
+- Official Global Figures + TOP 100 Capacity Separation
 - Historical snapshot comparison & Full Time-travel Delta analysis
 - Authentic Alphaliner 2-tier Grouped Table & UTF-8 BOM CSV Export
 
@@ -93,45 +94,57 @@ def normalize_text(value):
 def safe_int(value):
     """Convert integer-like text/number to int safely."""
     if value is None:
-        return None
+        return 0
 
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         if pd.isna(value):
-            return None
+            return 0
         return int(round(float(value)))
 
     text = str(value).strip()
     if not text or text.lower() in {"-", "n/a", "na", "none", "null", "--"}:
-        return None
+        return 0
 
     text = text.replace(",", "").replace(" ", "")
     text = re.sub(r"[^0-9.\-]", "", text)
 
     if not text or text in {"-", ".", "-."}:
-        return None
+        return 0
 
     try:
         return int(round(float(text)))
     except (TypeError, ValueError):
-        return None
+        return 0
 
 def safe_float(value):
     text = str(value or "").strip()
     if not text or text.lower() in {"-", "n/a", "na", "none", "null", "--"}:
-        return None
+        return 0.0
 
     is_negative = text.startswith("-") or (text.startswith("(") and text.endswith(")"))
     cleaned = text.replace(",", "")
     cleaned = re.sub(r"[^0-9.]", "", cleaned)
 
     if not cleaned:
-        return None
+        return 0.0
 
     try:
         number = float(cleaned)
         return -number if is_negative else number
     except ValueError:
-        return None
+        return 0.0
+
+def parse_alphaliner_date(raw_text):
+    """Alphaliner TOP 100 / 19 Oct 2026 -> YYYY-MM-DD 포맷 변환"""
+    try:
+        match = re.search(r"TOP\s+100\s*/\s*(\d{1,2}\s+[A-Za-z]+\s+\d{4})", raw_text, re.IGNORECASE)
+        if match:
+            date_str = match.group(1).strip()
+            dt = datetime.strptime(date_str, "%d %b %Y")
+            return dt.strftime("%Y-%m-%d")
+    except Exception:
+        pass
+    return datetime.now().strftime("%Y-%m-%d")
 
 def atomic_write_text(path, text):
     """Write a file atomically to prevent incomplete dashboard files."""
@@ -181,10 +194,19 @@ def get_db_conn():
             data_hash TEXT NOT NULL UNIQUE,
             total_teu INTEGER,
             total_ships INTEGER,
-            operator_count INTEGER NOT NULL
+            operator_count INTEGER NOT NULL,
+            global_teu INTEGER,
+            global_ships INTEGER
         )
         """
     )
+
+    # 컬럼 누락 대비 안전 migration
+    try:
+        connection.execute("ALTER TABLE alphaliner_master ADD COLUMN global_teu INTEGER")
+        connection.execute("ALTER TABLE alphaliner_master ADD COLUMN global_ships INTEGER")
+    except Exception:
+        pass
 
     connection.execute(
         """
@@ -227,13 +249,6 @@ def get_db_conn():
         """
         CREATE INDEX IF NOT EXISTS idx_alphaliner_master_data_date
         ON alphaliner_master (data_date)
-        """
-    )
-
-    connection.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_alphaliner_detail_operator
-        ON alphaliner_detail (operator_name)
         """
     )
 
@@ -310,7 +325,9 @@ def make_data_hash(dataframe, data_date):
 
 def save_snapshot(bundle):
     dataframe = bundle.get("df", pd.DataFrame()).copy()
-    data_date = bundle.get("data_date", datetime.now().strftime("%Y-%m-%d"))
+    data_date = bundle.get("data_date")
+    global_teu = bundle.get("global_teu")
+    global_ships = bundle.get("global_ships")
 
     if dataframe.empty:
         raise RuntimeError("저장할 Alphaliner 데이터가 없습니다.")
@@ -335,10 +352,10 @@ def save_snapshot(bundle):
 
         cursor.execute(
             """
-            INSERT INTO alphaliner_master (captured_at, data_date, data_hash, total_teu, total_ships, operator_count)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO alphaliner_master (captured_at, data_date, data_hash, total_teu, total_ships, operator_count, global_teu, global_ships)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (captured_at, data_date, data_hash, total_teu, total_ships, int(len(dataframe))),
+            (captured_at, data_date, data_hash, total_teu, total_ships, int(len(dataframe)), global_teu, global_ships),
         )
 
         snapshot_id = cursor.lastrowid
@@ -351,8 +368,8 @@ def save_snapshot(bundle):
                     int(row["rank"]),
                     str(row["operator_name"]),
                     int(row["total_teu"]),
-                    int(row.get("total_ships", 0)) if pd.notna(row.get("total_ships")) else None,
-                    float(row.get("market_share", 0.0)) if pd.notna(row.get("market_share")) else None,
+                    safe_int(row.get("total_ships")),
+                    safe_float(row.get("market_share")),
                     safe_int(row.get("existing_owned_teu")),
                     safe_int(row.get("existing_owned_ships")),
                     safe_int(row.get("existing_chartered_teu")),
@@ -376,7 +393,7 @@ def save_snapshot(bundle):
         )
 
         connection.commit()
-        log(f"[DB] 신규 Alphaliner Snapshot 저장 완료: id={snapshot_id}, operators={len(dataframe)}")
+        log(f"[DB] 신규 Alphaliner Snapshot 저장 완료: id={snapshot_id}, date={data_date}, operators={len(dataframe)}")
         return int(snapshot_id), True
 
     except Exception:
@@ -390,7 +407,7 @@ def load_history_df():
     try:
         dataframe = pd.read_sql_query(
             """
-            SELECT snapshot_id, captured_at, data_date, total_teu, total_ships, operator_count
+            SELECT snapshot_id, captured_at, data_date, total_teu, total_ships, operator_count, global_teu, global_ships
             FROM alphaliner_master ORDER BY data_date ASC, snapshot_id ASC
             """,
             connection,
@@ -401,24 +418,15 @@ def load_history_df():
     if dataframe.empty:
         return pd.DataFrame()
 
-    dataframe["data_date"] = pd.to_datetime(dataframe["data_date"], errors="coerce")
-    dataframe["captured_at"] = pd.to_datetime(dataframe["captured_at"], errors="coerce")
-
-    return (
-        dataframe.dropna(subset=["data_date"])
-        .sort_values(["data_date", "snapshot_id"])
-        .drop_duplicates(subset=["data_date"], keep="last")
-        .reset_index(drop=True)
-    )
+    return dataframe.reset_index(drop=True)
 
 def load_all_snapshots_details():
-    """Load all snapshots and their details for client-side date selection."""
+    """DB에 존재하는 '모든 과거 스냅샷' 전체를 로드합니다."""
     connection = get_db_conn()
     try:
-        # 1. Master 리스트 (시간순 정렬)
         masters = pd.read_sql_query(
             """
-            SELECT snapshot_id, data_date, captured_at, total_teu, total_ships, operator_count
+            SELECT snapshot_id, data_date, captured_at, total_teu, total_ships, operator_count, global_teu, global_ships
             FROM alphaliner_master
             ORDER BY data_date ASC, snapshot_id ASC
             """,
@@ -428,7 +436,6 @@ def load_all_snapshots_details():
         if masters.empty:
             return {}
 
-        # 2. 전체 디테일 로드
         details = pd.read_sql_query(
             """
             SELECT snapshot_id, rank, operator_name, total_teu, total_ships, market_share,
@@ -455,6 +462,8 @@ def load_all_snapshots_details():
                 "captured_at": m_cap,
                 "total_teu": int(m["total_teu"] or 0),
                 "total_ships": int(m["total_ships"] or 0),
+                "global_teu": safe_int(m.get("global_teu")),
+                "global_ships": safe_int(m.get("global_ships")),
                 "operator_count": int(m["operator_count"] or 0),
                 "rows": sub_records
             }
@@ -508,7 +517,6 @@ def extract_alphaliner_payload(driver):
     const out = {
         page_text: cleanText(document.body ? document.body.innerText : ""),
         summary: {},
-        regional: {},
         store_id: null,
         rows: [],
         available_stores: []
@@ -519,18 +527,8 @@ def extract_alphaliner_payload(driver):
         const activeShips = text.match(/([0-9,]+)\s+active ships/i);
         const totalTeu = text.match(/([0-9,]+)\s+TEU/i);
 
-        out.summary.total_active_ships = activeShips ? activeShips[1] : null;
-        out.summary.total_teu = totalTeu ? totalTeu[1] : null;
-
-        const regionalBlock = text.match(
-            /Regional Trades[\s\S]*?weekly capacities[\s\S]*?Trans-Atlantic[\s\S]*?Trans-Pacific[\s\S]*?Feast-Europe[\s\S]*?([0-9,]+)\s+TEU[\s\S]*?([0-9,]+)\s+TEU[\s\S]*?([0-9,]+)\s+TEU/i
-        );
-
-        if (regionalBlock) {
-            out.regional.trans_atlantic = regionalBlock[1];
-            out.regional.trans_pacific = regionalBlock[2];
-            out.regional.feast_europe = regionalBlock[3];
-        }
+        out.summary.global_active_ships = activeShips ? activeShips[1] : null;
+        out.summary.global_total_teu = totalTeu ? totalTeu[1] : null;
     } catch (error) {
         out.summary_error = String(error);
     }
@@ -642,8 +640,7 @@ def fetch_alphaliner(driver_path="", headless=True):
 
         payload = extract_alphaliner_payload(driver)
         raw_rows = payload.get("rows", [])
-
-        log(f"[FETCH] ExtJS Store 추출 결과: store={payload.get('store_id')}, raw_rows={len(raw_rows)}")
+        page_text = payload.get("page_text", "")
 
         dataframe = parse_alphaliner_table(raw_rows)
 
@@ -655,11 +652,19 @@ def fetch_alphaliner(driver_path="", headless=True):
             raise RuntimeError(f"데이터 불완전: {len(dataframe)}건 수집 (최소 90건 필요)")
 
         dataframe = dataframe.sort_values("rank").head(100).reset_index(drop=True)
-        data_date = datetime.now().strftime("%Y-%m-%d")
+        data_date = parse_alphaliner_date(page_text)
+
+        global_summary = payload.get("summary", {})
+        global_teu = safe_int(global_summary.get("global_total_teu"))
+        global_ships = safe_int(global_summary.get("global_active_ships"))
+
+        log(f"[FETCH] 수집 성공: Date={data_date}, TOP100={len(dataframe)}, GlobalTEU={global_teu:,}, GlobalShips={global_ships:,}")
 
         return {
             "df": dataframe,
             "data_date": data_date,
+            "global_teu": global_teu,
+            "global_ships": global_ships,
         }
 
     finally:
@@ -720,7 +725,7 @@ def run_alphaliner_sync(driver_path="", headless=True):
             }
 
 def build_static_json():
-    """Create all-inclusive data file consumed by the interactive static dashboard."""
+    """Create data file containing all historical snapshots."""
     history = load_history_df()
     snapshots_map = load_all_snapshots_details()
 
@@ -739,21 +744,21 @@ def build_static_json():
         JSON_PATH,
         json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False),
     )
-    log(f"[STATIC] JSON 생성 완료: {JSON_PATH.name} (스냅샷 {len(snapshots_map)}개 포함)")
+    log(f"[STATIC] JSON 생성 완료: {JSON_PATH.name} (누적 스냅샷 {len(snapshots_map)}개)")
 
 def generate_static_html():
-    """Build a standalone static dashboard in index.html with Historical Selector & CSV Export."""
+    """Build a standalone static dashboard in index.html with True Figures & Selector."""
     content = r"""<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Alphaliner TOP 100 Dashboard with Time Selection</title>
+  <title>Alphaliner TOP 100 Liner Operators</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <style>
     :root {
+      --navy-dark: #0b1f33;
       --navy: #102a43;
-      --navy-light: #243b53;
       --blue: #1677c8;
       --blue-light: #eaf4fb;
       --green: #16876e;
@@ -810,7 +815,7 @@ def generate_static_html():
       gap: 8px;
     }
     .selector-box label {
-      font-size: 11.5px;
+      font-size: 11px;
       font-weight: 700;
       color: #d9efff;
       text-transform: uppercase;
@@ -900,8 +905,8 @@ def generate_static_html():
       padding: 18px 20px;
       box-shadow: 0 2px 8px rgba(16, 42, 67, 0.05);
     }
-    .kpi-label { color: var(--muted); font-size: 13px; font-weight: 600; margin-bottom: 8px; }
-    .kpi-value { color: var(--navy); font-size: 24px; font-weight: 700; }
+    .kpi-label { color: var(--muted); font-size: 12.5px; font-weight: 600; margin-bottom: 8px; }
+    .kpi-value { color: var(--navy); font-size: 23px; font-weight: 700; }
     .kpi-sub { margin-top: 6px; color: var(--muted); font-size: 12px; }
 
     /* Charts */
@@ -1037,14 +1042,12 @@ def generate_static_html():
         <p>Global container liner operator capacity, fleet, orderbook & snapshot delta monitoring</p>
       </div>
       <div class="header-controls">
-        <!-- Date Selection Dropdown -->
         <div class="selector-box">
           <label for="snapshotSelect">Comparison Base Date</label>
           <select id="snapshotSelect">
-            <option value="">Latest (Current)</option>
+            <option value="">Loading historical dates...</option>
           </select>
         </div>
-        <!-- Export CSV Button -->
         <button id="btnExportCsv" class="btn-csv" title="TOP 100 선사 데이터 CSV 다운로드">
           <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
           Export CSV
@@ -1060,43 +1063,43 @@ def generate_static_html():
     </div>
 
     <section id="dashboard" style="display:none;">
-      <!-- Highlights KPI -->
+      <!-- Highlights KPI (전 세계 공식 집계 & TOP 100 분리) -->
       <div class="kpi-grid">
         <article class="card">
-          <div class="kpi-label">Selected Total TEU</div>
-          <div id="totalTeu" class="kpi-value">-</div>
-          <div id="selectedDateLabel" class="kpi-sub">Current Snapshot</div>
+          <div class="kpi-label">Global Total TEU (전 세계 선복량)</div>
+          <div id="globalTeu" class="kpi-value">-</div>
+          <div id="top100TeuSub" class="kpi-sub">TOP 100: -</div>
         </article>
         <article class="card">
-          <div class="kpi-label">Operators</div>
-          <div id="operatorCount" class="kpi-value">-</div>
-          <div class="kpi-sub">Count in selection</div>
+          <div class="kpi-label">Global Active Ships (운항 선박 수)</div>
+          <div id="globalShips" class="kpi-value">-</div>
+          <div id="top100ShipsSub" class="kpi-sub">TOP 100: -</div>
         </article>
         <article class="card">
-          <div class="kpi-label">Total Ships</div>
-          <div id="totalShips" class="kpi-value">-</div>
-          <div class="kpi-sub">Total Vessel Count</div>
-        </article>
-        <article class="card">
-          <div class="kpi-label">Market Leader</div>
+          <div class="kpi-label">Market Leader (1위 선사)</div>
           <div id="leaderName" class="kpi-value">-</div>
           <div id="leaderSub" class="kpi-sub">-</div>
+        </article>
+        <article class="card">
+          <div class="kpi-label">Market Top 10 Share (상위 10사 점유율)</div>
+          <div id="top10Share" class="kpi-value">-</div>
+          <div id="top10TeuSub" class="kpi-sub">-</div>
         </article>
       </div>
 
       <!-- Delta Comparison Summary -->
-      <div class="section-title">선택 시점 대비 최신 변동 요약 (Delta Analysis)</div>
+      <div class="section-title">선택 시점 대비 최신 변동 요약 (Snapshot Delta Summary)</div>
       <div id="deltaSummaryContainer">
         <div class="kpi-grid">
           <article class="card">
-            <div class="kpi-label">총 선복량 증감 (Δ Total TEU)</div>
+            <div class="kpi-label">TOP 100 선복량 증감 (Δ TEU)</div>
             <div id="deltaTeuTotal" class="kpi-value">-</div>
-            <div id="deltaTeuSub" class="kpi-sub">vs Latest</div>
+            <div id="deltaTeuSub" class="kpi-sub">vs Selected Date</div>
           </article>
           <article class="card">
-            <div class="kpi-label">총 선박 수 증감 (Δ Total Ships)</div>
+            <div class="kpi-label">TOP 100 선박 수 증감 (Δ Ships)</div>
             <div id="deltaShipsTotal" class="kpi-value">-</div>
-            <div id="deltaShipsSub" class="kpi-sub">vs Latest</div>
+            <div id="deltaShipsSub" class="kpi-sub">vs Selected Date</div>
           </article>
           <article class="card">
             <div class="kpi-label">최대 선복량 증가 선사 (Top Gainer)</div>
@@ -1114,16 +1117,16 @@ def generate_static_html():
       <!-- Charts -->
       <div class="chart-grid">
         <section class="card chart-card">
-          <h2 class="chart-title">Capacity Distribution (Top 10)</h2>
-          <p class="chart-note">Selected date snapshot · Unit: TEU</p>
+          <h2 class="chart-title">상위 10개 선사 선복량 (Top 10 Capacity)</h2>
+          <p class="chart-note">Latest snapshot · 단위: TEU</p>
           <div class="chart-wrap">
             <canvas id="topOperatorsChart"></canvas>
           </div>
         </section>
 
         <section class="card chart-card">
-          <h2 class="chart-title">Market Capacity Trend</h2>
-          <p class="chart-note">All historical snapshots · Unit: Million TEU</p>
+          <h2 class="chart-title">전 세계 및 TOP 100 총 선복량 추이 (Historical Capacity)</h2>
+          <p class="chart-note">All historical snapshots · 단위: Million TEU</p>
           <div class="chart-wrap">
             <canvas id="historyChart"></canvas>
           </div>
@@ -1162,7 +1165,7 @@ def generate_static_html():
       <section class="card table-card">
         <div class="table-heading">
           <div>
-            <h2>Detailed Operator Status (Alphaliner View)</h2>
+            <h2>TOP 100 선사별 전체 현황 (Alphaliner Official View)</h2>
             <p id="tableNote">-</p>
           </div>
         </div>
@@ -1277,21 +1280,31 @@ def generate_static_html():
 
     function renderKpis(snapshot) {
       const rows = snapshot.rows || [];
-      const totalTeu = rows.reduce((sum, row) => sum + Number(row.total_teu || 0), 0);
-      const totalShips = rows.reduce((sum, row) => sum + Number(row.total_ships || 0), 0);
+      const top100Teu = rows.reduce((sum, row) => sum + Number(row.total_teu || 0), 0);
+      const top100Ships = rows.reduce((sum, row) => sum + Number(row.total_ships || 0), 0);
+
+      const globalTeu = snapshot.global_teu || top100Teu;
+      const globalShips = snapshot.global_ships || top100Ships;
+
+      document.getElementById("globalTeu").textContent = numberFormat(globalTeu) + " TEU";
+      document.getElementById("top100TeuSub").textContent = `TOP 100 합계: ${numberFormat(top100Teu)} TEU`;
+
+      document.getElementById("globalShips").textContent = numberFormat(globalShips) + " 척";
+      document.getElementById("top100ShipsSub").textContent = `TOP 100 선박: ${numberFormat(top100Ships)} 척`;
+
       const leader = rows.length ? rows[0] : null;
-
-      document.getElementById("totalTeu").textContent = numberFormat(totalTeu) + " TEU";
-      document.getElementById("selectedDateLabel").textContent = "Snapshot: " + (snapshot.data_date || "-");
-      document.getElementById("operatorCount").textContent = numberFormat(rows.length);
-      document.getElementById("totalShips").textContent = totalShips > 0 ? numberFormat(totalShips) : "-";
-
       if (leader) {
         document.getElementById("leaderName").textContent = leader.operator_name || "-";
         const shareText = leader.market_share ? (decimalFormat(leader.market_share, 2) + "% share") : "";
         document.getElementById("leaderSub").textContent =
           numberFormat(leader.total_teu) + " TEU" + (shareText ? (" · " + shareText) : "");
       }
+
+      // Top 10 점유율 합산
+      const top10Teu = rows.slice(0, 10).reduce((sum, r) => sum + Number(r.total_teu || 0), 0);
+      const top10Share = globalTeu > 0 ? ((top10Teu / globalTeu) * 100) : 0;
+      document.getElementById("top10Share").textContent = decimalFormat(top10Share, 2) + "%";
+      document.getElementById("top10TeuSub").textContent = `Top 10 합계: ${numberFormat(top10Teu)} TEU`;
     }
 
     function renderDeltaAnalysis(latestSnapshot, compareSnapshot) {
@@ -1300,7 +1313,7 @@ def generate_static_html():
 
       if (!prevRows.length || latestSnapshot.snapshot_id === compareSnapshot.snapshot_id) {
         document.getElementById("deltaSummaryContainer").innerHTML =
-          '<div class="info-box">동일 시점이 선택되었거나 비교 가능한 이전 스냅샷이 없습니다. 우측 상단에서 다른 과거 시점을 선택해 보세요.</div>';
+          '<div class="info-box">동일한 시점이 선택되었거나 비교 대상 데이터가 없습니다. 상단 드롭다운에서 다른 과거 날짜를 선택해 보세요.</div>';
         document.getElementById("deltaTableCard").style.display = "none";
         return;
       }
@@ -1321,12 +1334,12 @@ def generate_static_html():
       document.getElementById("deltaSummaryContainer").innerHTML = `
         <div class="kpi-grid">
           <article class="card">
-            <div class="kpi-label">총 선복량 증감 (Δ Total TEU)</div>
+            <div class="kpi-label">TOP 100 선복량 증감 (Δ TEU)</div>
             <div class="kpi-value">${deltaSpan(diffTotalTeu)}</div>
             <div class="kpi-sub">vs ${compareSnapshot.data_date}</div>
           </article>
           <article class="card">
-            <div class="kpi-label">총 선박 수 증감 (Δ Total Ships)</div>
+            <div class="kpi-label">TOP 100 선박 수 증감 (Δ Ships)</div>
             <div class="kpi-value">${deltaSpan(diffTotalShips)}</div>
             <div class="kpi-sub">vs ${compareSnapshot.data_date}</div>
           </article>
@@ -1449,7 +1462,8 @@ def generate_static_html():
       if (historyChart) historyChart.destroy();
 
       const labels = history.map(row => row.data_date || "");
-      const values = history.map(row => Number(row.total_teu || 0) / 1000000);
+      const globalValues = history.map(row => Number(row.global_teu || row.total_teu || 0) / 1000000);
+      const top100Values = history.map(row => Number(row.total_teu || 0) / 1000000);
 
       historyChart = new Chart(
         document.getElementById("historyChart"),
@@ -1457,25 +1471,35 @@ def generate_static_html():
           type: "line",
           data: {
             labels: labels,
-            datasets: [{
-              label: "Total Capacity",
-              data: values,
-              borderColor: "#16876e",
-              backgroundColor: "rgba(22, 135, 110, 0.15)",
-              fill: true,
-              tension: 0.3,
-              pointRadius: 3,
-              pointHoverRadius: 5
-            }]
+            datasets: [
+              {
+                label: "Global Total",
+                data: globalValues,
+                borderColor: "#16876e",
+                backgroundColor: "rgba(22, 135, 110, 0.1)",
+                fill: true,
+                tension: 0.3,
+                pointRadius: 4
+              },
+              {
+                label: "TOP 100 Total",
+                data: top100Values,
+                borderColor: "#1677c8",
+                backgroundColor: "transparent",
+                borderDash: [4, 4],
+                tension: 0.3,
+                pointRadius: 3
+              }
+            ]
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-              legend: { display: false },
+              legend: { display: true, position: "top" },
               tooltip: {
                 callbacks: {
-                  label: context => decimalFormat(context.raw, 2) + " Million TEU"
+                  label: context => `${context.dataset.label}: ${decimalFormat(context.raw, 2)}M TEU`
                 }
               }
             },
@@ -1640,6 +1664,7 @@ def generate_static_html():
         allSnapshots = data.snapshots || {};
         const history = Array.isArray(data.history) ? data.history : [];
 
+        // snapshot_id 및 data_date 기준 정렬
         snapshotList = Object.values(allSnapshots).sort((a, b) => a.snapshot_id - b.snapshot_id);
 
         if (!snapshotList.length) {
@@ -1649,7 +1674,7 @@ def generate_static_html():
         const latestSnapshot = snapshotList[snapshotList.length - 1];
         latestSnapshotId = latestSnapshot.snapshot_id;
 
-        // 드롭다운 옵션 채우기 (최신부터 과거 순으로)
+        // 드롭다운 옵션 채우기 (최신부터 가장 과거 순으로 전체 배치)
         const select = document.getElementById("snapshotSelect");
         select.innerHTML = "";
 
@@ -1663,7 +1688,7 @@ def generate_static_html():
             opt.textContent = `Previous (${s.data_date})`;
             opt.selected = true; // 기본값으로 직전 스냅샷 선택
           } else {
-            opt.textContent = `${s.data_date} (${s.captured_at.slice(0, 10)})`;
+            opt.textContent = `${s.data_date} (${s.captured_at ? s.captured_at.slice(0, 10) : ''})`;
           }
           select.appendChild(opt);
         }
@@ -1677,7 +1702,7 @@ def generate_static_html():
         document.getElementById("generatedAt").textContent = data.generated_at || "-";
         document.getElementById("statusDot").className = "status-dot success";
         document.getElementById("statusText").textContent =
-          "정상 로드 · 총 " + snapshotList.length + "개 히스토리 스냅샷 누적";
+          "정상 로드 · 총 " + snapshotList.length + "개 히스토리 스냅샷 (전체 과거 시점 탐색 가능)";
 
         document.getElementById("dashboard").style.display = "block";
       } catch (error) {
