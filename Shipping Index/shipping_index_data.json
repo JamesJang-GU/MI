@@ -1,19 +1,15 @@
 {
-  "generated_at": "2026-10-19 00:51:38",
+  "generated_at": "2026-10-19 04:20:52",
   "indexes": {
     "SCFI": {
       "regions": [],
       "records": [],
-      "last_sync": {
-        "last_sync": "2026-10-19 00:51:38"
-      }
+      "last_sync": "2026-10-19 04:20:52"
     },
     "BDI": {
       "regions": [],
       "records": [],
-      "last_sync": {
-        "last_sync": "2026-10-19 00:51:38"
-      }
+      "last_sync": "2026-10-19 04:20:52"
     }
   },
   "status": "success"
