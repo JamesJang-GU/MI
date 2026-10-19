@@ -15,11 +15,11 @@ BASE_DIR = SCRIPT_DIR.parent
 
 # DB는 루트(MI/)에 위치
 DB_PATH = BASE_DIR / "index_history.db"
-# JSON과 HTML은 스크립트와 동일한 폴더(Shipping Index/)에 생성하여 경로 불일치 방지
+# JSON과 HTML은 스크립트와 동일한 폴더(Shipping Index/)에 생성
 JSON_PATH = SCRIPT_DIR / "shipping_index_data.json"
 HTML_PATH = SCRIPT_DIR / "index.html"
 
-# 지원하는 인덱스 정의 (HTML의 탭 구조와 일치해야 함)
+# 지원하는 인덱스 정의
 SUPPORTED_INDEXES = ["SCFI", "BDI"]
 
 # =============================================================================
@@ -111,7 +111,7 @@ def build_dashboard_json():
         indexes_payload[index_name] = {
             "regions": regions,
             "records": records,
-            "last_sync": get_last_sync_str() # 문자열 반환
+            "last_sync": get_last_sync_str()  # 문자열 반환 (중요)
         }
 
     # 최종 루트 페이로드 구성
@@ -134,10 +134,9 @@ def build_dashboard_json():
 def generate_html_file():
     """
     HTML 파일 생성 로직. 
-    기존에 구현된 index.html 생성 함수가 있다면 여기서 호출합니다.
     """
-    log("[HTML] HTML 파일 생성을 시작합니다. (기존 generator 필요)")
-    # 예: existing_html_generator(JSON_PATH, HTML_PATH)
+    log("[HTML] HTML 파일 생성을 시작합니다.")
+    # 기존에 구현된 index.html 생성 함수가 있다면 여기서 호출
     pass
 
 # =============================================================================
@@ -146,13 +145,10 @@ def generate_html_file():
 def main():
     log("=== Shipping Index (SCFI & BDI) 통합 프로세스 시작 ===")
     
-    # 1. [선택 사항] 데이터 수집/갱신 (Crawler 로직)
-    # run_crawler() 
-    
-    # 2. 데이터 정리 및 JSON 생성
+    # 1. 데이터 정리 및 JSON 생성
     build_dashboard_json()
     
-    # 3. HTML 파일 생성
+    # 2. HTML 파일 생성
     generate_html_file()
     
     log("=== 모든 프로세스 완료 ===")
