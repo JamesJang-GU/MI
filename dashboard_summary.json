@@ -1,23 +1,23 @@
 {
-  "generated_at": "2026-10-18 23:32:46",
+  "generated_at": "2026-10-19 00:12:07",
   "shipping": {
     "title": "Shipping Index (SCFI / BDI)",
     "path": "Shipping Index/index.html",
     "category": "Sea",
-    "scfi_latest": "-",
-    "scfi_date": "-",
-    "bdi_latest": "-",
-    "bdi_date": "-",
-    "status": "No Data"
+    "scfi_latest": "3,686.6",
+    "scfi_date": "2026-09-24",
+    "bdi_latest": "2,545",
+    "bdi_date": "2026-10-15",
+    "status": "Active"
   },
   "alphaliner": {
     "title": "Alphaliner TOP 100",
     "path": "Alphaliner/index.html",
     "category": "Sea",
-    "latest_date": "2026-10-18",
+    "latest_date": "2026-10-19",
     "total_teu": "32,688,538",
-    "total_ships": "-",
-    "top1_operator": "Mediterranean Shg Co (None%)",
+    "total_ships": "0",
+    "top1_operator": "Mediterranean Shg Co",
     "status": "Active"
   },
   "bunker": {

@@ -46,3 +46,19 @@
 2026-10-18 23:32:46,209 [INFO] [STATIC] HTML generated: index.html
 2026-10-18 23:32:46,209 [INFO] [CRON] TAC Index Dashboard update completed successfully.
 2026-10-18 23:32:46,209 [INFO] ========================================================================
+2026-10-19 00:12:06,776 [INFO] ========================================================================
+2026-10-19 00:12:06,777 [INFO] [CRON] TAC Index Dashboard update started
+2026-10-19 00:12:06,777 [INFO] ========================================================================
+2026-10-19 00:12:06,777 [INFO] [FETCH] Infogram embed request: https://e.infogram.com/_/SuAWaj6s2iFahJI4zPJw?src=embed
+2026-10-19 00:12:07,018 [INFO] [FETCH] Infogram response received: HTTP 200, size=40,364 bytes
+2026-10-19 00:12:07,019 [INFO] [PARSE] Extracting Infogram infographicData...
+2026-10-19 00:12:07,021 [INFO] [PARSE] infographicData extraction completed.
+2026-10-19 00:12:07,021 [INFO] [PARSE] Searching BAI route-level chart data...
+2026-10-19 00:12:07,021 [INFO] [PARSE] Selected chart: entity=5d72cc0e-ebcb-4566-8a63-045b497c254b, sheet=0, score=215, rows=122
+2026-10-19 00:12:07,028 [INFO] [PARSE] Dataset created: labels=121, routes=3, route_names=['Frankfurt-North America', 'Hong Kong-Europe', 'Hong Kong-North America']
+2026-10-19 00:12:07,029 [INFO] [DB] Duplicate TAC snapshot detected. Using existing snapshot_id=1
+2026-10-19 00:12:07,031 [INFO] [SUCCESS] TAC Index extraction completed: date=2026-09-01, source_label=Sep-26, routes=3
+2026-10-19 00:12:07,032 [INFO] [STATIC] JSON generated: tac_index_data.json
+2026-10-19 00:12:07,033 [INFO] [STATIC] HTML generated: index.html
+2026-10-19 00:12:07,033 [INFO] [CRON] TAC Index Dashboard update completed successfully.
+2026-10-19 00:12:07,033 [INFO] ========================================================================

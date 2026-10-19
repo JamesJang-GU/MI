@@ -13,22 +13,29 @@
       --text-muted: #94a3b8;
       --accent-blue: #38bdf8;
       --accent-emerald: #34d399;
-      --accent-purple: #c084fc;
-      --accent-amber: #fbbf24;
       --badge-bg: #334155;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+        Roboto, "Helvetica Neue", Arial, sans-serif;
       background-color: var(--bg);
       color: var(--text-main);
       padding: 2.5rem 1.5rem;
       min-height: 100vh;
     }
+
     .container {
       max-width: 1200px;
       margin: 0 auto;
     }
+
     header {
       margin-bottom: 2.5rem;
       border-bottom: 1px solid var(--card-border);
@@ -39,6 +46,7 @@
       flex-wrap: wrap;
       gap: 1rem;
     }
+
     h1 {
       font-size: 2rem;
       font-weight: 700;
@@ -47,19 +55,22 @@
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
+
     .updated-at {
       font-size: 0.875rem;
       color: var(--text-muted);
     }
+
     .section-title {
       font-size: 1.25rem;
       font-weight: 600;
       color: var(--text-muted);
-      margin: 2rem 0 1rem 0;
+      margin: 2rem 0 1rem;
       display: flex;
       align-items: center;
       gap: 0.5rem;
     }
+
     .section-title::before {
       content: "";
       display: inline-block;
@@ -68,11 +79,13 @@
       background: var(--accent-blue);
       border-radius: 2px;
     }
+
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
       gap: 1.25rem;
     }
+
     .card {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
@@ -85,64 +98,110 @@
       flex-direction: column;
       justify-content: space-between;
     }
+
     .card:hover {
       transform: translateY(-4px);
       border-color: var(--accent-blue);
       box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
     }
+
     .card-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 0.75rem;
       margin-bottom: 1rem;
     }
+
     .card-title {
       font-size: 1.15rem;
       font-weight: 600;
       color: var(--text-main);
     }
+
     .badge {
+      flex-shrink: 0;
       font-size: 0.75rem;
       padding: 0.25rem 0.6rem;
       border-radius: 9999px;
       font-weight: 500;
     }
-    .badge.active { background: rgba(52, 211, 153, 0.15); color: var(--accent-emerald); border: 1px solid rgba(52, 211, 153, 0.3); }
-    .badge.nodata { background: var(--badge-bg); color: var(--text-muted); }
+
+    .badge.active {
+      background: rgba(52, 211, 153, 0.15);
+      color: var(--accent-emerald);
+      border: 1px solid rgba(52, 211, 153, 0.3);
+    }
+
+    .badge.nodata {
+      background: var(--badge-bg);
+      color: var(--text-muted);
+    }
+
     .kpi-group {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
       gap: 0.75rem;
       margin: 1rem 0;
     }
+
     .kpi-item {
       background: rgba(15, 23, 42, 0.6);
       padding: 0.75rem;
       border-radius: 8px;
       border: 1px solid rgba(255, 255, 255, 0.05);
     }
+
     .kpi-label {
       font-size: 0.75rem;
       color: var(--text-muted);
       margin-bottom: 0.25rem;
     }
+
     .kpi-val {
       font-size: 1.1rem;
       font-weight: 700;
       color: var(--text-main);
+      overflow-wrap: anywhere;
     }
+
+    .small-value {
+      font-size: 0.95rem;
+    }
+
     .card-footer {
       font-size: 0.8rem;
       color: var(--text-muted);
       margin-top: 1rem;
       display: flex;
       justify-content: space-between;
+      gap: 0.75rem;
       border-top: 1px solid rgba(255, 255, 255, 0.05);
       padding-top: 0.75rem;
     }
+
     .arrow {
+      flex-shrink: 0;
       color: var(--accent-blue);
       font-weight: bold;
+    }
+
+    @media (max-width: 500px) {
+      body {
+        padding: 1.25rem 1rem;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .kpi-group {
+        grid-template-columns: 1fr;
+      }
+
+      .card-footer {
+        flex-direction: column;
+      }
     }
   </style>
 </head>
@@ -151,103 +210,114 @@
     <header>
       <div>
         <h1>Market Intelligence Portal</h1>
-        <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 0.25rem;">글로벌 해운, 항공, 거시경제 실시간 대시보드</p>
+        <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 0.25rem;">
+          글로벌 해운, 항공, 거시경제 실시간 대시보드
+        </p>
       </div>
-      <div class="updated-at">갱신 시각: 2026-10-18 23:32:46</div>
+      <div class="updated-at">갱신 시각: 2026-10-19 00:12:07</div>
     </header>
 
     <div class="section-title">Sea Logistics (해운)</div>
+
     <div class="grid">
-      <!-- Shipping Index -->
       <a href="Shipping Index/index.html" class="card">
         <div>
           <div class="card-header">
             <span class="card-title">Shipping Index (SCFI / BDI)</span>
-            <span class="badge nodata">No Data</span>
+            <span class="badge active">Active</span>
           </div>
+
           <div class="kpi-group">
             <div class="kpi-item">
               <div class="kpi-label">SCFI 종합지수</div>
-              <div class="kpi-val">-</div>
+              <div class="kpi-val">3,686.6</div>
             </div>
+
             <div class="kpi-item">
               <div class="kpi-label">BDI 종합지수</div>
-              <div class="kpi-val">-</div>
+              <div class="kpi-val">2,545</div>
             </div>
           </div>
         </div>
+
         <div class="card-footer">
-          <span>최신 일자: -</span>
+          <span>최신 일자: 2026-10-15</span>
           <span class="arrow">대시보드 보기 &rarr;</span>
         </div>
       </a>
 
-      <!-- Alphaliner -->
       <a href="Alphaliner/index.html" class="card">
         <div>
           <div class="card-header">
             <span class="card-title">Alphaliner TOP 100</span>
             <span class="badge active">Active</span>
           </div>
+
           <div class="kpi-group">
             <div class="kpi-item">
               <div class="kpi-label">전세계 총 선복량 (TEU)</div>
               <div class="kpi-val">32,688,538</div>
             </div>
+
             <div class="kpi-item">
               <div class="kpi-label">1위 선사 점유율</div>
-              <div class="kpi-val" style="font-size: 0.95rem;">Mediterranean Shg Co (None%)</div>
+              <div class="kpi-val small-value">Mediterranean Shg Co</div>
             </div>
           </div>
         </div>
+
         <div class="card-footer">
-          <span>최신 일자: 2026-10-18</span>
+          <span>최신 일자: 2026-10-19</span>
           <span class="arrow">대시보드 보기 &rarr;</span>
         </div>
       </a>
 
-      <!-- Bunker Price -->
       <a href="BunkerPrice/index.html" class="card">
         <div>
           <div class="card-header">
             <span class="card-title">Bunker Price (VLSFO)</span>
             <span class="badge active">Active</span>
           </div>
+
           <div class="kpi-group">
             <div class="kpi-item">
               <div class="kpi-label">주요 항만 가격</div>
-              <div class="kpi-val">Rotterdam / Singapore</div>
+              <div class="kpi-val small-value">Rotterdam / Singapore</div>
             </div>
+
             <div class="kpi-item">
               <div class="kpi-label">유종</div>
-              <div class="kpi-val">VLSFO / LSMGO</div>
+              <div class="kpi-val small-value">VLSFO / LSMGO</div>
             </div>
           </div>
         </div>
+
         <div class="card-footer">
           <span>최신 가격 트렌드 확인</span>
           <span class="arrow">대시보드 보기 &rarr;</span>
         </div>
       </a>
 
-      <!-- Forwarder Top 25 -->
       <a href="Forwarder/index.html" class="card">
         <div>
           <div class="card-header">
             <span class="card-title">Global Top 25 Forwarders</span>
             <span class="badge nodata">No Data</span>
           </div>
+
           <div class="kpi-group">
             <div class="kpi-item">
               <div class="kpi-label">해상 1위 포워더</div>
-              <div class="kpi-val" style="font-size: 0.95rem;">-</div>
+              <div class="kpi-val small-value">-</div>
             </div>
+
             <div class="kpi-item">
               <div class="kpi-label">항공 1위 포워더</div>
-              <div class="kpi-val" style="font-size: 0.95rem;">-</div>
+              <div class="kpi-val small-value">-</div>
             </div>
           </div>
         </div>
+
         <div class="card-footer">
           <span>A&A 글로벌 랭킹 분석</span>
           <span class="arrow">대시보드 보기 &rarr;</span>
@@ -256,49 +326,54 @@
     </div>
 
     <div class="section-title">Air Cargo & Macro (항공 및 거시경제)</div>
+
     <div class="grid">
-      <!-- TAC Index -->
       <a href="TAC Index/index.html" class="card">
         <div>
           <div class="card-header">
             <span class="card-title">Air Freight (TAC Index)</span>
             <span class="badge active">Active</span>
           </div>
+
           <div class="kpi-group">
             <div class="kpi-item">
               <div class="kpi-label">종합 지수 (Overall)</div>
               <div class="kpi-val">4.74</div>
             </div>
+
             <div class="kpi-item">
               <div class="kpi-label">주간 변동률 (W/W)</div>
               <div class="kpi-val">+2.07%</div>
             </div>
           </div>
         </div>
+
         <div class="card-footer">
           <span>최신 일자: 2026-09-01 (노선 수: 3)</span>
           <span class="arrow">대시보드 보기 &rarr;</span>
         </div>
       </a>
 
-      <!-- Macro Economies & GSCPI -->
-      <a href="GDP&Inflation/index.html" class="card">
+      <a href="GDP&amp;Inflation/index.html" class="card">
         <div>
           <div class="card-header">
             <span class="card-title">Macro Economies & GSCPI</span>
             <span class="badge nodata">No Data</span>
           </div>
+
           <div class="kpi-group">
             <div class="kpi-item">
               <div class="kpi-label">글로벌 공급망 압력 (GSCPI)</div>
               <div class="kpi-val">-</div>
             </div>
+
             <div class="kpi-item">
               <div class="kpi-label">거시 지표 범위</div>
-              <div class="kpi-val" style="font-size: 0.95rem;">WorldBank GDP / CPI</div>
+              <div class="kpi-val small-value">WorldBank GDP / CPI</div>
             </div>
           </div>
         </div>
+
         <div class="card-footer">
           <span>최신 일자: -</span>
           <span class="arrow">대시보드 보기 &rarr;</span>
