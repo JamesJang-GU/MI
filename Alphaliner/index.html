@@ -4,9 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Alphaliner TOP 100 Dashboard</title>
-
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-
   <style>
     :root {
       --navy: #102a43;
@@ -21,47 +19,22 @@
       --background: #f5f8fb;
       --white: #ffffff;
     }
-
-    * {
-      box-sizing: border-box;
-    }
-
+    * { box-sizing: border-box; }
     body {
       margin: 0;
       background: var(--background);
       color: var(--text);
-      font-family: Arial, "Noto Sans KR", sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", Arial, sans-serif;
     }
-
     .header {
       background: linear-gradient(120deg, #102a43, #1677c8);
       color: #ffffff;
       padding: 30px 24px;
     }
-
-    .header-inner {
-      max-width: 1440px;
-      margin: 0 auto;
-    }
-
-    .header h1 {
-      margin: 0;
-      font-size: 28px;
-      font-weight: 700;
-    }
-
-    .header p {
-      margin: 9px 0 0;
-      color: #d9efff;
-      font-size: 14px;
-    }
-
-    .container {
-      max-width: 1440px;
-      margin: 0 auto;
-      padding: 24px;
-    }
-
+    .header-inner { max-width: 1440px; margin: 0 auto; }
+    .header h1 { margin: 0; font-size: 28px; font-weight: 700; }
+    .header p { margin: 9px 0 0; color: #d9efff; font-size: 14px; }
+    .container { max-width: 1440px; margin: 0 auto; padding: 24px; }
     .status {
       display: flex;
       gap: 10px;
@@ -70,29 +43,15 @@
       color: var(--muted);
       font-size: 13px;
     }
-
-    .status-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: #94a3b8;
-    }
-
-    .status-dot.success {
-      background: #16a34a;
-    }
-
-    .status-dot.error {
-      background: #dc2626;
-    }
-
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #94a3b8; }
+    .status-dot.success { background: #16a34a; }
+    .status-dot.error { background: #dc2626; }
     .kpi-grid {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 16px;
       margin-bottom: 20px;
     }
-
     .card {
       background: var(--white);
       border: 1px solid var(--border);
@@ -100,94 +59,26 @@
       padding: 20px;
       box-shadow: 0 2px 8px rgba(16, 42, 67, 0.05);
     }
-
-    .kpi-label {
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 600;
-      margin-bottom: 10px;
-    }
-
-    .kpi-value {
-      color: var(--navy);
-      font-size: 26px;
-      font-weight: 700;
-    }
-
-    .kpi-sub {
-      margin-top: 8px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
+    .kpi-label { color: var(--muted); font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+    .kpi-value { color: var(--navy); font-size: 26px; font-weight: 700; }
+    .kpi-sub { margin-top: 8px; color: var(--muted); font-size: 12px; }
     .chart-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 16px;
       margin-bottom: 20px;
     }
-
-    .chart-card {
-      min-height: 390px;
-    }
-
-    .chart-title {
-      margin: 0 0 6px;
-      color: var(--navy);
-      font-size: 17px;
-    }
-
-    .chart-note {
-      margin: 0 0 18px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .chart-wrap {
-      position: relative;
-      height: 285px;
-    }
-
-    .table-card {
-      overflow: hidden;
-      padding: 0;
-    }
-
-    .table-heading {
-      padding: 20px 20px 12px;
-    }
-
-    .table-heading h2 {
-      margin: 0;
-      color: var(--navy);
-      font-size: 18px;
-    }
-
-    .table-heading p {
-      margin: 7px 0 0;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .table-scroll {
-      overflow-x: auto;
-      max-height: 660px;
-      overflow-y: auto;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      min-width: 900px;
-      font-size: 13px;
-    }
-
-    thead {
-      position: sticky;
-      top: 0;
-      z-index: 2;
-    }
-
+    .chart-card { min-height: 390px; }
+    .chart-title { margin: 0 0 6px; color: var(--navy); font-size: 17px; }
+    .chart-note { margin: 0 0 18px; color: var(--muted); font-size: 12px; }
+    .chart-wrap { position: relative; height: 285px; }
+    .table-card { overflow: hidden; padding: 0; }
+    .table-heading { padding: 20px 20px 12px; }
+    .table-heading h2 { margin: 0; color: var(--navy); font-size: 18px; }
+    .table-heading p { margin: 7px 0 0; color: var(--muted); font-size: 12px; }
+    .table-scroll { overflow-x: auto; max-height: 660px; overflow-y: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 900px; font-size: 13px; }
+    thead { position: sticky; top: 0; z-index: 2; }
     th {
       background: #eaf4fb;
       color: #334e68;
@@ -196,76 +87,28 @@
       white-space: nowrap;
       border-bottom: 1px solid var(--border);
     }
-
-    td {
-      padding: 11px 14px;
-      border-bottom: 1px solid #edf2f7;
-      white-space: nowrap;
-    }
-
-    tbody tr:hover {
-      background: #f8fbfd;
-    }
-
-    .number {
-      text-align: right;
-    }
-
-    .rank {
-      color: var(--blue);
-      font-weight: 700;
-    }
-
-    .empty-message,
-    .error-message {
+    td { padding: 11px 14px; border-bottom: 1px solid #edf2f7; white-space: nowrap; }
+    tbody tr:hover { background: #f8fbfd; }
+    .number { text-align: right; }
+    .rank { color: var(--blue); font-weight: 700; }
+    .empty-message, .error-message {
       padding: 28px;
       border-radius: 10px;
       background: var(--white);
       border: 1px solid var(--border);
       color: var(--muted);
     }
-
-    .error-message {
-      border-color: #fecaca;
-      color: #b91c1c;
-      background: #fef2f2;
-    }
-
-    .footer {
-      padding: 20px 0 5px;
-      color: var(--muted);
-      font-size: 12px;
-      text-align: right;
-    }
-
-    @media (max-width: 980px) {
-      .kpi-grid,
-      .chart-grid {
-        grid-template-columns: 1fr 1fr;
-      }
-    }
-
+    .error-message { border-color: #fecaca; color: #b91c1c; background: #fef2f2; }
+    .footer { padding: 20px 0 5px; color: var(--muted); font-size: 12px; text-align: right; }
+    @media (max-width: 980px) { .kpi-grid, .chart-grid { grid-template-columns: 1fr 1fr; } }
     @media (max-width: 620px) {
-      .container {
-        padding: 16px;
-      }
-
-      .header {
-        padding: 24px 16px;
-      }
-
-      .header h1 {
-        font-size: 22px;
-      }
-
-      .kpi-grid,
-      .chart-grid {
-        grid-template-columns: 1fr;
-      }
+      .container { padding: 16px; }
+      .header { padding: 24px 16px; }
+      .header h1 { font-size: 22px; }
+      .kpi-grid, .chart-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
-
 <body>
   <header class="header">
     <div class="header-inner">
@@ -287,19 +130,16 @@
           <div id="totalTeu" class="kpi-value">-</div>
           <div class="kpi-sub">Total Capacity</div>
         </article>
-
         <article class="card">
           <div class="kpi-label">운항 선사 수</div>
           <div id="operatorCount" class="kpi-value">-</div>
           <div class="kpi-sub">Operators in latest snapshot</div>
         </article>
-
         <article class="card">
           <div class="kpi-label">총 선박 수</div>
           <div id="totalShips" class="kpi-value">-</div>
           <div class="kpi-sub">Total Ships</div>
         </article>
-
         <article class="card">
           <div class="kpi-label">1위 선사</div>
           <div id="leaderName" class="kpi-value">-</div>
@@ -330,7 +170,6 @@
           <h2>최신 TOP 100 선사 순위</h2>
           <p id="tableNote">-</p>
         </div>
-
         <div class="table-scroll">
           <table>
             <thead>
@@ -400,22 +239,19 @@
 
       document.getElementById("totalTeu").textContent = numberFormat(totalTeu) + " TEU";
       document.getElementById("operatorCount").textContent = numberFormat(rows.length);
-      document.getElementById("totalShips").textContent = numberFormat(totalShips);
+      document.getElementById("totalShips").textContent = totalShips > 0 ? numberFormat(totalShips) : "-";
 
       if (leader) {
         document.getElementById("leaderName").textContent = leader.operator_name || "-";
+        const shareText = leader.market_share ? (decimalFormat(leader.market_share, 2) + "% share") : "";
         document.getElementById("leaderSub").textContent =
-          numberFormat(leader.total_teu) + " TEU · " +
-          decimalFormat(leader.market_share, 2) + "% share";
+          numberFormat(leader.total_teu) + " TEU" + (shareText ? (" · " + shareText) : "");
       }
     }
 
     function renderTopOperatorsChart(rows) {
       const top10 = rows.slice(0, 10);
-
-      if (topOperatorsChart) {
-        topOperatorsChart.destroy();
-      }
+      if (topOperatorsChart) topOperatorsChart.destroy();
 
       topOperatorsChart = new Chart(
         document.getElementById("topOperatorsChart"),
@@ -435,9 +271,7 @@
             maintainAspectRatio: false,
             indexAxis: "y",
             plugins: {
-              legend: {
-                display: false
-              },
+              legend: { display: false },
               tooltip: {
                 callbacks: {
                   label: context => numberFormat(context.raw) + " TEU"
@@ -449,15 +283,9 @@
                 ticks: {
                   callback: value => (Number(value) / 1000000).toFixed(1) + "M"
                 },
-                grid: {
-                  color: "#edf2f7"
-                }
+                grid: { color: "#edf2f7" }
               },
-              y: {
-                grid: {
-                  display: false
-                }
-              }
+              y: { grid: { display: false } }
             }
           }
         }
@@ -465,9 +293,7 @@
     }
 
     function renderHistoryChart(history) {
-      if (historyChart) {
-        historyChart.destroy();
-      }
+      if (historyChart) historyChart.destroy();
 
       const labels = history.map(row => row.data_date || "");
       const values = history.map(row => Number(row.total_teu || 0) / 1000000);
@@ -493,9 +319,7 @@
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-              legend: {
-                display: false
-              },
+              legend: { display: false },
               tooltip: {
                 callbacks: {
                   label: context => decimalFormat(context.raw, 2) + " Million TEU"
@@ -504,18 +328,10 @@
             },
             scales: {
               y: {
-                ticks: {
-                  callback: value => value + "M"
-                },
-                grid: {
-                  color: "#edf2f7"
-                }
+                ticks: { callback: value => value + "M" },
+                grid: { color: "#edf2f7" }
               },
-              x: {
-                grid: {
-                  display: false
-                }
-              }
+              x: { grid: { display: false } }
             }
           }
         }
@@ -553,10 +369,7 @@
 
     async function loadDashboard() {
       try {
-        const response = await fetch("./alphaliner_data.json?v=" + Date.now(), {
-          cache: "no-store"
-        });
-
+        const response = await fetch("./alphaliner_data.json?v=" + Date.now(), { cache: "no-store" });
         if (!response.ok) {
           throw new Error("alphaliner_data.json HTTP " + response.status);
         }
@@ -566,9 +379,7 @@
         const history = Array.isArray(data.history) ? data.history : [];
 
         if (!rows.length) {
-          throw new Error(
-            "latest_detail 데이터가 0건입니다. 크롤링 결과와 SQLite Snapshot 저장 상태를 확인해 주세요."
-          );
+          throw new Error("latest_detail 데이터가 0건입니다.");
         }
 
         const lastSync = data.last_sync || {};
@@ -579,13 +390,10 @@
         renderHistoryChart(history);
         renderTable(rows, latestDate);
 
-        document.getElementById("generatedAt").textContent =
-          data.generated_at || "-";
-
+        document.getElementById("generatedAt").textContent = data.generated_at || "-";
         document.getElementById("statusDot").className = "status-dot success";
         document.getElementById("statusText").textContent =
-          "정상 로드 · 기준일: " + latestDate +
-          " · 최종 실행 상태: " + (lastSync.status || "N/A");
+          "정상 로드 · 기준일: " + latestDate + " · 최종 실행 상태: " + (lastSync.status || "N/A");
 
         document.getElementById("dashboard").style.display = "block";
       } catch (error) {
