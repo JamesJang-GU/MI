@@ -133,56 +133,55 @@ def clean_data(df, index_name):
     ]
 
 # =============================================================================
-# 4. JSON Generator
+# 4. JSON 파일 생성
 # =============================================================================
+def build_json():
 
-def build_dashboard_json():
-    """Create shipping_index_data.json for index.html."""
+    log("[JSON] shipping_index_data.json 생성 중...")
 
-    log("[JSON] Building shipping_index_data.json...")
+    log(f"DB_PATH   : {DB_PATH}")
+    log(f"JSON_PATH : {JSON_PATH}")
+    log(f"HTML_PATH : {HTML_PATH}")
+    log(f"DB Exists : {DB_PATH.exists()}")
 
-    generated_at = now_string()
-    indexes_payload = {}
+    now_str = get_now()
+    indexes_dict = {}
 
-    for index_name in SUPPORTED_INDEXES:
-        raw_df = load_index_data(index_name)
-        clean_df = clean_data(raw_df, index_name)
+    for idx in SUPPORTED_INDEXES:
+        df = load_and_clean_data(idx)
 
-        records = clean_df.to_dict(orient="records")
-
-        regions = sorted(
-            clean_df["REGION"].dropna().unique().tolist(),
-            key=lambda value: str(value).lower()
+        records = (
+            df.to_dict(orient="records")
+            if not df.empty else []
         )
 
-        indexes_payload[index_name] = {
+        regions = (
+            sorted(df["REGION"].unique().tolist())
+            if not df.empty else []
+        )
+
+        indexes_dict[idx] = {
             "regions": regions,
             "records": records,
-            "last_sync": generated_at
+            "last_sync": now_str
         }
-
-        log(
-            f"[JSON] {index_name}: "
-            f"{len(records):,} records / {len(regions):,} regions"
-        )
 
     payload = {
         "status": "success",
-        "generated_at": generated_at,
-        "indexes": indexes_payload
+        "generated_at": now_str,
+        "indexes": indexes_dict
     }
 
-    atomic_write_text(
+    atomic_write(
         JSON_PATH,
         json.dumps(
             payload,
             ensure_ascii=False,
-            indent=2,
-            allow_nan=False
+            indent=2
         )
     )
 
-    log(f"[JSON] Created: {JSON_PATH}")
+    log(f"[JSON] 저장 완료: {JSON_PATH}")
 
 # =============================================================================
 # 5. HTML Generator
