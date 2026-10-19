@@ -27,7 +27,6 @@
       --white: #ffffff;
       --danger: #b42318;
       --success: #027a48;
-      --warning: #b54708;
     }
 
     * {
@@ -144,7 +143,6 @@
       cursor: pointer;
       font-size: 14px;
       font-weight: 700;
-      transition: all 0.2s ease;
     }
 
     .tab-button:hover {
@@ -358,6 +356,7 @@
       </div>
 
       <h2 id="dashboardTitle">SCFI Dashboard</h2>
+
       <p id="dashboardDescription" class="section-description">
         데이터를 불러오는 중입니다.
       </p>
@@ -365,7 +364,11 @@
       <div class="controls">
         <div class="control-group">
           <label for="regionSelect">지역 / 항로 선택</label>
-          <select id="regionSelect" onchange="renderDashboard()">
+
+          <select
+            id="regionSelect"
+            onchange="renderDashboard()"
+          >
             <option value="">전체</option>
           </select>
         </div>
@@ -402,6 +405,7 @@
 
     <section class="panel">
       <h2>최근 데이터</h2>
+
       <p class="section-description">
         선택된 지수 및 지역 기준으로 최신 20개 데이터를 표시합니다.
       </p>
@@ -416,9 +420,12 @@
               <th class="numeric">값</th>
             </tr>
           </thead>
+
           <tbody id="dataTableBody">
             <tr>
-              <td colspan="4" class="empty-message">데이터 로딩 중...</td>
+              <td colspan="4" class="empty-message">
+                데이터 로딩 중...
+              </td>
             </tr>
           </tbody>
         </table>
@@ -427,7 +434,7 @@
   </main>
 
   <footer>
-    Market Intelligence Dashboard · Data source: Internal Shipping Index Database
+    Market Intelligence Dashboard · Data source: Korea Shipping Gazette
   </footer>
 
   <script>
@@ -445,7 +452,11 @@
     };
 
     function formatNumber(value, decimals = 2) {
-      if (value === null || value === undefined || Number.isNaN(Number(value))) {
+      if (
+        value === null ||
+        value === undefined ||
+        Number.isNaN(Number(value))
+      ) {
         return "-";
       }
 
@@ -456,7 +467,11 @@
     }
 
     function formatInteger(value) {
-      if (value === null || value === undefined || Number.isNaN(Number(value))) {
+      if (
+        value === null ||
+        value === undefined ||
+        Number.isNaN(Number(value))
+      ) {
         return "-";
       }
 
@@ -532,8 +547,10 @@
 
       indexData.regions.forEach(function(region) {
         const option = document.createElement("option");
+
         option.value = region;
         option.textContent = region;
+
         select.appendChild(option);
       });
 
@@ -544,7 +561,10 @@
 
     function getFilteredRecords() {
       const indexData = getCurrentIndexData();
-      const region = document.getElementById("regionSelect").value;
+
+      const region = document.getElementById(
+        "regionSelect"
+      ).value;
 
       let records = Array.isArray(indexData.records)
         ? [...indexData.records]
@@ -564,69 +584,117 @@
     }
 
     function updateKpis(records) {
-      const latestValueElement = document.getElementById("latestValue");
-      const latestValueDateElement = document.getElementById("latestValueDate");
-      const previousValueElement = document.getElementById("previousValue");
-      const previousValueDateElement = document.getElementById("previousValueDate");
-      const changeValueElement = document.getElementById("changeValue");
-      const changeRateElement = document.getElementById("changeRate");
-      const recordCountElement = document.getElementById("recordCount");
-      const regionCountElement = document.getElementById("regionCount");
+      const latestValueElement =
+        document.getElementById("latestValue");
+
+      const latestValueDateElement =
+        document.getElementById("latestValueDate");
+
+      const previousValueElement =
+        document.getElementById("previousValue");
+
+      const previousValueDateElement =
+        document.getElementById("previousValueDate");
+
+      const changeValueElement =
+        document.getElementById("changeValue");
+
+      const changeRateElement =
+        document.getElementById("changeRate");
+
+      const recordCountElement =
+        document.getElementById("recordCount");
+
+      const regionCountElement =
+        document.getElementById("regionCount");
 
       const indexData = getCurrentIndexData();
 
-      recordCountElement.textContent = formatInteger(records.length);
+      recordCountElement.textContent = formatInteger(
+        records.length
+      );
+
       regionCountElement.textContent =
-        "지역 / 항로 " + formatInteger(indexData.regions.length) + "개";
+        "지역 / 항로 " +
+        formatInteger(indexData.regions.length) +
+        "개";
 
       if (records.length === 0) {
         latestValueElement.textContent = "-";
         latestValueDateElement.textContent = "데이터 없음";
+
         previousValueElement.textContent = "-";
         previousValueDateElement.textContent = "데이터 없음";
+
         changeValueElement.textContent = "-";
         changeRateElement.textContent = "-";
         changeValueElement.className = "kpi-value neutral";
+
         return;
       }
 
       const latest = records[records.length - 1];
+
       const previous = records.length >= 2
         ? records[records.length - 2]
         : null;
 
-      latestValueElement.textContent = formatNumber(latest.VALUE);
-      latestValueDateElement.textContent = formatDate(latest.DATE);
+      latestValueElement.textContent = formatNumber(
+        latest.VALUE
+      );
+
+      latestValueDateElement.textContent = formatDate(
+        latest.DATE
+      );
 
       if (!previous) {
         previousValueElement.textContent = "-";
-        previousValueDateElement.textContent = "비교 데이터 없음";
+        previousValueDateElement.textContent =
+          "비교 데이터 없음";
+
         changeValueElement.textContent = "-";
-        changeRateElement.textContent = "비교 데이터 없음";
+        changeRateElement.textContent =
+          "비교 데이터 없음";
+
         changeValueElement.className = "kpi-value neutral";
+
         return;
       }
 
-      const difference = Number(latest.VALUE) - Number(previous.VALUE);
-      const percentChange = Number(previous.VALUE) !== 0
-        ? (difference / Number(previous.VALUE)) * 100
-        : null;
+      const difference =
+        Number(latest.VALUE) -
+        Number(previous.VALUE);
+
+      const percentChange =
+        Number(previous.VALUE) !== 0
+          ? (difference / Number(previous.VALUE)) * 100
+          : null;
 
       const sign = difference > 0 ? "+" : "";
+
       const styleClass = difference > 0
         ? "positive"
         : difference < 0
           ? "negative"
           : "neutral";
 
-      previousValueElement.textContent = formatNumber(previous.VALUE);
-      previousValueDateElement.textContent = formatDate(previous.DATE);
+      previousValueElement.textContent = formatNumber(
+        previous.VALUE
+      );
 
-      changeValueElement.textContent = sign + formatNumber(difference);
-      changeValueElement.className = "kpi-value " + styleClass;
+      previousValueDateElement.textContent = formatDate(
+        previous.DATE
+      );
+
+      changeValueElement.textContent =
+        sign + formatNumber(difference);
+
+      changeValueElement.className =
+        "kpi-value " + styleClass;
 
       if (percentChange === null) {
-        changeRateElement.textContent = "변화율 계산 불가";
+        changeRateElement.textContent =
+          "변화율 계산 불가";
       } else {
         changeRateElement.textContent =
           sign + formatNumber(percentChange, 2) + "%";
@@ -642,14 +710,16 @@
         chartElement.innerHTML = `
           <div class="empty-message">
             선택한 조건에 해당하는 데이터가 없습니다.<br>
-            데이터베이스의 shipping_indices 테이블 및 REGION 값을 확인해 주세요.
+            GitHub Actions 실행 로그와
+            index_history.db의 index_raw 테이블을 확인해 주세요.
           </div>
         `;
 
         return;
       }
 
-      const selectedRegion = document.getElementById("regionSelect").value;
+      const selectedRegion =
+        document.getElementById("regionSelect").value;
 
       const groupedRecords = {};
 
@@ -665,34 +735,36 @@
         groupedRecords[groupName].push(record);
       });
 
-      const traces = Object.keys(groupedRecords).map(function(region, index) {
-        const regionRecords = groupedRecords[region];
+      const traces = Object.keys(groupedRecords).map(
+        function(region) {
+          const regionRecords = groupedRecords[region];
 
-        return {
-          x: regionRecords.map(function(record) {
-            return record.DATE;
-          }),
-          y: regionRecords.map(function(record) {
-            return Number(record.VALUE);
-          }),
-          type: "scatter",
-          mode: "lines+markers",
-          name: region,
-          line: {
-            width: 2.5,
-            color: selectedRegion
-              ? INDEX_COLORS[currentIndex]
-              : undefined
-          },
-          marker: {
-            size: 5
-          },
-          hovertemplate:
-            "<b>" + escapeHtml(region) + "</b><br>" +
-            "일자: %{x}<br>" +
-            "값: %{y:,.2f}<extra></extra>"
-        };
-      });
+          return {
+            x: regionRecords.map(function(record) {
+              return record.DATE;
+            }),
+            y: regionRecords.map(function(record) {
+              return Number(record.VALUE);
+            }),
+            type: "scatter",
+            mode: "lines+markers",
+            name: region,
+            line: {
+              width: 2.5,
+              color: selectedRegion
+                ? INDEX_COLORS[currentIndex]
+                : undefined
+            },
+            marker: {
+              size: 5
+            },
+            hovertemplate:
+              "<b>" + escapeHtml(region) + "</b><br>" +
+              "일자: %{x}<br>" +
+              "값: %{y:,.2f}<extra></extra>"
+          };
+        }
+      );
 
       const layout = {
         margin: {
@@ -731,11 +803,18 @@
         ]
       };
 
-      Plotly.newPlot(chartElement, traces, layout, config);
+      Plotly.newPlot(
+        chartElement,
+        traces,
+        layout,
+        config
+      );
     }
 
     function renderTable(records) {
-      const tableBody = document.getElementById("dataTableBody");
+      const tableBody = document.getElementById(
+        "dataTableBody"
+      );
 
       if (records.length === 0) {
         tableBody.innerHTML = `
@@ -745,6 +824,7 @@
             </td>
           </tr>
         `;
+
         return;
       }
 
@@ -754,16 +834,20 @@
         })
         .slice(0, 20);
 
-      tableBody.innerHTML = latestRecords.map(function(record) {
-        return `
-          <tr>
-            <td>${escapeHtml(formatDate(record.DATE))}</td>
-            <td>${escapeHtml(record.INDEX_NAME)}</td>
-            <td>${escapeHtml(record.REGION)}</td>
-            <td class="numeric">${escapeHtml(formatNumber(record.VALUE))}</td>
-          </tr>
-        `;
-      }).join("");
+      tableBody.innerHTML = latestRecords.map(
+        function(record) {
+          return `
+            <tr>
+              <td>${escapeHtml(formatDate(record.DATE))}</td>
+              <td>${escapeHtml(record.INDEX_NAME)}</td>
+              <td>${escapeHtml(record.REGION)}</td>
+              <td class="numeric">
+                ${escapeHtml(formatNumber(record.VALUE))}
+              </td>
+            </tr>
+          `;
+        }
+      ).join("");
     }
 
     function renderDashboard() {
@@ -773,8 +857,9 @@
       document.getElementById("dashboardTitle").textContent =
         currentIndex + " Dashboard";
 
-      document.getElementById("dashboardDescription").textContent =
-        INDEX_DESCRIPTIONS[currentIndex];
+      document.getElementById(
+        "dashboardDescription"
+      ).textContent = INDEX_DESCRIPTIONS[currentIndex];
 
       if (!indexData.records || indexData.records.length === 0) {
         updateKpis([]);
@@ -809,7 +894,9 @@
       try {
         const response = await fetch(
           "shipping_index_data.json?ts=" + Date.now(),
-          { cache: "no-store" }
+          {
+            cache: "no-store"
+          }
         );
 
         if (!response.ok) {
@@ -842,7 +929,9 @@
           "shipping_index_data.json 파일을 불러올 수 없습니다."
         );
 
-        document.getElementById("dashboardDescription").textContent =
+        document.getElementById(
+          "dashboardDescription"
+        ).textContent =
           "대시보드 데이터를 불러오는 중 오류가 발생했습니다.";
 
         updateKpis([]);
@@ -851,9 +940,12 @@
       }
     }
 
-    document.addEventListener("DOMContentLoaded", function() {
-      loadDashboardData();
-    });
+    document.addEventListener(
+      "DOMContentLoaded",
+      function() {
+        loadDashboardData();
+      }
+    );
   </script>
 </body>
 </html>
