@@ -1,7 +1,8 @@
-name: Update Shipping Index Dashboard
+name: Update MI Dashboards
 
 on:
   # 매주 월요일~금요일 한국시간 09:30 / 15:30 실행
+  # GitHub Actions cron은 UTC 기준
   schedule:
     - cron: "30 0 * * 1-5"
     - cron: "30 6 * * 1-5"
@@ -12,66 +13,131 @@ on:
 permissions:
   contents: write
 
+# 이전 실행이 끝나기 전에 다음 실행이 겹치지 않도록 방지
+concurrency:
+  group: mi-dashboard-update
+  cancel-in-progress: false
+
 jobs:
-  update-dashboard:
+  update-dashboards:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. 저장소 코드 및 기존 DB 다운로드
+      # =====================================================
+      # 1. 저장소 및 기존 DB 다운로드
+      # =====================================================
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: true
 
+      # =====================================================
       # 2. Python 설치
+      # =====================================================
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      # =====================================================
       # 3. Chrome 설치
-      # ubuntu-latest에는 통상 Chrome이 포함되지만,
-      # 명시적으로 설치하여 Selenium 실행 실패 가능성을 낮춤
+      # =====================================================
       - name: Set up Google Chrome
+        id: setup-chrome
         uses: browser-actions/setup-chrome@v1
         with:
           chrome-version: stable
 
-      # 4. 필요한 Python 라이브러리 설치
+      # =====================================================
+      # 4. Python 라이브러리 설치
+      # Shipping Index: pandas, selenium
+      # Alphaliner: pandas, flask, selenium, webdriver-manager
+      # =====================================================
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-          pip install pandas selenium
+          pip install pandas flask selenium webdriver-manager
 
-      # 5. KSG 크롤링 → DB 저장 → JSON/HTML 생성
-      - name: Crawl KSG and generate static dashboard
+      # =====================================================
+      # 5. Shipping Index 크롤링 및 정적 파일 생성
+      # =====================================================
+      - name: Crawl Shipping Index and generate static dashboard
         env:
           KSG_ID: ${{ secrets.KSG_ID }}
           KSG_PW: ${{ secrets.KSG_PW }}
         run: |
           python "Shipping Index/ShippingIndex_SCFI&BDI.py"
 
-      # 6. 생성 결과 확인
-      - name: Verify generated files
+      # =====================================================
+      # 6. Shipping Index 생성 파일 확인
+      # =====================================================
+      - name: Verify Shipping Index generated files
         run: |
-          ls -lh "Shipping Index"
+          echo "===== Shipping Index files ====="
+          ls -alh "Shipping Index"
+
           test -f "Shipping Index/index_history.db"
           test -f "Shipping Index/shipping_index_data.json"
           test -f "Shipping Index/index.html"
 
-      # 7. 변경된 DB / JSON / HTML을 GitHub 저장소로 push
+      # =====================================================
+      # 7. Alphaliner 크롤링 및 정적 파일 생성
+      # alphaliner.py는 --cron 실행 시:
+      # DB → alphaliner_data.json → index.html 순서로 생성
+      # =====================================================
+      - name: Crawl Alphaliner and generate static dashboard
+        env:
+          CHROME_BINARY: ${{ steps.setup-chrome.outputs.chrome-path }}
+        run: |
+          python "Alphaliner/alphaliner.py" --cron
+
+      # =====================================================
+      # 8. Alphaliner 생성 결과 확인
+      # 기존 Template Missing HTML이 다시 생성되면 실패 처리
+      # =====================================================
+      - name: Verify Alphaliner generated files
+        run: |
+          echo "===== Alphaliner files ====="
+          ls -alh "Alphaliner"
+
+          test -f "Alphaliner/alphaliner_data.db"
+          test -f "Alphaliner/alphaliner_data.json"
+          test -f "Alphaliner/index.html"
+
+          echo "===== Alphaliner index.html first 10 lines ====="
+          head -n 10 "Alphaliner/index.html"
+
+          echo "===== Check old Template Missing text ====="
+          if grep -qF "Alphaliner Dashboard Template (alphaliner.html) Missing" "Alphaliner/index.html"; then
+            echo "ERROR: Old Template Missing content still exists in Alphaliner/index.html"
+            exit 1
+          fi
+
+          echo "Alphaliner index.html verification passed."
+
+      # =====================================================
+      # 9. 변경된 DB / JSON / HTML을 한 번에 Commit & Push
+      # =====================================================
       - name: Commit and push dashboard data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          # Shipping Index 생성 파일
           git add "Shipping Index/index_history.db"
           git add "Shipping Index/shipping_index_data.json"
           git add "Shipping Index/index.html"
 
+          # Alphaliner 생성 파일
+          git add "Alphaliner/alphaliner_data.db"
+          git add "Alphaliner/alphaliner_data.json"
+          git add "Alphaliner/index.html"
+          git add "Alphaliner/alphaliner_crawl.log"
+
           if git diff --cached --quiet; then
             echo "No dashboard changes to commit."
           else
-            git commit -m "Update shipping index dashboard"
+            git commit -m "Auto: update Shipping Index and Alphaliner dashboards"
             git push
           fi
