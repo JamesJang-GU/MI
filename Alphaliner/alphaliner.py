@@ -7,7 +7,7 @@ Alphaliner TOP 100 Liner Operators Static Dashboard Crawler (GitHub Optimized)
 - Authentic Alphaliner 2-tier Grouped Table & UTF-8 BOM CSV Export
 
 Output files:
-- alphaliner_data.db
+- alphaliner_history.db  <-- DB 파일명 수정 반영
 - alphaliner_data.json
 - index.html
 """
@@ -44,7 +44,8 @@ except Exception:
 # =========================================================
 BASE_DIR = Path(__file__).resolve().parent
 
-DB_PATH = BASE_DIR / "alphaliner_data.db"
+# 요청하신 DB 파일명으로 변경
+DB_PATH = BASE_DIR / "alphaliner_history.db"
 JSON_PATH = BASE_DIR / "alphaliner_data.json"
 HTML_PATH = BASE_DIR / "index.html"
 LOG_PATH = BASE_DIR / "alphaliner_crawl.log"
@@ -178,7 +179,7 @@ def dataframe_to_records(dataframe, date_columns=None):
     )
 
 # =========================================================
-# 4. SQLite Database
+# 4. SQLite Database (alphaliner_history.db)
 # =========================================================
 def get_db_conn():
     connection = sqlite3.connect(DB_PATH, timeout=30)
@@ -1275,7 +1276,7 @@ def generate_static_html():
       document.getElementById("messageBox").innerHTML =
         '<div class="error-message"><strong>Alphaliner Dashboard 데이터를 표시할 수 없습니다.</strong><br>' +
         escapeHtml(message) +
-        '<br><br>GitHub 저장소의 <code>alphaliner_data.json</code> 파일 생성 여부를 확인해 주세요.</div>';
+        '<br><br>저장소의 <code>alphaliner_history.db</code> 및 <code>alphaliner_data.json</code> 파일 상태를 확인해 주세요.</div>';
     }
 
     function renderKpis(snapshot) {
@@ -1300,7 +1301,6 @@ def generate_static_html():
           numberFormat(leader.total_teu) + " TEU" + (shareText ? (" · " + shareText) : "");
       }
 
-      // Top 10 점유율 합산
       const top10Teu = rows.slice(0, 10).reduce((sum, r) => sum + Number(r.total_teu || 0), 0);
       const top10Share = globalTeu > 0 ? ((top10Teu / globalTeu) * 100) : 0;
       document.getElementById("top10Share").textContent = decimalFormat(top10Share, 2) + "%";
@@ -1350,8 +1350,8 @@ def generate_static_html():
           </article>
           <article class="card">
             <div class="kpi-label">최대 선복량 감소 선사</div>
-            <div class="kpi-value" id="topLossName">-</div>
-            <div class="kpi-sub" id="topLossVal">-</div>
+            <div id="topLossName" class="kpi-value">-</div>
+            <div id="topLossVal" class="kpi-sub">-</div>
           </article>
         </div>
       `;
