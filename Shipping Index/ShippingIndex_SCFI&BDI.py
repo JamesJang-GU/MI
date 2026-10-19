@@ -8,16 +8,14 @@ from pathlib import Path
 # =============================================================================
 # 1. 환경 설정 및 경로 정의
 # =============================================================================
-# 이 파일의 위치를 기준으로 경로를 계산하여 실행 환경(Local/GitHub Actions)에 구애받지 않도록 합니다.
-# 스크립트 위치: .../MI/Shipping Index/ShippingIndex_SCFI&BDI.py
+# 스크립트가 위치한 폴더 (MI/Shipping Index/)
 SCRIPT_DIR = Path(__file__).resolve().parent
-
-# GitHub Repository 루트: .../MI
+# 프로젝트 루트 폴더 (MI/)
 BASE_DIR = SCRIPT_DIR.parent
 
-# [경로 고정] 상세 대시보드가 파일을 찾을 수 있도록 산출물은 반드시 스크립트와 같은 폴더에 생성합니다.
-# DB는 루트에 있다고 가정하며, JSON과 HTML은 'Shipping Index' 폴더 내부에 위치합니다.
+# DB는 루트(MI/)에 위치
 DB_PATH = BASE_DIR / "index_history.db"
+# JSON과 HTML은 스크립트와 동일한 폴더(Shipping Index/)에 생성하여 경로 불일치 방지
 JSON_PATH = SCRIPT_DIR / "shipping_index_data.json"
 HTML_PATH = SCRIPT_DIR / "index.html"
 
@@ -39,23 +37,36 @@ def atomic_write_text(path, text):
     temp_path.replace(path)
 
 def load_long_df_from_db(index_name):
-    """DB에서 특정 인덱스의 데이터를 안전하게 불러온다."""
+    """DB에서 특정 인덱스의 대시보드용 데이터를 안전하게 불러온다."""
+    query = """
+        SELECT 
+            DATE, 
+            REGION, 
+            VALUE, 
+            INDEX_NAME 
+        FROM shipping_indices 
+        WHERE UPPER(INDEX_NAME) = UPPER(?)
+        ORDER BY DATE ASC
+    """
     try:
         with sqlite3.connect(DB_PATH) as conn:
-            # 파라미터 바인딩(?)을 사용하여 SQL Injection 방지 및 안정적 조회
-            query = "SELECT * FROM shipping_indices WHERE UPPER(INDEX_NAME) = UPPER(?)"
             df = pd.read_sql_query(query, conn, params=[index_name])
+        log(f"[DB] {index_name} 로드 완료: {len(df):,} 건")
         return df
     except Exception as e:
         log(f"[Error] DB 로드 실패 ({index_name}): {e}")
-        return pd.DataFrame()
+        return pd.DataFrame(columns=["DATE", "REGION", "VALUE", "INDEX_NAME"])
 
 def sort_regions_for_display(regions):
     """지역(Region) 목록을 정렬하여 반환"""
     return sorted([str(r) for r in regions if r])
 
 def get_last_sync_str():
-    """마지막 동기화 시간을 문자열로 반환 (JSON 직렬화 및 JS 호환성 위함)"""
+    """
+    [핵심 수정] 
+    JavaScript의 new Date()에서 오류가 나지 않도록 
+    딕셔너리가 아닌 '단순 문자열'만 반환합니다.
+    """
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 # =============================================================================
@@ -76,17 +87,20 @@ def build_dashboard_json():
 
         if not df.empty:
             df = df.copy()
-            # 1. 날짜를 문자열로 변환 (JSON 직렬화 에러 방지)
-            df["DATE"] = pd.to_datetime(df["DATE"]).dt.strftime("%Y-%m-%d")
             
-            # 2. 데이터 정제
+            # 1. 데이터 정제 및 타입 강제
+            df["DATE"] = pd.to_datetime(df["DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
+            df["VALUE"] = pd.to_numeric(df["VALUE"], errors="coerce")
+            df["REGION"] = df["REGION"].fillna("Unknown").astype(str).str.strip()
+            
+            # 2. 결측치 제거 및 중복 제거
             df = df.dropna(subset=["DATE", "VALUE"])
-            df["VALUE"] = df["VALUE"].astype(float)
+            df = df.drop_duplicates(subset=["DATE", "REGION"], keep="last")
             
             # 3. 레코드(List of Dict) 변환
             records = df.to_dict(orient="records")
             
-            # 4. 지역 목록 추출 및 정렬
+            # 4. 지역 목록 추출
             regions = sort_regions_for_display(df["REGION"].unique())
         else:
             log(f"[Warn] {index_name} 데이터가 DB에 없습니다.")
@@ -97,7 +111,7 @@ def build_dashboard_json():
         indexes_payload[index_name] = {
             "regions": regions,
             "records": records,
-            "last_sync": get_last_sync_str()
+            "last_sync": get_last_sync_str() # 문자열 반환
         }
 
     # 최종 루트 페이로드 구성
@@ -106,6 +120,9 @@ def build_dashboard_json():
         "indexes": indexes_payload,
         "status": "success"
     }
+
+    # 출력 폴더 생성 보장
+    JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     # 파일 저장
     atomic_write_text(
@@ -117,9 +134,9 @@ def build_dashboard_json():
 def generate_html_file():
     """
     HTML 파일 생성 로직. 
-    기존에 사용하던 HTML 생성 함수나 Generator가 있다면 여기서 호출합니다.
+    기존에 구현된 index.html 생성 함수가 있다면 여기서 호출합니다.
     """
-    log("[HTML] HTML 파일 생성을 시작합니다. (기존 generator 호출 필요)")
+    log("[HTML] HTML 파일 생성을 시작합니다. (기존 generator 필요)")
     # 예: existing_html_generator(JSON_PATH, HTML_PATH)
     pass
 
@@ -129,7 +146,7 @@ def generate_html_file():
 def main():
     log("=== Shipping Index (SCFI & BDI) 통합 프로세스 시작 ===")
     
-    # 1. [선택 사항] 데이터 수집/갱신 (Crawler 로직이 여기에 위치해야 함)
+    # 1. [선택 사항] 데이터 수집/갱신 (Crawler 로직)
     # run_crawler() 
     
     # 2. 데이터 정리 및 JSON 생성
