@@ -525,7 +525,7 @@
       document.getElementById("messageBox").innerHTML =
         '<div class="error-message"><strong>Alphaliner Dashboard 데이터를 표시할 수 없습니다.</strong><br>' +
         escapeHtml(message) +
-        '<br><br>GitHub 저장소의 <code>alphaliner_data.json</code> 파일 생성 여부를 확인해 주세요.</div>';
+        '<br><br>저장소의 <code>alphaliner_history.db</code> 및 <code>alphaliner_data.json</code> 파일 상태를 확인해 주세요.</div>';
     }
 
     function renderKpis(snapshot) {
@@ -550,7 +550,6 @@
           numberFormat(leader.total_teu) + " TEU" + (shareText ? (" · " + shareText) : "");
       }
 
-      // Top 10 점유율 합산
       const top10Teu = rows.slice(0, 10).reduce((sum, r) => sum + Number(r.total_teu || 0), 0);
       const top10Share = globalTeu > 0 ? ((top10Teu / globalTeu) * 100) : 0;
       document.getElementById("top10Share").textContent = decimalFormat(top10Share, 2) + "%";
@@ -600,8 +599,8 @@
           </article>
           <article class="card">
             <div class="kpi-label">최대 선복량 감소 선사</div>
-            <div class="kpi-value" id="topLossName">-</div>
-            <div class="kpi-sub" id="topLossVal">-</div>
+            <div id="topLossName" class="kpi-value">-</div>
+            <div id="topLossVal" class="kpi-sub">-</div>
           </article>
         </div>
       `;
