@@ -3,19 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Alphaliner TOP 100 Dashboard</title>
+  <title>Alphaliner TOP 100 Dashboard with Time Selection</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <style>
     :root {
       --navy: #102a43;
+      --navy-light: #243b53;
       --blue: #1677c8;
       --blue-light: #eaf4fb;
-      --sky: #38a3db;
       --green: #16876e;
       --red: #c23b3b;
       --text: #243b53;
       --muted: #627d98;
       --border: #d9e2ec;
+      --border-dark: #bcccdc;
       --background: #f5f8fb;
       --white: #ffffff;
     }
@@ -26,15 +27,91 @@
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", Arial, sans-serif;
     }
+
+    /* Header */
     .header {
-      background: linear-gradient(120deg, #102a43, #1677c8);
+      background: linear-gradient(120deg, #0b1f33, #1677c8);
       color: #ffffff;
-      padding: 30px 24px;
+      padding: 24px 28px;
+      box-shadow: 0 4px 12px rgba(11, 31, 51, 0.15);
     }
-    .header-inner { max-width: 1440px; margin: 0 auto; }
-    .header h1 { margin: 0; font-size: 28px; font-weight: 700; }
-    .header p { margin: 9px 0 0; color: #d9efff; font-size: 14px; }
-    .container { max-width: 1440px; margin: 0 auto; padding: 24px; }
+    .header-inner {
+      max-width: 1540px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .header h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+    .header p { margin: 6px 0 0; color: #d9efff; font-size: 13px; }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    /* Date Selection Box */
+    .selector-box {
+      display: flex;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 8px;
+      padding: 4px 10px;
+      gap: 8px;
+    }
+    .selector-box label {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #d9efff;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+    .selector-box select {
+      background: #ffffff;
+      color: var(--navy);
+      font-size: 13px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    /* Action Button (CSV) */
+    .btn-csv {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #ffffff;
+      color: var(--navy);
+      font-size: 13px;
+      font-weight: 700;
+      padding: 9px 16px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+      transition: all 0.2s ease;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .btn-csv:hover {
+      background: var(--blue-light);
+      color: var(--blue);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+    .btn-csv svg { width: 16px; height: 16px; fill: currentColor; }
+
+    /* Layout & Cards */
+    .container { max-width: 1540px; margin: 0 auto; padding: 24px; }
     .status {
       display: flex;
       gap: 10px;
@@ -46,8 +123,9 @@
     .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #94a3b8; }
     .status-dot.success { background: #16a34a; }
     .status-dot.error { background: #dc2626; }
+
     .section-title {
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 700;
       color: var(--navy);
       margin: 28px 0 14px 0;
@@ -63,6 +141,7 @@
       background: var(--blue);
       border-radius: 2px;
     }
+
     .kpi-grid {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -73,43 +152,93 @@
       background: var(--white);
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 20px;
+      padding: 18px 20px;
       box-shadow: 0 2px 8px rgba(16, 42, 67, 0.05);
     }
-    .kpi-label { color: var(--muted); font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+    .kpi-label { color: var(--muted); font-size: 13px; font-weight: 600; margin-bottom: 8px; }
     .kpi-value { color: var(--navy); font-size: 24px; font-weight: 700; }
-    .kpi-sub { margin-top: 8px; color: var(--muted); font-size: 12px; }
+    .kpi-sub { margin-top: 6px; color: var(--muted); font-size: 12px; }
+
+    /* Charts */
     .chart-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 16px;
-      margin-bottom: 20px;
+      margin-bottom: 24px;
     }
-    .chart-card { min-height: 390px; }
-    .chart-title { margin: 0 0 6px; color: var(--navy); font-size: 17px; }
-    .chart-note { margin: 0 0 18px; color: var(--muted); font-size: 12px; }
-    .chart-wrap { position: relative; height: 285px; }
-    .table-card { overflow: hidden; padding: 0; margin-bottom: 24px; }
-    .table-heading { padding: 20px 20px 12px; }
-    .table-heading h2 { margin: 0; color: var(--navy); font-size: 18px; }
-    .table-heading p { margin: 7px 0 0; color: var(--muted); font-size: 12px; }
-    .table-scroll { overflow-x: auto; max-height: 600px; overflow-y: auto; }
-    table { width: 100%; border-collapse: collapse; min-width: 900px; font-size: 13px; }
-    thead { position: sticky; top: 0; z-index: 2; }
-    th {
-      background: #eaf4fb;
-      color: #334e68;
-      padding: 12px 14px;
-      text-align: left;
-      white-space: nowrap;
-      border-bottom: 1px solid var(--border);
-    }
-    td { padding: 11px 14px; border-bottom: 1px solid #edf2f7; white-space: nowrap; }
-    tbody tr:hover { background: #f8fbfd; }
-    .number { text-align: right; }
-    .rank { color: var(--blue); font-weight: 700; }
+    .chart-card { min-height: 380px; }
+    .chart-title { margin: 0 0 4px; color: var(--navy); font-size: 16px; font-weight: 700; }
+    .chart-note { margin: 0 0 16px; color: var(--muted); font-size: 12px; }
+    .chart-wrap { position: relative; height: 280px; }
 
-    /* Delta Badges & Colors */
+    /* Tables (Alphaliner 2-tier Design) */
+    .table-card { overflow: hidden; padding: 0; margin-bottom: 28px; }
+    .table-heading {
+      padding: 18px 20px;
+      background: #fafcff;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .table-heading h2 { margin: 0; color: var(--navy); font-size: 17px; font-weight: 700; }
+    .table-heading p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    .table-scroll { overflow-x: auto; max-height: 680px; overflow-y: auto; }
+
+    table.alpha-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      min-width: 1200px;
+      font-size: 12.5px;
+    }
+    table.alpha-table thead { position: sticky; top: 0; z-index: 3; }
+
+    /* 2-tier Group Headers */
+    table.alpha-table thead tr.group-header th {
+      color: #ffffff;
+      padding: 9px 12px;
+      text-align: center;
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.5px;
+      border-right: 1px solid rgba(255, 255, 255, 0.15);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    table.alpha-table thead tr.group-header th.group-main { background: #102a43; }
+    table.alpha-table thead tr.group-header th.group-total { background: #1677c8; }
+    table.alpha-table thead tr.group-header th.group-owned { background: #1b4965; }
+    table.alpha-table thead tr.group-header th.group-chartered { background: #2b5876; }
+    table.alpha-table thead tr.group-header th.group-orderbook { background: #243b53; }
+
+    table.alpha-table thead tr.col-header th {
+      background: #eaf4fb;
+      color: #102a43;
+      padding: 9px 12px;
+      text-align: left;
+      font-weight: 700;
+      font-size: 12px;
+      border-bottom: 2px solid var(--border-dark);
+      border-right: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    table.alpha-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #e2e8f0;
+      border-right: 1px solid #f1f5f9;
+      white-space: nowrap;
+    }
+    table.alpha-table tbody tr:nth-child(even) { background: #fbfdff; }
+    table.alpha-table tbody tr:hover { background: #f0f7ff; }
+
+    .number { text-align: right; }
+    .rank-cell { color: var(--blue); font-weight: 700; text-align: center; width: 55px; }
+    .operator-cell { font-weight: 700; color: #102a43; }
+    .sub-col { color: #486581; }
+
+    /* Delta Indicators */
     .delta-pos { color: #dc2626; font-weight: 700; }
     .delta-neg { color: #2563eb; font-weight: 700; }
     .delta-zero { color: #64748b; font-weight: 600; }
@@ -132,31 +261,50 @@
       font-weight: 700;
     }
 
-    .empty-message, .error-message, .info-box {
-      padding: 20px;
+    .error-message, .info-box {
+      padding: 18px 20px;
       border-radius: 10px;
       background: var(--white);
       border: 1px solid var(--border);
-      color: var(--muted);
       font-size: 13px;
     }
     .error-message { border-color: #fecaca; color: #b91c1c; background: #fef2f2; }
-    .info-box { background: #f8fafc; border-color: #e2e8f0; margin-bottom: 16px; }
-    .footer { padding: 20px 0 5px; color: var(--muted); font-size: 12px; text-align: right; }
-    @media (max-width: 980px) { .kpi-grid, .chart-grid { grid-template-columns: 1fr 1fr; } }
-    @media (max-width: 620px) {
+    .info-box { background: #f8fafc; border-color: #e2e8f0; margin-bottom: 16px; color: var(--muted); }
+    .footer { padding: 20px 0 10px; color: var(--muted); font-size: 12px; text-align: right; }
+
+    @media (max-width: 1024px) {
+      .kpi-grid, .chart-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 640px) {
       .container { padding: 16px; }
-      .header { padding: 24px 16px; }
-      .header h1 { font-size: 22px; }
+      .header h1 { font-size: 20px; }
       .kpi-grid, .chart-grid { grid-template-columns: 1fr; }
+      .header-inner { flex-direction: column; align-items: flex-start; }
+      .header-controls { width: 100%; justify-content: space-between; }
     }
   </style>
 </head>
 <body>
   <header class="header">
     <div class="header-inner">
-      <h1>Alphaliner TOP 100 Liner Operators</h1>
-      <p>Global container liner operator capacity, fleet, orderbook & snapshot delta monitoring</p>
+      <div>
+        <h1>Alphaliner TOP 100 Liner Operators</h1>
+        <p>Global container liner operator capacity, fleet, orderbook & snapshot delta monitoring</p>
+      </div>
+      <div class="header-controls">
+        <!-- Date Selection Dropdown -->
+        <div class="selector-box">
+          <label for="snapshotSelect">Comparison Base Date</label>
+          <select id="snapshotSelect">
+            <option value="">Latest (Current)</option>
+          </select>
+        </div>
+        <!-- Export CSV Button -->
+        <button id="btnExportCsv" class="btn-csv" title="TOP 100 선사 데이터 CSV 다운로드">
+          <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+          Export CSV
+        </button>
+      </div>
     </div>
   </header>
 
@@ -170,48 +318,48 @@
       <!-- Highlights KPI -->
       <div class="kpi-grid">
         <article class="card">
-          <div class="kpi-label">TOP 100 총 선복량</div>
+          <div class="kpi-label">Selected Total TEU</div>
           <div id="totalTeu" class="kpi-value">-</div>
-          <div class="kpi-sub">Total Capacity</div>
+          <div id="selectedDateLabel" class="kpi-sub">Current Snapshot</div>
         </article>
         <article class="card">
-          <div class="kpi-label">운항 선사 수</div>
+          <div class="kpi-label">Operators</div>
           <div id="operatorCount" class="kpi-value">-</div>
-          <div class="kpi-sub">Operators in latest snapshot</div>
+          <div class="kpi-sub">Count in selection</div>
         </article>
         <article class="card">
-          <div class="kpi-label">총 선박 수</div>
+          <div class="kpi-label">Total Ships</div>
           <div id="totalShips" class="kpi-value">-</div>
-          <div class="kpi-sub">Total Ships</div>
+          <div class="kpi-sub">Total Vessel Count</div>
         </article>
         <article class="card">
-          <div class="kpi-label">1위 선사</div>
+          <div class="kpi-label">Market Leader</div>
           <div id="leaderName" class="kpi-value">-</div>
           <div id="leaderSub" class="kpi-sub">-</div>
         </article>
       </div>
 
       <!-- Delta Comparison Summary -->
-      <div class="section-title">직전 스냅샷 대비 변동 요약 (Snapshot Delta Summary)</div>
+      <div class="section-title">선택 시점 대비 최신 변동 요약 (Delta Analysis)</div>
       <div id="deltaSummaryContainer">
         <div class="kpi-grid">
           <article class="card">
-            <div class="kpi-label">총 선복량 증감 (Δ TEU)</div>
+            <div class="kpi-label">총 선복량 증감 (Δ Total TEU)</div>
             <div id="deltaTeuTotal" class="kpi-value">-</div>
-            <div id="deltaTeuSub" class="kpi-sub">vs previous snapshot</div>
+            <div id="deltaTeuSub" class="kpi-sub">vs Latest</div>
           </article>
           <article class="card">
-            <div class="kpi-label">총 선박 수 증감 (Δ Ships)</div>
+            <div class="kpi-label">총 선박 수 증감 (Δ Total Ships)</div>
             <div id="deltaShipsTotal" class="kpi-value">-</div>
-            <div id="deltaShipsSub" class="kpi-sub">vs previous snapshot</div>
+            <div id="deltaShipsSub" class="kpi-sub">vs Latest</div>
           </article>
           <article class="card">
-            <div class="kpi-label">최대 선복량 증가 선사</div>
+            <div class="kpi-label">최대 선복량 증가 선사 (Top Gainer)</div>
             <div id="topGainName" class="kpi-value">-</div>
             <div id="topGainVal" class="kpi-sub">-</div>
           </article>
           <article class="card">
-            <div class="kpi-label">최대 선복량 감소 선사</div>
+            <div class="kpi-label">최대 선복량 감소 선사 (Top Loser)</div>
             <div id="topLossName" class="kpi-value">-</div>
             <div id="topLossVal" class="kpi-sub">-</div>
           </article>
@@ -221,16 +369,16 @@
       <!-- Charts -->
       <div class="chart-grid">
         <section class="card chart-card">
-          <h2 class="chart-title">상위 10개 선사 선복량</h2>
-          <p class="chart-note">Latest snapshot · 단위: TEU</p>
+          <h2 class="chart-title">Capacity Distribution (Top 10)</h2>
+          <p class="chart-note">Selected date snapshot · Unit: TEU</p>
           <div class="chart-wrap">
             <canvas id="topOperatorsChart"></canvas>
           </div>
         </section>
 
         <section class="card chart-card">
-          <h2 class="chart-title">TOP 100 총 선복량 추이</h2>
-          <p class="chart-note">Historical snapshots · 단위: Million TEU</p>
+          <h2 class="chart-title">Market Capacity Trend</h2>
+          <p class="chart-note">All historical snapshots · Unit: Million TEU</p>
           <div class="chart-wrap">
             <canvas id="historyChart"></canvas>
           </div>
@@ -240,21 +388,23 @@
       <!-- Delta Comparison Table -->
       <section class="card table-card" id="deltaTableCard">
         <div class="table-heading">
-          <h2>직전 스냅샷 대비 선사별 상세 변동 (Delta Detail)</h2>
-          <p id="deltaTableNote">비교 대상 스냅샷 데이터를 불러오는 중...</p>
+          <div>
+            <h2>선택 시점 대비 선사별 상세 변동 (Delta Detail)</h2>
+            <p id="deltaTableNote">비교 대상 스냅샷 데이터를 불러오는 중...</p>
+          </div>
         </div>
         <div class="table-scroll">
-          <table>
+          <table class="alpha-table">
             <thead>
-              <tr>
-                <th>Rank</th>
+              <tr class="col-header">
+                <th style="text-align:center;">Rank</th>
                 <th>순위 변동</th>
                 <th>Operator</th>
-                <th class="number">현재 TEU</th>
-                <th class="number">직전 TEU</th>
+                <th class="number">최신 TEU</th>
+                <th class="number">선택 시점 TEU</th>
                 <th class="number">증감 (Δ TEU)</th>
-                <th class="number">현재 점유율</th>
-                <th class="number">직전 점유율</th>
+                <th class="number">최신 점유율</th>
+                <th class="number">선택 시점 점유율</th>
                 <th class="number">점유율 증감 (Δ %p)</th>
               </tr>
             </thead>
@@ -263,23 +413,39 @@
         </div>
       </section>
 
-      <!-- Latest TOP 100 Full Table -->
+      <!-- Detailed Authentic Alphaliner 2-tier Group Table -->
       <section class="card table-card">
         <div class="table-heading">
-          <h2>최신 TOP 100 선사 전체 순위</h2>
-          <p id="tableNote">-</p>
+          <div>
+            <h2>Detailed Operator Status (Alphaliner View)</h2>
+            <p id="tableNote">-</p>
+          </div>
         </div>
         <div class="table-scroll">
-          <table>
+          <table class="alpha-table">
             <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Operator</th>
-                <th class="number">Total TEU</th>
+              <tr class="group-header">
+                <th colspan="2" class="group-main">OPERATOR</th>
+                <th colspan="3" class="group-total">TOTAL</th>
+                <th colspan="3" class="group-owned">EXISTING (OWNED)</th>
+                <th colspan="3" class="group-chartered">EXISTING (CHARTERED)</th>
+                <th colspan="3" class="group-orderbook">ORDERBOOK</th>
+              </tr>
+              <tr class="col-header">
+                <th style="text-align:center; width:50px;">Rank</th>
+                <th>Operator Name</th>
+                <th class="number">TEU</th>
                 <th class="number">Ships</th>
-                <th class="number">Market Share</th>
-                <th class="number">Orderbook TEU</th>
-                <th class="number">Orderbook / Existing</th>
+                <th class="number">Share</th>
+                <th class="number">TEU</th>
+                <th class="number">Ships</th>
+                <th class="number">% Own</th>
+                <th class="number">TEU</th>
+                <th class="number">Ships</th>
+                <th class="number">% Char</th>
+                <th class="number">TEU</th>
+                <th class="number">Ships</th>
+                <th class="number">% Exist</th>
               </tr>
             </thead>
             <tbody id="operatorTableBody"></tbody>
@@ -299,15 +465,18 @@
   <script>
     let topOperatorsChart = null;
     let historyChart = null;
+    let allSnapshots = {};
+    let snapshotList = [];
+    let latestSnapshotId = null;
 
     function numberFormat(value) {
-      const number = Number(value || 0);
-      return new Intl.NumberFormat("en-US").format(number);
+      if (value === null || value === undefined || isNaN(value)) return "-";
+      return new Intl.NumberFormat("en-US").format(Number(value));
     }
 
     function decimalFormat(value, digits = 2) {
-      const number = Number(value || 0);
-      return number.toLocaleString("en-US", {
+      if (value === null || value === undefined || isNaN(value)) return "-";
+      return Number(value).toLocaleString("en-US", {
         minimumFractionDigits: digits,
         maximumFractionDigits: digits
       });
@@ -358,15 +527,17 @@
       document.getElementById("messageBox").innerHTML =
         '<div class="error-message"><strong>Alphaliner Dashboard 데이터를 표시할 수 없습니다.</strong><br>' +
         escapeHtml(message) +
-        '<br><br>GitHub 저장소의 <code>Alphaliner/alphaliner_data.json</code> 파일 생성 여부를 확인해 주세요.</div>';
+        '<br><br>GitHub 저장소의 <code>alphaliner_data.json</code> 파일 생성 여부를 확인해 주세요.</div>';
     }
 
-    function renderKpis(rows) {
+    function renderKpis(snapshot) {
+      const rows = snapshot.rows || [];
       const totalTeu = rows.reduce((sum, row) => sum + Number(row.total_teu || 0), 0);
       const totalShips = rows.reduce((sum, row) => sum + Number(row.total_ships || 0), 0);
       const leader = rows.length ? rows[0] : null;
 
       document.getElementById("totalTeu").textContent = numberFormat(totalTeu) + " TEU";
+      document.getElementById("selectedDateLabel").textContent = "Snapshot: " + (snapshot.data_date || "-");
       document.getElementById("operatorCount").textContent = numberFormat(rows.length);
       document.getElementById("totalShips").textContent = totalShips > 0 ? numberFormat(totalShips) : "-";
 
@@ -378,10 +549,13 @@
       }
     }
 
-    function renderDeltaAnalysis(latestRows, prevRows) {
-      if (!prevRows || !prevRows.length) {
+    function renderDeltaAnalysis(latestSnapshot, compareSnapshot) {
+      const latestRows = latestSnapshot.rows || [];
+      const prevRows = compareSnapshot ? (compareSnapshot.rows || []) : [];
+
+      if (!prevRows.length || latestSnapshot.snapshot_id === compareSnapshot.snapshot_id) {
         document.getElementById("deltaSummaryContainer").innerHTML =
-          '<div class="info-box">비교 가능한 이전 스냅샷이 아직 누적되지 않았습니다. (스냅샷이 2회 이상 저장되면 자동으로 활성화됩니다)</div>';
+          '<div class="info-box">동일 시점이 선택되었거나 비교 가능한 이전 스냅샷이 없습니다. 우측 상단에서 다른 과거 시점을 선택해 보세요.</div>';
         document.getElementById("deltaTableCard").style.display = "none";
         return;
       }
@@ -399,12 +573,30 @@
       const prevTotalShips = prevRows.reduce((sum, r) => sum + Number(r.total_ships || 0), 0);
       const diffTotalShips = curTotalShips - prevTotalShips;
 
-      // Delta 요약 카드
-      const deltaTeuEl = document.getElementById("deltaTeuTotal");
-      deltaTeuEl.innerHTML = deltaSpan(diffTotalTeu);
-
-      const deltaShipsEl = document.getElementById("deltaShipsTotal");
-      deltaShipsEl.innerHTML = deltaSpan(diffTotalShips);
+      document.getElementById("deltaSummaryContainer").innerHTML = `
+        <div class="kpi-grid">
+          <article class="card">
+            <div class="kpi-label">총 선복량 증감 (Δ Total TEU)</div>
+            <div class="kpi-value">${deltaSpan(diffTotalTeu)}</div>
+            <div class="kpi-sub">vs ${compareSnapshot.data_date}</div>
+          </article>
+          <article class="card">
+            <div class="kpi-label">총 선박 수 증감 (Δ Total Ships)</div>
+            <div class="kpi-value">${deltaSpan(diffTotalShips)}</div>
+            <div class="kpi-sub">vs ${compareSnapshot.data_date}</div>
+          </article>
+          <article class="card">
+            <div class="kpi-label">최대 선복량 증가 선사</div>
+            <div class="kpi-value" id="topGainName">-</div>
+            <div class="kpi-sub" id="topGainVal">-</div>
+          </article>
+          <article class="card">
+            <div class="kpi-label">최대 선복량 감소 선사</div>
+            <div class="kpi-value" id="topLossName">-</div>
+            <div class="kpi-sub" id="topLossVal">-</div>
+          </article>
+        </div>
+      `;
 
       const deltaList = [];
       latestRows.forEach(cur => {
@@ -418,7 +610,7 @@
         const diffShare = prev ? (curShare - prevShare) : curShare;
 
         const prevRank = prev ? Number(prev.rank) : null;
-        const rankDiff = prevRank ? (prevRank - Number(cur.rank)) : 0; // 양수면 순위 상승
+        const rankDiff = prevRank ? (prevRank - Number(cur.rank)) : 0;
 
         deltaList.push({
           rank: cur.rank,
@@ -434,7 +626,6 @@
         });
       });
 
-      // 최대 증가 / 감소 선사
       const sortedByGain = [...deltaList].filter(d => d.hasPrev).sort((a, b) => b.diffTeu - a.diffTeu);
       if (sortedByGain.length) {
         const topGain = sortedByGain[0];
@@ -447,27 +638,23 @@
         document.getElementById("topLossVal").innerHTML = deltaSpan(topLoss.diffTeu) + " TEU";
       }
 
-      // Delta 테이블 렌더링
-      const prevDate = prevRows[0]?.data_date || "-";
       document.getElementById("deltaTableNote").textContent =
-        `기준일: ${latestRows[0]?.data_date || "-"} vs 직전 기준일: ${prevDate}`;
+        `기준일: 최신 (${latestSnapshot.data_date}) vs 선택 기준일 (${compareSnapshot.data_date})`;
 
       const tbody = document.getElementById("deltaTableBody");
-      tbody.innerHTML = deltaList.map(item => {
-        return `
-          <tr>
-            <td class="rank">${escapeHtml(item.rank)}</td>
-            <td>${rankMoveBadge(item.rankDiff)}</td>
-            <td><strong>${escapeHtml(item.operator_name)}</strong></td>
-            <td class="number">${numberFormat(item.curTeu)}</td>
-            <td class="number">${item.hasPrev ? numberFormat(item.prevTeu) : "-"}</td>
-            <td class="number">${item.hasPrev ? deltaSpan(item.diffTeu) : '<span class="badge-rank-up">NEW</span>'}</td>
-            <td class="number">${decimalFormat(item.curShare, 2)}%</td>
-            <td class="number">${item.hasPrev ? decimalFormat(item.prevShare, 2) + "%" : "-"}</td>
-            <td class="number">${item.hasPrev ? deltaSpan(item.diffShare, true) : "-"}</td>
-          </tr>
-        `;
-      }).join("");
+      tbody.innerHTML = deltaList.map(item => `
+        <tr>
+          <td class="rank-cell">${escapeHtml(item.rank)}</td>
+          <td>${rankMoveBadge(item.rankDiff)}</td>
+          <td class="operator-cell">${escapeHtml(item.operator_name)}</td>
+          <td class="number">${numberFormat(item.curTeu)}</td>
+          <td class="number">${item.hasPrev ? numberFormat(item.prevTeu) : "-"}</td>
+          <td class="number">${item.hasPrev ? deltaSpan(item.diffTeu) : '<span class="badge-rank-up">NEW</span>'}</td>
+          <td class="number">${decimalFormat(item.curShare, 2)}%</td>
+          <td class="number">${item.hasPrev ? decimalFormat(item.prevShare, 2) + "%" : "-"}</td>
+          <td class="number">${item.hasPrev ? deltaSpan(item.diffShare, true) : "-"}</td>
+        </tr>
+      `).join("");
     }
 
     function renderTopOperatorsChart(rows) {
@@ -484,7 +671,7 @@
               label: "Total TEU",
               data: top10.map(row => Number(row.total_teu || 0)),
               backgroundColor: "#1677c8",
-              borderRadius: 5
+              borderRadius: 4
             }]
           },
           options: {
@@ -559,33 +746,142 @@
       );
     }
 
-    function renderTable(rows, latestDate) {
+    function renderAuthenticTable(rows, snapshotDate) {
       const tbody = document.getElementById("operatorTableBody");
 
       tbody.innerHTML = rows.map(row => {
-        const marketShare = row.market_share === null || row.market_share === undefined
-          ? "-"
-          : decimalFormat(row.market_share, 2) + "%";
+        const totalTeu = Number(row.total_teu || 0);
+        const ownedTeu = Number(row.existing_owned_teu || 0);
+        const chartTeu = Number(row.existing_chartered_teu || 0);
 
-        const orderbookPct = row.orderbook_pct_existing === null || row.orderbook_pct_existing === undefined
-          ? "-"
-          : decimalFormat(row.orderbook_pct_existing, 1) + "%";
+        const ownedPct = totalTeu > 0 && row.existing_owned_teu !== null
+          ? ((ownedTeu / totalTeu) * 100).toFixed(1) + "%"
+          : "-";
+
+        const chartPct = totalTeu > 0 && row.existing_chartered_teu !== null
+          ? ((chartTeu / totalTeu) * 100).toFixed(1) + "%"
+          : "-";
+
+        const shareStr = row.market_share !== null && row.market_share !== undefined
+          ? decimalFormat(row.market_share, 2) + "%"
+          : "-";
+
+        const orderbookPct = row.orderbook_pct_existing !== null && row.orderbook_pct_existing !== undefined
+          ? decimalFormat(row.orderbook_pct_existing, 1) + "%"
+          : "-";
 
         return `
           <tr>
-            <td class="rank">${escapeHtml(row.rank)}</td>
-            <td><strong>${escapeHtml(row.operator_name)}</strong></td>
-            <td class="number">${numberFormat(row.total_teu)}</td>
-            <td class="number">${row.total_ships === null || row.total_ships === undefined ? "-" : numberFormat(row.total_ships)}</td>
-            <td class="number">${marketShare}</td>
-            <td class="number">${row.orderbook_teu === null || row.orderbook_teu === undefined ? "-" : numberFormat(row.orderbook_teu)}</td>
-            <td class="number">${orderbookPct}</td>
+            <td class="rank-cell">${escapeHtml(row.rank)}</td>
+            <td class="operator-cell">${escapeHtml(row.operator_name)}</td>
+
+            <!-- TOTAL -->
+            <td class="number font-bold">${numberFormat(row.total_teu)}</td>
+            <td class="number">${numberFormat(row.total_ships)}</td>
+            <td class="number">${shareStr}</td>
+
+            <!-- EXISTING OWNED -->
+            <td class="number">${numberFormat(row.existing_owned_teu)}</td>
+            <td class="number sub-col">${numberFormat(row.existing_owned_ships)}</td>
+            <td class="number sub-col">${ownedPct}</td>
+
+            <!-- EXISTING CHARTERED -->
+            <td class="number">${numberFormat(row.existing_chartered_teu)}</td>
+            <td class="number sub-col">${numberFormat(row.existing_chartered_ships)}</td>
+            <td class="number sub-col">${chartPct}</td>
+
+            <!-- ORDERBOOK -->
+            <td class="number">${numberFormat(row.orderbook_teu)}</td>
+            <td class="number sub-col">${numberFormat(row.orderbook_ships)}</td>
+            <td class="number sub-col">${orderbookPct}</td>
           </tr>
         `;
       }).join("");
 
       document.getElementById("tableNote").textContent =
-        "기준일: " + (latestDate || "-") + " · " + numberFormat(rows.length) + "개 선사";
+        "기준일: " + (snapshotDate || "-") + " · 총 " + numberFormat(rows.length) + "개 선사 전체 현황";
+    }
+
+    function exportToCsv() {
+      const select = document.getElementById("snapshotSelect");
+      const targetId = select.value ? parseInt(select.value) : latestSnapshotId;
+      const targetSnapshot = allSnapshots[targetId];
+
+      if (!targetSnapshot || !targetSnapshot.rows || !targetSnapshot.rows.length) {
+        alert("내보낼 데이터가 없습니다.");
+        return;
+      }
+
+      const headers = [
+        "Rank", "Operator", "Total_TEU", "Total_Ships", "Market_Share_Pct",
+        "Owned_TEU", "Owned_Ships", "Owned_Pct",
+        "Chartered_TEU", "Chartered_Ships", "Chartered_Pct",
+        "Orderbook_TEU", "Orderbook_Ships", "Orderbook_Pct_Existing"
+      ];
+
+      const csvRows = [headers.join(",")];
+
+      targetSnapshot.rows.forEach(row => {
+        const totalTeu = Number(row.total_teu || 0);
+        const ownedTeu = Number(row.existing_owned_teu || 0);
+        const chartTeu = Number(row.existing_chartered_teu || 0);
+
+        const ownedPct = totalTeu > 0 && row.existing_owned_teu !== null
+          ? ((ownedTeu / totalTeu) * 100).toFixed(2)
+          : "";
+        const chartPct = totalTeu > 0 && row.existing_chartered_teu !== null
+          ? ((chartTeu / totalTeu) * 100).toFixed(2)
+          : "";
+
+        const opName = `"${String(row.operator_name || '').replace(/"/g, '""')}"`;
+
+        const values = [
+          row.rank ?? "",
+          opName,
+          row.total_teu ?? "",
+          row.total_ships ?? "",
+          row.market_share ?? "",
+          row.existing_owned_teu ?? "",
+          row.existing_owned_ships ?? "",
+          ownedPct,
+          row.existing_chartered_teu ?? "",
+          row.existing_chartered_ships ?? "",
+          chartPct,
+          row.orderbook_teu ?? "",
+          row.orderbook_ships ?? "",
+          row.orderbook_pct_existing ?? ""
+        ];
+
+        csvRows.push(values.join(","));
+      });
+
+      const csvString = "\uFEFF" + csvRows.join("\r\n");
+      const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const filename = `Alphaliner_TOP100_${targetSnapshot.data_date || "latest"}.csv`;
+
+      link.setAttribute("href", url);
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+
+    function handleSnapshotChange() {
+      const select = document.getElementById("snapshotSelect");
+      const compareId = select.value ? parseInt(select.value) : (snapshotList.length > 1 ? snapshotList[snapshotList.length - 2].snapshot_id : latestSnapshotId);
+
+      const latestSnapshot = allSnapshots[latestSnapshotId];
+      const compareSnapshot = allSnapshots[compareId];
+
+      if (!latestSnapshot) return;
+
+      renderKpis(latestSnapshot);
+      renderDeltaAnalysis(latestSnapshot, compareSnapshot);
+      renderTopOperatorsChart(latestSnapshot.rows);
+      renderAuthenticTable(latestSnapshot.rows, latestSnapshot.data_date);
     }
 
     async function loadDashboard() {
@@ -596,27 +892,47 @@
         }
 
         const data = await response.json();
-        const latestRows = Array.isArray(data.latest_detail) ? data.latest_detail : [];
-        const prevRows = Array.isArray(data.previous_detail) ? data.previous_detail : [];
+        allSnapshots = data.snapshots || {};
         const history = Array.isArray(data.history) ? data.history : [];
 
-        if (!latestRows.length) {
-          throw new Error("latest_detail 데이터가 0건입니다.");
+        snapshotList = Object.values(allSnapshots).sort((a, b) => a.snapshot_id - b.snapshot_id);
+
+        if (!snapshotList.length) {
+          throw new Error("저장된 스냅샷 데이터가 없습니다.");
         }
 
-        const lastSync = data.last_sync || {};
-        const latestDate = latestRows[0]?.data_date || lastSync.data_date || "-";
+        const latestSnapshot = snapshotList[snapshotList.length - 1];
+        latestSnapshotId = latestSnapshot.snapshot_id;
 
-        renderKpis(latestRows);
-        renderDeltaAnalysis(latestRows, prevRows);
-        renderTopOperatorsChart(latestRows);
+        // 드롭다운 옵션 채우기 (최신부터 과거 순으로)
+        const select = document.getElementById("snapshotSelect");
+        select.innerHTML = "";
+
+        for (let i = snapshotList.length - 1; i >= 0; i--) {
+          const s = snapshotList[i];
+          const opt = document.createElement("option");
+          opt.value = s.snapshot_id;
+          if (i === snapshotList.length - 1) {
+            opt.textContent = `Latest (${s.data_date})`;
+          } else if (i === snapshotList.length - 2) {
+            opt.textContent = `Previous (${s.data_date})`;
+            opt.selected = true; // 기본값으로 직전 스냅샷 선택
+          } else {
+            opt.textContent = `${s.data_date} (${s.captured_at.slice(0, 10)})`;
+          }
+          select.appendChild(opt);
+        }
+
+        select.addEventListener("change", handleSnapshotChange);
+        document.getElementById("btnExportCsv").addEventListener("click", exportToCsv);
+
         renderHistoryChart(history);
-        renderTable(latestRows, latestDate);
+        handleSnapshotChange();
 
         document.getElementById("generatedAt").textContent = data.generated_at || "-";
         document.getElementById("statusDot").className = "status-dot success";
         document.getElementById("statusText").textContent =
-          "정상 로드 · 기준일: " + latestDate + " · 최종 실행 상태: " + (lastSync.status || "N/A");
+          "정상 로드 · 총 " + snapshotList.length + "개 히스토리 스냅샷 누적";
 
         document.getElementById("dashboard").style.display = "block";
       } catch (error) {

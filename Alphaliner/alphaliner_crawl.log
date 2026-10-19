@@ -88,3 +88,14 @@
 2026-10-19 08:00:30,743 [INFO] [CRON] Alphaliner Dashboard 갱신 완료
 2026-10-19 08:00:30,743 [INFO] ============================================================
 2026-10-19 08:00:30,743 [INFO] [SYSTEM] Alphaliner batch process completed. Process exiting.
+2026-10-19 08:35:19,389 [INFO] ============================================================
+2026-10-19 08:35:19,389 [INFO] [CRON] Alphaliner Dashboard 갱신 시작
+2026-10-19 08:35:19,389 [INFO] ============================================================
+2026-10-19 08:35:19,773 [INFO] [FETCH] Alphaliner TOP 100 웹사이트 접속 중...
+2026-10-19 08:35:23,415 [INFO] [FETCH] ExtJS Store 추출 결과: store=Top100description, raw_rows=100
+2026-10-19 08:35:23,490 [INFO] [DB] 동일 Alphaliner 데이터 중복 (snapshot_id=3)
+2026-10-19 08:35:23,515 [INFO] [STATIC] JSON 생성 완료: alphaliner_data.json (스냅샷 3개 포함)
+2026-10-19 08:35:23,515 [INFO] [STATIC] HTML 생성 완료: index.html
+2026-10-19 08:35:23,515 [INFO] [CRON] Alphaliner Dashboard 갱신 완료
+2026-10-19 08:35:23,516 [INFO] ============================================================
+2026-10-19 08:35:23,516 [INFO] [SYSTEM] Alphaliner batch process completed. Process exiting.
