@@ -32,6 +32,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # Shipping Index Python 파일만 사전에 문법 검사
+      # 오류가 있으면 크롤러 실행 전에 여기서 실패하며 줄 번호가 표시됨
+      - name: Validate Shipping Index Python syntax
+        run: |
+          python -m py_compile "Shipping Index/ShippingIndex_SCFI&BDI.py"
+
       - name: Run crawler and generate dashboards
         env:
           KSG_ID: ${{ secrets.KSG_ID }}
