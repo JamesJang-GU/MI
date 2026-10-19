@@ -1,9 +1,12 @@
 name: Update Market Intelligence Dashboard
 
 on:
-  workflow_dispatch:  # GitHub 화면에서 수동 실행 버튼 활성화
+  workflow_dispatch:
+
   schedule:
-    - cron: "0 22 * * *"  # 매일 KST 00:00 실행 (UTC 기준)
+    # 매일 KST 00:00 실행
+    # GitHub Actions cron은 UTC 기준
+    - cron: "0 15 * * *"
 
 permissions:
   contents: write
@@ -29,9 +32,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run crawler and generate dashboard
+      - name: Run crawler and generate dashboards
         env:
-          # 이 부분이 추가되었습니다: Secrets를 환경변수로 주입
           KSG_ID: ${{ secrets.KSG_ID }}
           KSG_PW: ${{ secrets.KSG_PW }}
         run: |
@@ -39,14 +41,43 @@ jobs:
 
       - name: Check generated files
         run: |
-          test -f index.html
+          echo "=== Main portal files ==="
+          test -f "index.html"
+          test -f "dashboard_summary.json"
+
+          echo "=== Shipping Index files ==="
+          test -f "Shipping Index/index.html"
+          test -f "Shipping Index/shipping_index_data.json"
+
+          echo "=== Shipping JSON preview ==="
+          head -c 500 "Shipping Index/shipping_index_data.json"
+          echo ""
+
+          echo "=== Git status before staging ==="
           git status --short
 
-      - name: Commit and push updated data
+      - name: Commit and push updated dashboard files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A
-          git diff --cached --quiet || git commit -m "Auto: update data and dashboard [$(date -u +'%Y-%m-%d')]"
-          git push
+          # 상세 Shipping Index 대시보드에서 fetch()로 직접 읽는 필수 파일
+          # -f: .gitignore 규칙이 있어도 강제로 Git 추적 대상으로 추가
+          git add -f "Shipping Index/shipping_index_data.json"
+
+          # Shipping 상세 화면
+          git add "Shipping Index/index.html"
+
+          # Market Intelligence Portal 메인 화면 및 요약 데이터
+          git add "index.html"
+          git add "dashboard_summary.json"
+
+          echo "=== Staged files ==="
+          git diff --cached --name-only
+
+          if git diff --cached --quiet; then
+            echo "No dashboard file changes to commit."
+          else
+            git commit -m "Auto: update MI dashboard data [$(date -u +'%Y-%m-%d')]"
+            git push
+          fi
