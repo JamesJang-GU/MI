@@ -1,157 +1,312 @@
-import os
 import json
-import pandas as pd
 import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+import pandas as pd
+
 # =============================================================================
 # 1. 환경 설정 및 경로 정의
 # =============================================================================
-# 스크립트가 위치한 폴더 (MI/Shipping Index/)
+
+# 현재 스크립트가 위치한 폴더
+# 예: MI/Shipping Index/
 SCRIPT_DIR = Path(__file__).resolve().parent
-# 프로젝트 루트 폴더 (MI/)
+
+# 프로젝트 루트 폴더
+# 예: MI/
 BASE_DIR = SCRIPT_DIR.parent
 
-# DB는 루트(MI/)에 위치
+# SQLite DB 위치
 DB_PATH = BASE_DIR / "index_history.db"
-# JSON과 HTML은 스크립트와 동일한 폴더(Shipping Index/)에 생성
+
+# GitHub Pages에 게시할 결과 파일 위치
 JSON_PATH = SCRIPT_DIR / "shipping_index_data.json"
 HTML_PATH = SCRIPT_DIR / "index.html"
 
-# 지원하는 인덱스 정의
+# 처리 대상 지수
 SUPPORTED_INDEXES = ["SCFI", "BDI"]
 
 # =============================================================================
-# 2. 유틸리티 함수
+# 2. 공통 유틸리티
 # =============================================================================
-def log(message):
+
+def log(message: str) -> None:
+    """시간과 함께 실행 로그를 출력한다."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}")
 
-def atomic_write_text(path, text):
-    """파일을 안전하게 쓰기 위해 임시 파일을 생성한 후 교체"""
-    temp_path = path.with_suffix(".tmp")
-    with open(temp_path, "w", encoding="utf-8") as f:
-        f.write(text)
+def get_timestamp() -> str:
+    """대시보드 표시 및 JSON 기록에 사용할 시간 문자열을 반환한다."""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """
+    파일을 임시 파일에 먼저 작성한 뒤 교체한다.
+    작업 중 중단되더라도 빈 파일 또는 깨진 파일이 배포되는 위험을 줄인다.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+
+    with open(temp_path, "w", encoding="utf-8", newline="\n") as file:
+        file.write(text)
+
     temp_path.replace(path)
 
-def load_long_df_from_db(index_name):
-    """DB에서 특정 인덱스의 대시보드용 데이터를 안전하게 불러온다."""
+def sort_regions_for_display(regions) -> list:
+    """Routes/Regions 목록을 화면 표시용으로 정렬한다."""
+    cleaned_regions = []
+
+    for region in regions:
+        if pd.isna(region):
+            continue
+
+        region_text = str(region).strip()
+
+        if region_text:
+            cleaned_regions.append(region_text)
+
+    return sorted(set(cleaned_regions), key=lambda item: item.lower())
+
+# =============================================================================
+# 3. SQLite 데이터 조회 및 정제
+# =============================================================================
+
+def load_long_df_from_db(index_name: str) -> pd.DataFrame:
+    """
+    shipping_indices 테이블에서 특정 지수 데이터를 불러온다.
+
+    기대 테이블 구조:
+    - DATE
+    - REGION
+    - VALUE
+    - INDEX_NAME
+    """
     query = """
-        SELECT 
-            DATE, 
-            REGION, 
-            VALUE, 
-            INDEX_NAME 
-        FROM shipping_indices 
+        SELECT
+            DATE,
+            REGION,
+            VALUE,
+            INDEX_NAME
+        FROM shipping_indices
         WHERE UPPER(INDEX_NAME) = UPPER(?)
         ORDER BY DATE ASC
     """
+
+    empty_dataframe = pd.DataFrame(
+        columns=["DATE", "REGION", "VALUE", "INDEX_NAME"]
+    )
+
+    if not DB_PATH.exists():
+        log(f"[Error] DB 파일을 찾을 수 없습니다: {DB_PATH}")
+        return empty_dataframe
+
     try:
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql_query(query, conn, params=[index_name])
-        log(f"[DB] {index_name} 로드 완료: {len(df):,} 건")
-        return df
-    except Exception as e:
-        log(f"[Error] DB 로드 실패 ({index_name}): {e}")
-        return pd.DataFrame(columns=["DATE", "REGION", "VALUE", "INDEX_NAME"])
+        with sqlite3.connect(DB_PATH) as connection:
+            dataframe = pd.read_sql_query(
+                query,
+                connection,
+                params=[index_name]
+            )
 
-def sort_regions_for_display(regions):
-    """지역(Region) 목록을 정렬하여 반환"""
-    return sorted([str(r) for r in regions if r])
+        log(f"[DB] {index_name} 데이터 로드 완료: {len(dataframe):,}건")
+        return dataframe
 
-def get_last_sync_str():
+    except Exception as error:
+        log(f"[Error] {index_name} DB 로드 실패: {error}")
+        return empty_dataframe
+
+def clean_index_dataframe(dataframe: pd.DataFrame) -> pd.DataFrame:
     """
-    [핵심 수정] 
-    JavaScript의 new Date()에서 오류가 나지 않도록 
-    딕셔너리가 아닌 '단순 문자열'만 반환합니다.
+    대시보드 출력에 적합하도록 날짜·수치·지역 데이터를 정제한다.
     """
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if dataframe.empty:
+        return dataframe.copy()
+
+    cleaned = dataframe.copy()
+
+    # 날짜 정제
+    cleaned["DATE"] = pd.to_datetime(
+        cleaned["DATE"],
+        errors="coerce"
+    ).dt.strftime("%Y-%m-%d")
+
+    # 수치 정제
+    cleaned["VALUE"] = pd.to_numeric(
+        cleaned["VALUE"],
+        errors="coerce"
+    )
+
+    # 지역 정제
+    cleaned["REGION"] = (
+        cleaned["REGION"]
+        .fillna("Unknown")
+        .astype(str)
+        .str.strip()
+    )
+
+    # INDEX_NAME 정제
+    cleaned["INDEX_NAME"] = (
+        cleaned["INDEX_NAME"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
+    # 날짜 또는 값이 없는 행 제거
+    cleaned = cleaned.dropna(subset=["DATE", "VALUE"])
+
+    # 날짜 + 지역 기준 중복 행 제거
+    # 마지막 데이터를 유지하여 최신 크롤링 결과를 반영
+    cleaned = cleaned.drop_duplicates(
+        subset=["DATE", "REGION"],
+        keep="last"
+    )
+
+    # 정렬
+    cleaned = cleaned.sort_values(
+        by=["DATE", "REGION"],
+        ascending=[True, True]
+    ).reset_index(drop=True)
+
+    # JSON 직렬화 안정성을 위해 float로 명시 변환
+    cleaned["VALUE"] = cleaned["VALUE"].astype(float)
+
+    return cleaned
 
 # =============================================================================
-# 3. 핵심 로직: JSON 생성
+# 4. 대시보드 JSON 생성
 # =============================================================================
 
-def build_dashboard_json():
+def build_dashboard_json() -> None:
     """
-    HTML 대시보드가 기대하는 계층형 JSON 구조를 생성합니다.
-    구조: { "generated_at": "...", "indexes": { "SCFI": { "regions": [...], "records": [...], "last_sync": "..." } } }
+    대시보드용 JSON 파일을 생성한다.
+
+    생성 구조 예시:
+    {
+      "generated_at": "2026-10-19 09:00:00",
+      "status": "success",
+      "indexes": {
+        "SCFI": {
+          "regions": ["Composite", "Europe"],
+          "records": [
+            {
+              "DATE": "2026-10-16",
+              "REGION": "Composite",
+              "VALUE": 1234.56,
+              "INDEX_NAME": "SCFI"
+            }
+          ],
+          "last_sync": "2026-10-19 09:00:00"
+        }
+      }
+    }
     """
-    log("[JSON] 대시보드용 JSON 구조 생성 시작...")
-    
+    log("[JSON] shipping_index_data.json 생성 시작")
+
     indexes_payload = {}
+    generated_at = get_timestamp()
 
     for index_name in SUPPORTED_INDEXES:
-        df = load_long_df_from_db(index_name)
+        raw_dataframe = load_long_df_from_db(index_name)
+        dataframe = clean_index_dataframe(raw_dataframe)
 
-        if not df.empty:
-            df = df.copy()
-            
-            # 1. 데이터 정제 및 타입 강제
-            df["DATE"] = pd.to_datetime(df["DATE"], errors="coerce").dt.strftime("%Y-%m-%d")
-            df["VALUE"] = pd.to_numeric(df["VALUE"], errors="coerce")
-            df["REGION"] = df["REGION"].fillna("Unknown").astype(str).str.strip()
-            
-            # 2. 결측치 제거 및 중복 제거
-            df = df.dropna(subset=["DATE", "VALUE"])
-            df = df.drop_duplicates(subset=["DATE", "REGION"], keep="last")
-            
-            # 3. 레코드(List of Dict) 변환
-            records = df.to_dict(orient="records")
-            
-            # 4. 지역 목록 추출
-            regions = sort_regions_for_display(df["REGION"].unique())
-        else:
-            log(f"[Warn] {index_name} 데이터가 DB에 없습니다.")
+        if dataframe.empty:
+            log(f"[Warn] {index_name}에 표시할 데이터가 없습니다.")
+
             records = []
             regions = []
 
-        # 각 인덱스별 페이로드 구성
+        else:
+            records = dataframe.to_dict(orient="records")
+            regions = sort_regions_for_display(dataframe["REGION"].unique())
+
+            log(
+                f"[JSON] {index_name}: "
+                f"레코드 {len(records):,}건 / Routes {len(regions):,}개"
+            )
+
         indexes_payload[index_name] = {
             "regions": regions,
             "records": records,
-            "last_sync": get_last_sync_str()  # 문자열 반환 (중요)
+            "last_sync": generated_at
         }
 
-    # 최종 루트 페이로드 구성
     payload = {
-        "generated_at": get_last_sync_str(),
-        "indexes": indexes_payload,
-        "status": "success"
+        "generated_at": generated_at,
+        "status": "success",
+        "indexes": indexes_payload
     }
 
-    # 출력 폴더 생성 보장
-    JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-    # 파일 저장
-    atomic_write_text(
-        JSON_PATH,
-        json.dumps(payload, ensure_ascii=False, indent=2)
+    json_text = json.dumps(
+        payload,
+        ensure_ascii=False,
+        indent=2,
+        allow_nan=False
     )
+
+    atomic_write_text(JSON_PATH, json_text)
+
     log(f"[JSON] 생성 완료: {JSON_PATH}")
 
-def generate_html_file():
-    """
-    HTML 파일 생성 로직. 
-    """
-    log("[HTML] HTML 파일 생성을 시작합니다.")
-    # 기존에 구현된 index.html 생성 함수가 있다면 여기서 호출
-    pass
-
 # =============================================================================
-# 4. 메인 실행부
+# 5. index.html 생성
 # =============================================================================
-def main():
-    log("=== Shipping Index (SCFI & BDI) 통합 프로세스 시작 ===")
-    
-    # 1. 데이터 정리 및 JSON 생성
-    build_dashboard_json()
-    
-    # 2. HTML 파일 생성
-    generate_html_file()
-    
-    log("=== 모든 프로세스 완료 ===")
 
-if __name__ == "__main__":
-    main()
+def generate_html_file() -> None:
+    """
+    GitHub Pages용 정적 대시보드 index.html을 생성한다.
+
+    중요:
+    - Python f-string을 사용하지 않는다.
+    - JavaScript의 중괄호({}), 백틱(`), 문자열이 Python 코드와 충돌하지 않는다.
+    - HTML 파일은 shipping_index_data.json을 fetch하여 차트와 표를 렌더링한다.
+    """
+    log("[HTML] index.html 생성 시작")
+
+    html_content = r"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="SCFI 및 BDI Shipping Index Dashboard">
+  <title>Shipping Index Dashboard | SCFI & BDI</title>
+
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+
+  <style>
+    :root {
+      --navy: #0f2747;
+      --blue: #1f5fa8;
+      --sky: #edf5fc;
+      --line: #d9e1ea;
+      --text: #1c2733;
+      --muted: #687583;
+      --white: #ffffff;
+      --green: #138a57;
+      --red: #c73c3c;
+      --shadow: 0 8px 24px rgba(15, 39, 71, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background: #f4f7fa;
+      font-family: Arial, "Noto Sans KR", sans-serif;
+    }
+
+    .header {
+      color: var(--white);
+      background: linear-gradient(135deg, #0f2747 0%, #1f5fa8 100%);
+      padding: 34px 20px;
+    }
+
+    .header-inner {
+      max-width: 1400px;
+      margin: 0 auto;
