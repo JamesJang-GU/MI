@@ -1,329 +1,224 @@
 import argparse
 import datetime as dt
+import html
 import importlib.util
-import json
 import os
-import socket
 import sqlite3
 import subprocess
 import sys
-import threading
-import time
-import webbrowser
 from io import StringIO
 from pathlib import Path
 
 # [IDENTIFIER] A&A Top 25 Dashboard - Required for GitHub Actions search
 
+# =====================================================
+# 1. Environment Setup
+# =====================================================
 def setup_environment():
     required = {
         "requests": "requests",
         "pandas": "pandas",
         "bs4": "beautifulsoup4",
         "lxml": "lxml",
-        "flask": "flask",
     }
+
     for import_name, pip_name in required.items():
         if importlib.util.find_spec(import_name) is not None:
             continue
-        print(f"[SETUP] '{pip_name}' 패키지가 없어 설치를 시도합니다...", flush=True)
+
+        print(
+            f"[SETUP] '{pip_name}' 패키지가 없어 설치를 시도합니다...",
+            flush=True,
+        )
+
         try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", pip_name])
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "install", pip_name]
+            )
         except Exception:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", pip_name, "--break-system-packages"])
+            subprocess.check_call(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    pip_name,
+                    "--break-system-packages",
+                ]
+            )
 
 setup_environment()
 
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask, Response, redirect, render_template_string, request, url_for
 
-# 1. Configuration
+# =====================================================
+# 2. Configuration
+# =====================================================
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_URL = "https://www.3plogistics.com/3pl-market-info-resources/3pl-market-information/aas-top-25-global-freight-forwarders-list/"
+
+DEFAULT_URL = (
+    "https://www.3plogistics.com/3pl-market-info-resources/"
+    "3pl-market-information/aas-top-25-global-freight-forwarders-list/"
+)
+
 DB_PATH = SCRIPT_DIR / "freight_forwarders_data.db"
 STATIC_HTML_PATH = SCRIPT_DIR / "index.html"
 STATIC_CSV_PATH = SCRIPT_DIR / "freight_forwarders_history.csv"
+
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    )
 }
-EXPECTED_COLUMNS = ["rank", "provider", "hq", "revenue", "teu", "air_tons"]
 
-app = Flask(__name__)
+EXPECTED_COLUMNS = [
+    "rank",
+    "provider",
+    "hq",
+    "revenue",
+    "teu",
+    "air_tons",
+]
 
-# 2. Utilities
+# =====================================================
+# 3. Utilities
+# =====================================================
 def log(message):
     print(message, flush=True)
 
 def clean_number(value):
+    """문자열 숫자를 float로 표준화합니다."""
     text = str(value).strip()
+
     if not text or text.lower() in {"nan", "none", "-", "n/a", "na"}:
         return 0.0
-    is_negative = text.startswith("-") or (text.startswith("(") and text.endswith(")"))
+
+    is_negative = (
+        text.startswith("-")
+        or (text.startswith("(") and text.endswith(")"))
+    )
+
     text = text.replace(",", "").replace("(", "").replace(")", "")
     text = "".join(char for char in text if char.isdigit() or char == ".")
+
     if not text:
         return 0.0
+
     try:
-        num = float(text)
-        return -num if is_negative else num
+        number = float(text)
+        return -number if is_negative else number
     except ValueError:
         return 0.0
 
 def normalize_provider_name(value):
+    """공백을 정리한 Forwarder 명칭을 반환합니다."""
     return " ".join(str(value).strip().split())
 
-# 3. Web Crawling
+def format_compact_number(value, suffix=""):
+    """대시보드 표시용 숫자 포맷입니다."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "--"
+
+    if number == 0:
+        return "--"
+
+    if abs(number) >= 1_000_000_000:
+        return f"{number / 1_000_000_000:,.2f}B{suffix}"
+
+    if abs(number) >= 1_000_000:
+        return f"{number / 1_000_000:,.2f}M{suffix}"
+
+    if abs(number) >= 1_000:
+        return f"{number / 1_000:,.1f}K{suffix}"
+
+    return f"{number:,.0f}{suffix}"
+
+def format_revenue(value):
+    """
+    원본 A&A 테이블의 Revenue 단위는 웹 원본 표기 기준으로 관리됩니다.
+    여기서는 DB 숫자를 변형하지 않고 읽기 쉬운 형태로만 표시합니다.
+    """
+    return format_compact_number(value)
+
+def calculate_percentage_change(current_value, previous_value):
+    """이전 스냅샷 대비 증감률을 계산합니다."""
+    try:
+        current_value = float(current_value)
+        previous_value = float(previous_value)
+    except (TypeError, ValueError):
+        return None
+
+    if previous_value == 0:
+        return None
+
+    return ((current_value - previous_value) / abs(previous_value)) * 100
+
+def format_delta(delta_value):
+    """증감률을 화면 표시 문자열로 변환합니다."""
+    if delta_value is None:
+        return "N/A"
+
+    if delta_value > 0:
+        return f"+{delta_value:.1f}%"
+
+    return f"{delta_value:.1f}%"
+
+# =====================================================
+# 4. Web Crawling
+# =====================================================
 def select_best_table(html_text):
+    """페이지 내 후보 테이블 중 Top 25 데이터로 보이는 테이블을 선택합니다."""
     soup = BeautifulSoup(html_text, "html.parser")
     tables = soup.find_all("table")
+
     if not tables:
         raise RuntimeError("웹페이지에서 table 태그를 찾지 못했습니다.")
 
     candidates = []
+
     for index, table in enumerate(tables):
         try:
             dataframe = pd.read_html(StringIO(str(table)))[0]
         except Exception:
             continue
+
         if dataframe is None or dataframe.empty:
             continue
 
-        content = (" ".join(map(str, dataframe.columns)) + " " + " ".join(map(str, dataframe.head(5).values.ravel()))).lower()
+        content = (
+            " ".join(map(str, dataframe.columns))
+            + " "
+            + " ".join(map(str, dataframe.head(5).values.ravel()))
+        ).lower()
+
         score = 0
-        for keyword in ["rank", "provider", "headquarters", "hq", "revenue", "teu", "air"]:
+
+        for keyword in [
+            "rank",
+            "provider",
+            "headquarters",
+            "hq",
+            "revenue",
+            "teu",
+            "air",
+        ]:
             if keyword in content:
                 score += 5
+
         if dataframe.shape[1] >= 6:
             score += 3
+
         if dataframe.shape[0] >= 20:
             score += 5
+
         candidates.append((score, index, dataframe))
 
     if not candidates:
-        raise RuntimeError("적절한 테이블을 찾지 못했습니다.")
+        raise RuntimeError("적절한 Top 25 테이블을 찾지 못했습니다.")
 
-    candidates.sort(key=lambda item: (item[0], -item[1]), reverse=True)
-    _, _, best_dataframe = candidates[0]
-    return best_dataframe
-
-def fetch_top_25_data(url=DEFAULT_URL):
-    log(f"[FETCH] 데이터 수집 중: {url}")
-    response = requests.get(url, headers=HEADERS, timeout=30)
-    response.raise_for_status()
-    raw_dataframe = select_best_table(response.text)
-    
-    if isinstance(raw_dataframe.columns, pd.MultiIndex):
-        raw_dataframe.columns = [" ".join(str(v) for v in c if str(v).lower() != "nan").strip() for c in raw_dataframe.columns]
-    else:
-        raw_dataframe.columns = [str(c).strip() for c in raw_dataframe.columns]
-
-    dataframe = raw_dataframe.iloc[:, :6].copy()
-    dataframe.columns = EXPECTED_COLUMNS
-
-    for column in ["rank", "revenue", "teu", "air_tons"]:
-        dataframe[column] = dataframe[column].apply(clean_number)
-
-    dataframe["rank"] = dataframe["rank"].astype(int)
-    dataframe["provider"] = dataframe["provider"].apply(normalize_provider_name)
-    dataframe["hq"] = dataframe["hq"].astype(str).str.strip()
-    dataframe["date"] = dt.date.today().isoformat()
-    dataframe["source_url"] = url
-
-    return dataframe.sort_values("rank").reset_index(drop=True)
-
-# 4. Database
-def get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS forwarders (
-            date TEXT NOT NULL, rank INTEGER, provider TEXT NOT NULL, hq TEXT,
-            revenue REAL, teu REAL, air_tons REAL, source_url TEXT, created_at TEXT,
-            PRIMARY KEY (date, provider)
-        )
-    """)
-    conn.execute("CREATE TABLE IF NOT EXISTS run_log (run_id INTEGER PRIMARY KEY AUTOINCREMENT, run_at TEXT, status TEXT, message TEXT, row_count INTEGER)")
-    conn.commit()
-    return conn
-
-def save_today_data(df):
-    conn = get_connection()
-    today = dt.date.today().isoformat()
-    now = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    try:
-        df["created_at"] = now
-        conn.execute("DELETE FROM forwarders WHERE date = ?", (today,))
-        df.to_sql("forwarders", conn, if_exists="append", index=False)
-        conn.execute("INSERT INTO run_log (run_at, status, message, row_count) VALUES (?, ?, ?, ?)", (now, "SUCCESS", "OK", len(df)))
-        conn.commit()
-        log("[DB] 저장 완료")
-    except Exception as e:
-        conn.execute("INSERT INTO run_log (run_at, status, message, row_count) VALUES (?, ?, ?, ?)", (now, "ERROR", str(e), 0))
-        conn.commit()
-        raise
-    finally:
-        conn.close()
-
-# 5. Dashboard Generation
-def build_static_dashboard():
-    import sqlite3
-import pandas as pd
-from datetime import datetime
-
-def build_static_dashboard(data_list, reference_date):
-    """
-    Bloomberg Terminal 스타일의 정적 HTML 대시보드를 생성합니다.
-    
-    Args:
-        data_list (list): dict 형태의 데이터 리스트 
-                         [{'rank': 1, 'provider': 'DHL', 'revenue': '85.2B', 'ocean': '4.2M', 'air': '1.1M', 'delta': '+2.1%'}, ...]
-        reference_date (str): 데이터 기준 날짜 (예: '2026-10-20')
-    """
-    
-    # 1. HTML 구조 및 Bloomberg Terminal CSS 정의
-    html_template = f"""
-    
-    
-    
-        
-        
-        FORWARDER MARKET INTELLIGENCE
-        
-        
-    
-    
-        
-
-            
-FORWARDER MARKET INTELLIGENCE
-
-            
-DATA REF: {reference_date}
-
-        
-
-
-        
-
-            
-
-                25
-                Total Providers
-            
-
-            
-
-                TOP 1
-                Market Leader
-            
-
-            
-
-                --
-                Market Share Avg
-            
-
-        
-
-
-        
-
-            
-                    {{rows}}
-                
-
-                
-                    
-                        Rank
-                        	Provider
-                        	Revenue (USD)
-                        	Ocean (TEU)
-                        	Air (Tons)
-                        	Delta (Δ)
-                    
-
-                
-                
-            
-
-        
-
-    
-    
-    """
-
-    # 2. 데이터 로우(Row) 생성 루프
-    rows_html = ""
-    for item in data_list:
-        # Delta 색상 결정 로직
-        delta_val = item.get('delta', '0%')
-        if '+' in delta_val:
-            delta_class = "delta-up"
-        elif '-' in delta_val:
-            delta_class = "delta-down"
-        else:
-            delta_class = ""
-
-        rows_html += f"""
-        
-            {item['rank']:02d}
-            {item['provider']}
-            {item['revenue']}
-            {item['ocean']}
-            {item['air']}
-            {delta_val}
-        
-        """
-
-    # 3. 최종 HTML 완성
-    final_html = html_template.format(
-        reference_date=reference_date,
-        rows=rows_html
-    )
-    
-    return final_html
-
-# --- 사용 예시 ---
-if __name__ == "__main__":
-    # 크롤러로부터 가져온 데이터라고 가정
-    sample_data = [
-        {'rank': 1, 'provider': 'DHL GLOBAL FORWARDING', 'revenue': '85.2B', 'ocean': '4.2M', 'air': '1.1M', 'delta': '+2.1%'},
-        {'rank': 2, 'provider': 'KUEHNE + NAGEL', 'revenue': '72.5B', 'ocean': '3.8M', 'air': '0.9M', 'delta': '-0.5%'},
-        {'rank': 3, 'provider': 'DB SCHENKER', 'revenue': '65.1B', 'ocean': '3.1M', 'air': '0.8M', 'delta': '+1.2%'},
-    ]
-    
-    html_output = build_static_dashboard(sample_data, "2026-10-20")
-    
-    with open("forwarder_dashboard.html", "w", encoding="utf-8") as f:
-        f.write(html_output)
-    print("Dashboard generated: forwarder_dashboard.html")
-# 6. Main Execution
-def main():
-    parser = argparse.ArgumentParser(description="A&A Top 25 Dashboard Runner")
-    parser.add_argument("--once", action="store_true", help="Run only once")
-    parser.add_argument("--build-static", action="store_true", help="Build HTML dashboard")
-    parser.add_argument("--crawl-only", action="store_true", help="Crawl and save data only")
-    parser.add_argument("--url", type=str, default=DEFAULT_URL, help="Source URL")
-    parser.add_argument("--host", type=str, default="127.0.0.1", help="Host")
-    parser.add_argument("--port", type=int, default=8080, help="Port")
-    parser.add_argument("--no-browser", action="store_true", help="Do not open browser")
-    
-    args = parser.parse_args()
-
-    # 1. Crawl & Save
-    df = fetch_top_25_data(args.url)
-    save_today_data(df)
-
-    # 2. Conditional Build
-    if args.build_static or (not args.crawl_only and not args.once):
-        build_static_dashboard()
-
-    # 3. Run Server
-    if not args.crawl_only and not args.once:
-        log(f"[SERVER] Starting server at http://{args.host}:{args.port}")
-        # Flask server logic would go here for local testing
-        # For GitHub Actions, we typically only want build_static or crawl_only
-
-if __name__ == "__main__":
-    main()
