@@ -374,25 +374,72 @@ HTML = r'''<!DOCTYPE html>
 def render_dashboard_html(message="", static_mode=False, source_url=DEFAULT_URL):
     dataframe = load_history()
     meta = get_last_run_meta()
-    if dataframe.empty:
-        return render_template_string(HTML, is_empty=True, message=message, meta=meta, source_url=source_url, data_json="{}", dates_json="[]", latest_date="-", total_revenue="-", total_teu="-", total_air="-", static_mode=static_mode, csv_filename=STATIC_CSV_PATH.name)
 
-    for c in ["rank", "revenue", "teu", "air_tons"]:
-        dataframe[c] = pd.to_numeric(dataframe[c], errors="coerce").fillna(0)
-    all_dates = sorted(dataframe["date"].dropna().unique().tolist(), reverse=True)
-    data_by_date = {d: dataframe[dataframe["date"] == d].sort_values("rank").to_dict(orient="records") for d in all_dates}
+    if dataframe.empty:
+        return render_template_string(
+            HTML,
+            is_empty=True,
+            message=message,
+            meta=meta,
+            source_url=source_url,
+            data_json="{}",
+            dates_json="[]",
+            latest_date="-",
+            total_revenue="-",
+            total_teu="-",
+            total_air="-",
+            static_mode=static_mode,
+            csv_filename=STATIC_CSV_PATH.name,
+        )
+
+    numeric_columns = ["rank", "revenue", "teu", "air_tons"]
+
+    for column in numeric_columns:
+        dataframe[column] = pd.to_numeric(
+            dataframe[column],
+            errors="coerce",
+        ).fillna(0)
+
+    dataframe["date"] = dataframe["date"].astype(str)
+
+    all_dates = sorted(
+        dataframe["date"].dropna().unique().tolist(),
+        reverse=True,
+    )
+
     latest_date = all_dates[0]
-    latest_df = dataframe[dataframe["date"] == latest_date]
+
+    data_by_date = {}
+
+    for date_value in all_dates:
+        date_dataframe = (
+            dataframe[dataframe["date"] == date_value]
+            .sort_values(["rank", "provider"])
+            .copy()
+        )
+
+        data_by_date[date_value] = date_dataframe[
+            ["rank", "provider", "hq", "revenue", "teu", "air_tons"]
+        ].to_dict(orient="records")
+
+    latest_dataframe = dataframe[
+        dataframe["date"] == latest_date
+    ].copy()
 
     return render_template_string(
-        HTML, is_empty=False, message=message, meta=meta, source_url=source_url,
+        HTML,
+        is_empty=False,
+        message=message,
+        meta=meta,
+        source_url=source_url,
         data_json=json.dumps(data_by_date, ensure_ascii=False),
         dates_json=json.dumps(all_dates, ensure_ascii=False),
         latest_date=latest_date,
-        total_revenue=f"${latest_df['revenue'].sum():,.0f}M",
-        total_teu=f"{latest_df['teu'].sum():,.0f}",
-        total_air=f"{latest_df['air_tons'].sum():,.0f}",
-        static_mode=static_mode, csv_filename=STATIC_CSV_PATH.name
+        total_revenue=f"${latest_dataframe['revenue'].sum():,.0f}M",
+        total_teu=f"{latest_dataframe['teu'].sum():,.0f}",
+        total_air=f"{latest_dataframe['air_tons'].sum():,.0f}",
+        static_mode=static_mode,
+        csv_filename=STATIC_CSV_PATH.name,
     )
 
 # =========================================================
