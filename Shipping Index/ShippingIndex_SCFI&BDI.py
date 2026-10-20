@@ -1409,533 +1409,630 @@ def build_json():
 # =============================================================================
 
 def generate_html_file():
-    """Generate GitHub Pages index.html."""
-    log("[HTML] index.html 생성 중...")
+    """Generate Bloomberg-style GitHub Pages index.html."""
+    log("[HTML] Bloomberg-style index.html 생성 중...")
 
     html_content = r"""<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  >
-  <meta
-    name="description"
-    content="SCFI 및 BDI 해운 운임·시황 지수 정적 대시보드"
-  >
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="SCFI 및 BDI 해운 지수 대시보드">
 
-  <title>Shipping Index Dashboard | SCFI & BDI</title>
+  <title>MI Terminal | Shipping Index</title>
 
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 
   <style>
     :root {
-      --navy: #102a43;
-      --blue: #1f5fa8;
-      --light-blue: #eef5fb;
-      --border: #d9e2ec;
-      --text: #243b53;
-      --muted: #627d98;
-      --bg: #f5f7fa;
+      --bg: #070b12;
+      --panel: #0e1621;
+      --panel-2: #131e2b;
+      --line: #263648;
+      --line-soft: #1b2938;
+      --text: #edf3f8;
+      --muted: #8ea2b7;
+      --orange: #ff8a00;
+      --orange-soft: #ffb14a;
+      --blue: #36a3ff;
+      --green: #2ec27e;
+      --red: #ff5c5c;
       --white: #ffffff;
-      --danger: #b42318;
-      --success: #027a48;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
+      min-width: 320px;
       background: var(--bg);
       color: var(--text);
-      font-family: Arial, "Noto Sans KR", "Malgun Gothic", sans-serif;
-    }
-
-    header {
-      padding: 30px 20px;
-      color: var(--white);
-      background: linear-gradient(135deg, #102a43, #1f5fa8);
-    }
-
-    header .inner,
-    main {
-      width: 100%;
-      max-width: 1280px;
-      margin: 0 auto;
-    }
-
-    .header-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 15px;
-    }
-
-    h1 {
-      margin: 0;
-      font-size: 32px;
-      letter-spacing: -0.5px;
-    }
-
-    header p {
-      margin: 9px 0 0;
-      color: #d9eafd;
-      font-size: 15px;
-    }
-
-    .btn-download {
-      background-color: var(--white);
-      color: var(--blue);
-      border: 1px solid var(--white);
-      padding: 10px 18px;
-      border-radius: 8px;
-      font-weight: 700;
-      cursor: pointer;
-      font-size: 14px;
-      transition: all 0.2s;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-    }
-
-    .btn-download:hover {
-      background-color: var(--light-blue);
-      border-color: var(--light-blue);
-    }
-
-    main {
-      padding: 22px 16px 40px;
-    }
-
-    .panel,
-    .status,
-    .kpi {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: var(--white);
-      box-shadow: 0 3px 12px rgba(16, 42, 67, 0.06);
-    }
-
-    .status {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-bottom: 16px;
-      padding: 13px 16px;
+      font-family: "Roboto Mono", "SFMono-Regular", Consolas,
+        "Noto Sans KR", monospace;
       font-size: 13px;
+    }
+
+    button, input {
+      font: inherit;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 54px;
+      padding: 0 22px;
+      border-bottom: 1px solid var(--line);
+      background: #090f18;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      white-space: nowrap;
+    }
+
+    .brand-mark {
+      color: var(--orange);
+      font-size: 19px;
+      font-weight: 900;
+      letter-spacing: -1px;
+    }
+
+    .brand-title {
+      color: var(--white);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+    }
+
+    .brand-divider {
+      width: 1px;
+      height: 19px;
+      background: var(--line);
+    }
+
+    .brand-subtitle {
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.4px;
+    }
+
+    .top-status {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .terminal {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 18px 22px 36px;
+    }
+
+    .status-strip {
+      display: flex;
+      justify-content: space-between;
+      gap: 15px;
+      margin-bottom: 16px;
+      padding: 10px 12px;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      background: var(--panel);
+      font-size: 11px;
     }
 
     .status-left {
       display: flex;
+      gap: 9px;
       align-items: center;
-      gap: 8px;
     }
 
     .status-dot {
-      width: 10px;
-      height: 10px;
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
-      background: var(--success);
+      background: var(--green);
+      box-shadow: 0 0 8px rgba(46, 194, 126, 0.65);
     }
 
     .status-dot.error {
-      background: var(--danger);
+      background: var(--red);
+      box-shadow: 0 0 8px rgba(255, 92, 92, 0.65);
     }
 
-    .status-text {
-      color: var(--muted);
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(250px, 300px) minmax(0, 1fr);
+      gap: 16px;
     }
 
     .panel {
-      margin-bottom: 18px;
-      padding: 20px;
+      border: 1px solid var(--line);
+      background: var(--panel);
     }
 
-    h2 {
-      margin: 0 0 16px;
-      color: var(--navy);
-      font-size: 20px;
-    }
-
-    .section-description {
-      margin: -6px 0 18px;
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.6;
-    }
-
-    .index-tabs {
+    .panel-header {
       display: flex;
-      gap: 10px;
-      margin-bottom: 18px;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 40px;
+      padding: 0 13px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel-2);
     }
 
-    .tab-button {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 18px;
-      color: var(--text);
-      background: var(--white);
-      cursor: pointer;
-      font-size: 14px;
+    .panel-title {
+      color: var(--orange);
+      font-size: 11px;
       font-weight: 700;
+      letter-spacing: 0.8px;
     }
 
-    .tab-button:hover {
-      border-color: var(--blue);
+    .filter-panel {
+      height: fit-content;
+    }
+
+    .filter-section {
+      padding: 14px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .filter-section:last-child {
+      border-bottom: 0;
+    }
+
+    .label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.7px;
+    }
+
+    .index-switch {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .terminal-btn {
+      min-height: 32px;
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 0;
+      color: var(--muted);
+      background: #0a111a;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 700;
+      transition: 0.15s ease;
+    }
+
+    .terminal-btn:hover {
+      border-color: var(--orange);
+      color: var(--orange-soft);
+    }
+
+    .terminal-btn.active {
+      border-color: var(--orange);
+      color: #111;
+      background: var(--orange);
+    }
+
+    .period-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 5px;
+    }
+
+    .period-grid .terminal-btn:last-child {
+      grid-column: span 3;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      outline: 0;
+      color: var(--text);
+      background: #080e16;
+      font-size: 12px;
+    }
+
+    .search-input:focus {
+      border-color: var(--orange);
+    }
+
+    .selection-actions {
+      display: flex;
+      gap: 6px;
+      margin: 9px 0;
+    }
+
+    .small-action {
+      padding: 0;
+      border: 0;
       color: var(--blue);
+      background: transparent;
+      cursor: pointer;
+      font-size: 10px;
     }
 
-    .tab-button.active {
-      border-color: var(--blue);
+    .small-action:hover {
+      color: var(--orange-soft);
+    }
+
+    .selected-summary {
+      min-height: 32px;
+      margin-bottom: 9px;
+      padding: 6px;
+      border: 1px solid var(--line-soft);
+      background: #09111a;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin: 2px;
+      padding: 3px 5px;
+      border: 1px solid #66502d;
+      color: var(--orange-soft);
+      background: #231b10;
+      font-size: 10px;
+    }
+
+    .chip button {
+      padding: 0;
+      border: 0;
+      color: var(--orange-soft);
+      background: transparent;
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+    }
+
+    .route-list {
+      max-height: 250px;
+      overflow-y: auto;
+      border: 1px solid var(--line-soft);
+      background: #080e16;
+    }
+
+    .route-item {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 9px;
+      border-bottom: 1px solid #14202c;
+      color: #c6d3df;
+      cursor: pointer;
+      font-size: 11px;
+    }
+
+    .route-item:last-child {
+      border-bottom: 0;
+    }
+
+    .route-item:hover {
+      background: #152234;
+    }
+
+    .route-item input {
+      accent-color: var(--orange);
+    }
+
+    .main-area {
+      min-width: 0;
+    }
+
+    .main-titlebar {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .instrument-title {
+      margin: 0;
       color: var(--white);
-      background: var(--blue);
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.4px;
+    }
+
+    .instrument-meta {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .download-btn {
+      border-color: #34526e;
+      color: var(--blue);
+      white-space: nowrap;
     }
 
     .kpi-grid {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 14px;
-      margin-bottom: 20px;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 9px;
+      margin-bottom: 12px;
     }
 
     .kpi {
-      min-height: 118px;
-      padding: 16px;
+      min-height: 104px;
+      padding: 13px;
+      border: 1px solid var(--line);
+      background: var(--panel);
     }
 
     .kpi-label {
       display: block;
-      margin-bottom: 10px;
+      min-height: 25px;
       color: var(--muted);
-      font-size: 13px;
+      font-size: 10px;
+      letter-spacing: 0.4px;
+      line-height: 1.3;
     }
 
     .kpi-value {
       display: block;
-      color: var(--navy);
-      font-size: 27px;
+      margin-top: 10px;
+      color: var(--white);
+      font-size: 20px;
       font-weight: 700;
       letter-spacing: -0.5px;
     }
 
     .kpi-sub {
       display: block;
-      margin-top: 8px;
+      margin-top: 6px;
       color: var(--muted);
-      font-size: 12px;
+      font-size: 10px;
     }
 
-    .positive {
-      color: var(--success);
+    .positive { color: var(--green); }
+    .negative { color: var(--red); }
+    .neutral { color: var(--white); }
+
+    .chart-panel {
+      margin-bottom: 12px;
     }
 
-    .negative {
-      color: var(--danger);
-    }
-
-    .neutral {
-      color: var(--muted);
-    }
-
-    .chart {
+    #chart {
       width: 100%;
-      min-height: 440px;
-      margin-top: 20px;
-    }
-
-    .controls {
-      display: flex;
-      gap: 20px;
-      flex-wrap: wrap;
-      margin-bottom: 20px;
-      background: #f8fafc;
-      padding: 15px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-    }
-
-    .control-group {
-      display: flex;
-      flex-direction: column;
-      gap: 7px;
-    }
-
-    .control-group label {
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 700;
-    }
-
-    select {
-      min-width: 160px;
-      border: 1px solid var(--border);
-      border-radius: 7px;
-      padding: 10px 12px;
-      color: var(--text);
-      background: var(--white);
-      font-size: 14px;
-    }
-
-    .checkbox-container {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      max-height: 100px;
-      overflow-y: auto;
-      padding: 5px;
-      background: var(--white);
-      border: 1px solid var(--border);
-      border-radius: 7px;
-      padding: 8px 12px;
-    }
-
-    .checkbox-label {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 13px;
-      cursor: pointer;
-      user-select: none;
+      min-height: 520px;
     }
 
     .table-wrap {
-      overflow-x: auto;
-      max-height: 500px;
+      max-height: 470px;
+      overflow: auto;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 14px;
+      font-size: 11px;
     }
 
-    th,
-    td {
-      padding: 12px;
-      border-bottom: 1px solid var(--border);
-      text-align: left;
+    th, td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line-soft);
       white-space: nowrap;
-    }
-
-    th {
-      color: var(--muted);
-      background: #f8fafc;
-      font-size: 12px;
-      font-weight: 700;
-      position: sticky;
-      top: 0;
-      z-index: 10;
-    }
-
-    td.numeric,
-    th.numeric {
       text-align: right;
     }
 
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      color: var(--orange-soft);
+      background: #111c29;
+      font-size: 10px;
+      letter-spacing: 0.4px;
+    }
+
+    th:first-child, td:first-child {
+      text-align: left;
+    }
+
+    td {
+      color: #d5e0e9;
+    }
+
+    tr:hover td {
+      background: #132031;
+    }
+
     .empty-message {
-      padding: 30px 18px;
-      border: 1px dashed var(--border);
-      border-radius: 8px;
+      padding: 28px;
       color: var(--muted);
-      background: #f8fafc;
-      text-align: center;
-      line-height: 1.7;
-    }
-
-    footer {
-      padding: 20px;
-      color: var(--muted);
-      font-size: 12px;
       text-align: center;
     }
 
-    @media (max-width: 900px) {
-      .kpi-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
+    @media (max-width: 1100px) {
+      .workspace { grid-template-columns: 1fr; }
+      .kpi-grid { grid-template-columns: repeat(3, 1fr); }
     }
 
-    @media (max-width: 560px) {
-      header {
-        padding: 24px 16px;
-      }
-
-      h1 {
-        font-size: 25px;
-      }
-
-      .panel {
-        padding: 16px;
-      }
-
-      .kpi-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .chart {
-        min-height: 370px;
-      }
+    @media (max-width: 680px) {
+      .top-status, .brand-subtitle, .brand-divider { display: none; }
+      .topbar { padding: 0 14px; }
+      .terminal { padding: 12px; }
+      .status-strip { display: block; line-height: 1.8; }
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+      .main-titlebar { align-items: flex-start; }
+      .instrument-title { font-size: 17px; }
     }
   </style>
 </head>
 
 <body>
-  <header>
-    <div class="inner">
-      <div class="header-top">
-        <div>
-          <h1>Shipping Index Dashboard</h1>
-          <p>Shanghai Containerized Freight Index (SCFI) · Baltic Dry Index (BDI)</p>
-        </div>
-        <button class="btn-download" type="button" onclick="downloadCSV()">📥 CSV 다운로드</button>
-      </div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">MI&lt;GO&gt;</span>
+      <span class="brand-divider"></span>
+      <span class="brand-title">SHIPPING INDEX</span>
+      <span class="brand-subtitle">SCFI / BDI MONITOR</span>
     </div>
+    <div id="lastUpdated" class="top-status">DATA LOADING...</div>
   </header>
 
-  <main>
-    <section class="status">
+  <main class="terminal">
+    <section class="status-strip">
       <div class="status-left">
         <span id="statusDot" class="status-dot"></span>
-        <strong id="statusTitle">데이터 로딩 중</strong>
+        <strong id="statusTitle">SYSTEM / DATA LOADING</strong>
       </div>
-
-      <div id="lastUpdated" class="status-text">
-        shipping_index_data.json 확인 중...
-      </div>
+      <span id="periodDisplay">PERIOD: -</span>
     </section>
 
-    <section class="panel">
-      <div class="index-tabs">
-        <button
-          id="scfiTab"
-          class="tab-button active"
-          type="button"
-          onclick="selectIndex('SCFI')"
-        >
-          SCFI
-        </button>
-
-        <button
-          id="bdiTab"
-          class="tab-button"
-          type="button"
-          onclick="selectIndex('BDI')"
-        >
-          BDI
-        </button>
-      </div>
-
-      <h2 id="dashboardTitle">SCFI Dashboard</h2>
-
-      <p id="dashboardDescription" class="section-description">
-        데이터를 불러오는 중입니다.
-      </p>
-
-      <div class="controls">
-        <div class="control-group">
-          <label for="yearSelect">연도 선택 (기간)</label>
-          <select id="yearSelect" onchange="renderDashboard()">
-            <option value="">전체 연도</option>
-          </select>
+    <div class="workspace">
+      <aside class="panel filter-panel">
+        <div class="panel-header">
+          <span class="panel-title">FUNCTIONS / FILTERS</span>
         </div>
 
-        <div class="control-group" style="flex: 1; min-width: 280px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-            <label>항로 복수 선택</label>
-            <div>
-              <button type="button" onclick="toggleAllRegions(true)" style="font-size: 11px; cursor: pointer; border:1px solid var(--border); background:#fff; padding:2px 6px; border-radius:4px;">전체 선택</button>
-              <button type="button" onclick="toggleAllRegions(false)" style="font-size: 11px; cursor: pointer; border:1px solid var(--border); background:#fff; padding:2px 6px; border-radius:4px;">해제</button>
+        <section class="filter-section">
+          <span class="label">INDEX</span>
+          <div class="index-switch">
+            <button id="scfiTab" class="terminal-btn active" onclick="selectIndex('SCFI')">SCFI</button>
+            <button id="bdiTab" class="terminal-btn" onclick="selectIndex('BDI')">BDI</button>
+          </div>
+        </section>
+
+        <section class="filter-section">
+          <span class="label">TIME RANGE</span>
+          <div class="period-grid">
+            <button class="terminal-btn" data-period="1Y" onclick="setPreset('1Y')">1Y</button>
+            <button class="terminal-btn" data-period="3Y" onclick="setPreset('3Y')">3Y</button>
+            <button class="terminal-btn" data-period="5Y" onclick="setPreset('5Y')">5Y</button>
+            <button class="terminal-btn" data-period="YTD" onclick="setPreset('YTD')">YTD</button>
+            <button class="terminal-btn" data-period="ALL" onclick="setPreset('ALL')">ALL HISTORY</button>
+          </div>
+        </section>
+
+        <section class="filter-section">
+          <span class="label">SELECT SERIES</span>
+
+          <input
+            id="routeSearch"
+            class="search-input"
+            type="search"
+            placeholder="항로/지수 검색..."
+            oninput="renderRouteList()"
+          >
+
+          <div class="selection-actions">
+            <button class="small-action" onclick="selectVisibleRoutes()">VISIBLE ALL</button>
+            <button class="small-action" onclick="clearRoutes()">CLEAR</button>
+          </div>
+
+          <div id="selectedSummary" class="selected-summary"></div>
+          <div id="routeList" class="route-list"></div>
+        </section>
+      </aside>
+
+      <section class="main-area">
+        <div class="main-titlebar">
+          <div>
+            <h1 id="dashboardTitle" class="instrument-title">SCFI</h1>
+            <div id="dashboardDescription" class="instrument-meta">
+              Shanghai Containerized Freight Index
             </div>
           </div>
-          <div id="regionCheckboxes" class="checkbox-container">
-            <!-- 체크박스 동적 생성 -->
+          <button class="terminal-btn download-btn" onclick="downloadCSV()">EXPORT CSV</button>
+        </div>
+
+        <section class="kpi-grid">
+          <div class="kpi">
+            <span class="kpi-label">LATEST<br>SELECTED SERIES AVG</span>
+            <span id="latestValue" class="kpi-value">-</span>
+            <span id="latestValueDate" class="kpi-sub">-</span>
           </div>
-        </div>
-      </div>
 
-      <div class="kpi-grid">
-        <div class="kpi">
-          <span class="kpi-label">최신 지수 (평균/대표)</span>
-          <span id="latestValue" class="kpi-value">-</span>
-          <span id="latestValueDate" class="kpi-sub">-</span>
-        </div>
+          <div class="kpi">
+            <span class="kpi-label">PERIOD<br>AVERAGE</span>
+            <span id="periodAverage" class="kpi-value">-</span>
+            <span id="periodAverageSub" class="kpi-sub">-</span>
+          </div>
 
-        <div class="kpi">
-          <span class="kpi-label">직전 값</span>
-          <span id="previousValue" class="kpi-value">-</span>
-          <span id="previousValueDate" class="kpi-sub">-</span>
-        </div>
+          <div class="kpi">
+            <span class="kpi-label">PERIOD<br>HIGH / LOW</span>
+            <span id="highLowValue" class="kpi-value">-</span>
+            <span id="highLowSub" class="kpi-sub">-</span>
+          </div>
 
-        <div class="kpi">
-          <span class="kpi-label">기간 변화</span>
-          <span id="changeValue" class="kpi-value neutral">-</span>
-          <span id="changeRate" class="kpi-sub">-</span>
-        </div>
+          <div class="kpi">
+            <span class="kpi-label">CHANGE<br>FIRST → LAST</span>
+            <span id="changeValue" class="kpi-value neutral">-</span>
+            <span id="changeRate" class="kpi-sub">-</span>
+          </div>
 
-        <div class="kpi">
-          <span class="kpi-label">데이터 건수</span>
-          <span id="recordCount" class="kpi-value">-</span>
-          <span id="regionCount" class="kpi-sub">-</span>
-        </div>
-      </div>
+          <div class="kpi">
+            <span class="kpi-label">OBSERVATIONS<br> / SERIES</span>
+            <span id="recordCount" class="kpi-value">-</span>
+            <span id="regionCount" class="kpi-sub">-</span>
+          </div>
+        </section>
 
-      <div id="chart" class="chart"></div>
-    </section>
+        <section class="panel chart-panel">
+          <div class="panel-header">
+            <span class="panel-title">PRICE HISTORY / RANGE SLIDER ENABLED</span>
+            <span class="panel-title">DRAG BELOW CHART TO CHANGE PERIOD</span>
+          </div>
+          <div id="chart"></div>
+        </section>
 
-    <section class="panel">
-      <h2>날짜별 항로별 시세표</h2>
-
-      <p class="section-description">
-        세로축은 날짜, 가로축은 선택된 항로별 데이터로 나열됩니다.
-      </p>
-
-      <div class="table-wrap">
-        <table>
-          <thead id="dataTableHead">
-            <tr>
-              <th>일자</th>
-            </tr>
-          </thead>
-
-          <tbody id="dataTableBody">
-            <tr>
-              <td class="empty-message">
-                데이터 로딩 중...
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+        <section class="panel">
+          <div class="panel-header">
+            <span class="panel-title">DATA GRID / SELECTED PERIOD</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead id="dataTableHead"></thead>
+              <tbody id="dataTableBody">
+                <tr><td class="empty-message">DATA LOADING...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </div>
   </main>
-
-  <footer>
-    Market Intelligence Dashboard · Data source: Korea Shipping Gazette
-  </footer>
 
   <script>
     let dashboardData = null;
     let currentIndex = "SCFI";
+    let selectedRegions = new Set();
+    let currentRange = null; // { start: "YYYY-MM-DD", end: "YYYY-MM-DD" } 또는 null(전체)
+    let currentPreset = "ALL";
 
-    const INDEX_DESCRIPTIONS = {
-      SCFI: "상하이발 컨테이너 운임 흐름을 지역 및 항로별로 확인합니다.",
-      BDI: "벌크선 시황을 대표하는 Baltic Dry Index 및 세부 지수 흐름을 확인합니다."
+    const INDEX_INFO = {
+      SCFI: {
+        title: "SCFI / SHANGHAI CONTAINERIZED FREIGHT INDEX",
+        description: "컨테이너 운임 항로별 시계열 및 선택 항로 평균 모니터링"
+      },
+      BDI: {
+        title: "BDI / BALTIC DRY INDEX",
+        description: "벌크선 시황 대표지수 및 세부 선형별 시계열 모니터링"
+      }
     };
 
-    const INDEX_COLORS = {
-      SCFI: "#1f5fa8",
-      BDI: "#027a48"
-    };
+    const SERIES_COLORS = [
+      "#ff8a00", "#36a3ff", "#2ec27e", "#be8cff",
+      "#ff5c5c", "#f5d547", "#5bd6c7", "#d7e2eb"
+    ];
 
     function formatNumber(value, decimals = 2) {
-      if (value === null || value === undefined || Number.isNaN(Number(value))) {
-        return "-";
-      }
+      if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
       return Number(value).toLocaleString("ko-KR", {
         minimumFractionDigits: decimals,
         maximumFractionDigits: decimals
@@ -1943,20 +2040,16 @@ def generate_html_file():
     }
 
     function formatInteger(value) {
-      if (value === null || value === undefined || Number.isNaN(Number(value))) {
-        return "-";
-      }
+      if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
       return Number(value).toLocaleString("ko-KR");
     }
 
-    function formatDate(dateString) {
-      if (!dateString) return "-";
-      const date = new Date(dateString + "T00:00:00");
-      if (Number.isNaN(date.getTime())) return dateString;
+    function formatDate(value) {
+      if (!value) return "-";
+      const date = new Date(value + "T00:00:00");
+      if (Number.isNaN(date.getTime())) return value;
       return date.toLocaleDateString("ko-KR", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit"
+        year: "numeric", month: "2-digit", day: "2-digit"
       });
     }
 
@@ -1969,311 +2062,447 @@ def generate_html_file():
         .replaceAll("'", "&#039;");
     }
 
-    function setStatus(isSuccess, title, message) {
-      const statusDot = document.getElementById("statusDot");
-      const statusTitle = document.getElementById("statusTitle");
-      const lastUpdated = document.getElementById("lastUpdated");
-
-      statusDot.className = isSuccess ? "status-dot" : "status-dot error";
-      statusTitle.textContent = title;
-      lastUpdated.textContent = message;
+    function setStatus(ok, title, message) {
+      document.getElementById("statusDot").className = ok ? "status-dot" : "status-dot error";
+      document.getElementById("statusTitle").textContent = title;
+      document.getElementById("lastUpdated").textContent = message;
     }
 
-    function getCurrentIndexData() {
+    function getIndexData() {
       if (!dashboardData || !dashboardData.indexes) {
-        return { regions: [], records: [], record_count: 0, latest_date: null };
+        return { regions: [], records: [] };
       }
-      return dashboardData.indexes[currentIndex] || { regions: [], records: [], record_count: 0, latest_date: null };
+      return dashboardData.indexes[currentIndex] || { regions: [], records: [] };
     }
 
-    function populateControls() {
-      const indexData = getCurrentIndexData();
-      
-      // 연도 옵션 채우기
-      const yearSelect = document.getElementById("yearSelect");
-      const currentYearVal = yearSelect.value;
-      const years = [...new Set(indexData.records.map(r => String(r.DATE).substring(0, 4)))].sort().reverse();
-
-      yearSelect.innerHTML = '<option value="">전체 연도</option>';
-      years.forEach(year => {
-        const opt = document.createElement("option");
-        opt.value = year;
-        opt.textContent = year + "년";
-        yearSelect.appendChild(opt);
-      });
-      if (years.includes(currentYearVal)) {
-        yearSelect.value = currentYearVal;
-      }
-
-      // 항로 체크박스 채우기
-      const container = document.getElementById("regionCheckboxes");
-      // 기존에 체크되어 있던 항로 기억
-      const checkedRegions = Array.from(container.querySelectorAll("input[type='checkbox']:checked")).map(cb => cb.value);
-      
-      container.innerHTML = "";
-      indexData.regions.forEach((region, idx) => {
-        const label = document.createElement("label");
-        label.className = "checkbox-label";
-
-        const cb = document.createElement("input");
-        cb.type = "checkbox";
-        cb.value = region;
-        // 처음 로드시이거나 이전 선택 항목에 포함되어 있으면 체크
-        if (checkedRegions.length === 0 || checkedRegions.includes(region)) {
-          cb.checked = true;
-        }
-        cb.onchange = renderDashboard;
-
-        label.appendChild(cb);
-        label.appendChild(document.createTextNode(region));
-        container.appendChild(label);
-      });
+    function getAllRecords() {
+      return [...getIndexData().records].sort(
+        (a, b) => String(a.DATE).localeCompare(String(b.DATE))
+      );
     }
 
-    function toggleAllRegions(checkStatus) {
-      const checkboxes = document.querySelectorAll("#regionCheckboxes input[type='checkbox']");
-      checkboxes.forEach(cb => cb.checked = checkStatus);
+    function getDefaultRegions(regions) {
+      if (currentIndex === "BDI" && regions.includes("BDI")) return ["BDI"];
+      return regions.slice(0, Math.min(3, regions.length));
+    }
+
+    function renderRouteList() {
+      const indexData = getIndexData();
+      const keyword = document.getElementById("routeSearch").value.trim().toLowerCase();
+      const visibleRegions = indexData.regions.filter(region =>
+        region.toLowerCase().includes(keyword)
+      );
+
+      document.getElementById("routeList").innerHTML = visibleRegions.length
+        ? visibleRegions.map(region => `
+            <label class="route-item">
+              <input
+                type="checkbox"
+                value="${escapeHtml(region)}"
+                ${selectedRegions.has(region) ? "checked" : ""}
+                onchange="toggleRegion(this.value, this.checked)"
+              >
+              <span>${escapeHtml(region)}</span>
+            </label>
+          `).join("")
+        : `<div class="empty-message">NO MATCHING SERIES</div>`;
+
+      renderSelectedSummary();
+    }
+
+    function renderSelectedSummary() {
+      const container = document.getElementById("selectedSummary");
+
+      if (!selectedRegions.size) {
+        container.innerHTML = `<span style="color:#8ea2b7;font-size:10px;">NO SERIES SELECTED</span>`;
+        return;
+      }
+
+      container.innerHTML = [...selectedRegions].map(region => `
+        <span class="chip">
+          ${escapeHtml(region)}
+          <button onclick="removeRegion('${String(region).replaceAll("'", "\\'")}')">×</button>
+        </span>
+      `).join("");
+    }
+
+    function toggleRegion(region, checked) {
+      if (checked) selectedRegions.add(region);
+      else selectedRegions.delete(region);
+
+      renderRouteList();
       renderDashboard();
     }
 
-    function getSelectedRegions() {
-      const checkboxes = document.querySelectorAll("#regionCheckboxes input[type='checkbox']:checked");
-      return Array.from(checkboxes).map(cb => cb.value);
+    function removeRegion(region) {
+      selectedRegions.delete(region);
+      renderRouteList();
+      renderDashboard();
+    }
+
+    function selectVisibleRoutes() {
+      const keyword = document.getElementById("routeSearch").value.trim().toLowerCase();
+      getIndexData().regions
+        .filter(region => region.toLowerCase().includes(keyword))
+        .forEach(region => selectedRegions.add(region));
+
+      renderRouteList();
+      renderDashboard();
+    }
+
+    function clearRoutes() {
+      selectedRegions.clear();
+      renderRouteList();
+      renderDashboard();
+    }
+
+    function getDateBounds() {
+      const records = getAllRecords();
+      if (!records.length) return { min: null, max: null };
+      return { min: records[0].DATE, max: records[records.length - 1].DATE };
+    }
+
+    function addYears(dateString, years) {
+      const date = new Date(dateString + "T00:00:00");
+      date.setFullYear(date.getFullYear() - years);
+      return date.toISOString().slice(0, 10);
+    }
+
+    function setPreset(preset) {
+      const bounds = getDateBounds();
+      if (!bounds.max) return;
+
+      currentPreset = preset;
+
+      if (preset === "ALL") {
+        currentRange = null;
+      } else if (preset === "YTD") {
+        currentRange = {
+          start: `${bounds.max.slice(0, 4)}-01-01`,
+          end: bounds.max
+        };
+      } else {
+        const years = Number(preset.replace("Y", ""));
+        currentRange = {
+          start: addYears(bounds.max, years),
+          end: bounds.max
+        };
+      }
+
+      updatePeriodButtons();
+      renderDashboard();
+    }
+
+    function updatePeriodButtons() {
+      document.querySelectorAll("[data-period]").forEach(button => {
+        button.classList.toggle(
+          "active",
+          button.getAttribute("data-period") === currentPreset
+        );
+      });
     }
 
     function getFilteredRecords() {
-      const indexData = getCurrentIndexData();
-      const selectedYear = document.getElementById("yearSelect").value;
-      const selectedRegions = getSelectedRegions();
+      let records = getAllRecords();
 
-      let records = Array.isArray(indexData.records) ? [...indexData.records] : [];
+      if (!selectedRegions.size) return [];
 
-      // 연도 필터
-      if (selectedYear) {
-        records = records.filter(r => String(r.DATE).startsWith(selectedYear));
+      records = records.filter(record => selectedRegions.has(record.REGION));
+
+      if (currentRange) {
+        records = records.filter(record =>
+          record.DATE >= currentRange.start && record.DATE <= currentRange.end
+        );
       }
 
-      // 항로 필터
-      if (selectedRegions.length > 0) {
-        records = records.filter(r => selectedRegions.includes(r.REGION));
-      }
-
-      records.sort((a, b) => String(a.DATE).localeCompare(String(b.DATE)));
       return records;
     }
 
-    function updateKpis(records) {
-      const latestValueElement = document.getElementById("latestValue");
-      const latestValueDateElement = document.getElementById("latestValueDate");
-      const previousValueElement = document.getElementById("previousValue");
-      const previousValueDateElement = document.getElementById("previousValueDate");
-      const changeValueElement = document.getElementById("changeValue");
-      const changeRateElement = document.getElementById("changeRate");
-      const recordCountElement = document.getElementById("recordCount");
-      const regionCountElement = document.getElementById("regionCount");
+    function getDailyAverages(records) {
+      const byDate = {};
 
-      const selectedRegions = getSelectedRegions();
-      recordCountElement.textContent = formatInteger(records.length);
-      regionCountElement.textContent = "선택 항로 " + formatInteger(selectedRegions.length) + "개";
-
-      if (records.length === 0) {
-        latestValueElement.textContent = "-";
-        latestValueDateElement.textContent = "데이터 없음";
-        previousValueElement.textContent = "-";
-        previousValueDateElement.textContent = "데이터 없음";
-        changeValueElement.textContent = "-";
-        changeRateElement.textContent = "-";
-        changeValueElement.className = "kpi-value neutral";
-        return;
-      }
-
-      // 날짜별로 그룹화하여 가장 최근 날짜의 평균값 계산 등을 수행
-      const dateMap = {};
-      records.forEach(r => {
-        if (!dateMap[r.DATE]) dateMap[r.DATE] = [];
-        dateMap[r.DATE].push(Number(r.VALUE));
+      records.forEach(record => {
+        if (!byDate[record.DATE]) byDate[record.DATE] = [];
+        byDate[record.DATE].push(Number(record.VALUE));
       });
 
-      const dates = Object.keys(dateMap).sort();
-      const latestDate = dates[dates.length - 1];
-      const previousDate = dates.length >= 2 ? dates[dates.length - 2] : null;
+      return Object.keys(byDate).sort().map(date => ({
+        date,
+        value: byDate[date].reduce((sum, value) => sum + value, 0) / byDate[date].length
+      }));
+    }
 
-      const latestAvg = dateMap[latestDate].reduce((a, b) => a + b, 0) / dateMap[latestDate].length;
-      latestValueElement.textContent = formatNumber(latestAvg);
-      latestValueDateElement.textContent = formatDate(latestDate) + " (평균)";
+    function updateKpis(records) {
+      const selectedCount = selectedRegions.size;
+      document.getElementById("recordCount").textContent = formatInteger(records.length);
+      document.getElementById("regionCount").textContent = `${formatInteger(selectedCount)} SERIES SELECTED`;
 
-      if (!previousDate) {
-        previousValueElement.textContent = "-";
-        previousValueDateElement.textContent = "비교 데이터 없음";
-        changeValueElement.textContent = "-";
-        changeRateElement.textContent = "-";
-        changeValueElement.className = "kpi-value neutral";
+      if (!records.length) {
+        ["latestValue", "periodAverage", "highLowValue", "changeValue"].forEach(id => {
+          document.getElementById(id).textContent = "-";
+        });
+        document.getElementById("latestValueDate").textContent = "NO DATA";
+        document.getElementById("periodAverageSub").textContent = "-";
+        document.getElementById("highLowSub").textContent = "-";
+        document.getElementById("changeRate").textContent = "-";
         return;
       }
 
-      const prevAvg = dateMap[previousDate].reduce((a, b) => a + b, 0) / dateMap[previousDate].length;
-      previousValueElement.textContent = formatNumber(prevAvg);
-      previousValueDateElement.textContent = formatDate(previousDate) + " (평균)";
+      const daily = getDailyAverages(records);
+      const latest = daily[daily.length - 1];
+      const first = daily[0];
 
-      const diff = latestAvg - prevAvg;
-      const rate = prevAvg !== 0 ? (diff / prevAvg) * 100 : 0;
-      const sign = diff > 0 ? "+" : "";
-      const styleClass = diff > 0 ? "positive" : diff < 0 ? "negative" : "neutral";
+      // 기간 평균: 선택된 모든 관측값의 단순 산술평균
+      const periodAverage = records.reduce(
+        (sum, record) => sum + Number(record.VALUE), 0
+      ) / records.length;
 
-      changeValueElement.textContent = sign + formatNumber(diff);
-      changeValueElement.className = "kpi-value " + styleClass;
-      changeRateElement.textContent = sign + formatNumber(rate, 2) + "%";
+      const values = records.map(record => Number(record.VALUE));
+      const high = Math.max(...values);
+      const low = Math.min(...values);
+
+      const change = latest.value - first.value;
+      const changeRate = first.value !== 0 ? (change / first.value) * 100 : 0;
+      const changeClass = change > 0 ? "positive" : change < 0 ? "negative" : "neutral";
+
+      document.getElementById("latestValue").textContent = formatNumber(latest.value);
+      document.getElementById("latestValueDate").textContent = `${formatDate(latest.date)} AVG`;
+
+      document.getElementById("periodAverage").textContent = formatNumber(periodAverage);
+      document.getElementById("periodAverageSub").textContent = "SELECTED PERIOD / SIMPLE AVG";
+
+      document.getElementById("highLowValue").textContent =
+        `${formatNumber(high, 0)} / ${formatNumber(low, 0)}`;
+      document.getElementById("highLowSub").textContent = "HIGH / LOW";
+
+      const sign = change > 0 ? "+" : "";
+      const changeElement = document.getElementById("changeValue");
+      changeElement.textContent = `${sign}${formatNumber(change)}`;
+      changeElement.className = `kpi-value ${changeClass}`;
+      document.getElementById("changeRate").textContent =
+        `${sign}${formatNumber(changeRate)}% / ${formatDate(first.date)} → ${formatDate(latest.date)}`;
     }
 
     function renderChart(records) {
-      const chartElement = document.getElementById("chart");
+      const chart = document.getElementById("chart");
+      const allRecords = getAllRecords();
+      const bounds = getDateBounds();
 
-      if (records.length === 0) {
-        Plotly.purge(chartElement);
-        chartElement.innerHTML = `
-          <div class="empty-message">
-            선택한 조건에 해당하는 데이터가 없습니다.
-          </div>
-        `;
+      if (!records.length) {
+        Plotly.purge(chart);
+        chart.innerHTML = `<div class="empty-message">SELECT AT LEAST ONE SERIES TO DISPLAY DATA</div>`;
         return;
       }
 
-      const groupedRecords = {};
+      const grouped = {};
       records.forEach(record => {
-        if (!groupedRecords[record.REGION]) {
-          groupedRecords[record.REGION] = [];
-        }
-        groupedRecords[record.REGION].push(record);
+        if (!grouped[record.REGION]) grouped[record.REGION] = [];
+        grouped[record.REGION].push(record);
       });
 
-      const traces = Object.keys(groupedRecords).map(region => {
-        const regRecords = groupedRecords[region];
-        return {
-          x: regRecords.map(r => r.DATE),
-          y: regRecords.map(r => Number(r.VALUE)),
-          type: "scatter",
-          mode: "lines+markers",
-          name: region,
-          line: { width: 2 },
-          marker: { size: 4 },
-          hovertemplate: "<b>" + escapeHtml(region) + "</b><br>일자: %{x}<br>값: %{y:,.2f}<extra></extra>"
-        };
-      });
+      const traces = Object.entries(grouped).map(([region, rows], index) => ({
+        x: rows.map(row => row.DATE),
+        y: rows.map(row => Number(row.VALUE)),
+        type: "scatter",
+        mode: "lines",
+        name: region,
+        line: {
+          color: SERIES_COLORS[index % SERIES_COLORS.length],
+          width: region === "BDI" ? 2.8 : 1.8
+        },
+        hovertemplate:
+          `<b>${escapeHtml(region)}</b>` +
+          "<br>DATE: %{x}<br>VALUE: %{y:,.2f}<extra></extra>"
+      }));
+
+      const xRange = currentRange
+        ? [currentRange.start, currentRange.end]
+        : [bounds.min, bounds.max];
 
       const layout = {
-        margin: { l: 70, r: 30, t: 30, b: 60 },
-        paper_bgcolor: "#ffffff",
-        plot_bgcolor: "#ffffff",
+        margin: { l: 72, r: 26, t: 20, b: 66 },
+        paper_bgcolor: "#0e1621",
+        plot_bgcolor: "#0e1621",
+        font: {
+          family: '"Roboto Mono", Consolas, monospace',
+          color: "#c9d6e2",
+          size: 11
+        },
         hovermode: "x unified",
-        showlegend: true,
-        legend: { orientation: "h", y: -0.3 },
-        xaxis: { title: "일자", showgrid: false },
-        yaxis: { title: "Index Value", gridcolor: "#e5edf5", zerolinecolor: "#d9e2ec" }
+        hoverlabel: {
+          bgcolor: "#111c29",
+          bordercolor: "#ff8a00",
+          font: { color: "#edf3f8" }
+        },
+        legend: {
+          orientation: "h",
+          y: 1.12,
+          x: 0,
+          font: { size: 10, color: "#c9d6e2" }
+        },
+        xaxis: {
+          type: "date",
+          range: xRange,
+          gridcolor: "#1f3040",
+          linecolor: "#405568",
+          tickfont: { color: "#8ea2b7" },
+          rangeslider: {
+            visible: true,
+            bgcolor: "#09111a",
+            bordercolor: "#405568",
+            thickness: 0.09
+          }
+        },
+        yaxis: {
+          title: { text: "INDEX VALUE", font: { size: 10, color: "#8ea2b7" } },
+          gridcolor: "#1f3040",
+          zerolinecolor: "#2c4052",
+          linecolor: "#405568",
+          tickfont: { color: "#8ea2b7" }
+        }
       };
 
-      Plotly.newPlot(chartElement, traces, layout, { responsive: true, displaylogo: false });
+      Plotly.newPlot(chart, traces, layout, {
+        responsive: true,
+        displaylogo: false,
+        modeBarButtonsToRemove: ["select2d", "lasso2d"]
+      });
+
+      chart.removeAllListeners?.("plotly_relayout");
+      chart.on("plotly_relayout", eventData => {
+        const start = eventData["xaxis.range[0]"];
+        const end = eventData["xaxis.range[1]"];
+
+        if (start && end) {
+          currentRange = {
+            start: String(start).slice(0, 10),
+            end: String(end).slice(0, 10)
+          };
+          currentPreset = "CUSTOM";
+          updatePeriodButtons();
+          renderDashboard(false);
+        }
+
+        if (eventData["xaxis.autorange"]) {
+          currentRange = null;
+          currentPreset = "ALL";
+          updatePeriodButtons();
+          renderDashboard(false);
+        }
+      });
     }
 
     function renderTable(records) {
       const tableHead = document.getElementById("dataTableHead");
       const tableBody = document.getElementById("dataTableBody");
+      const regions = [...selectedRegions];
 
-      const selectedRegions = getSelectedRegions();
-
-      if (records.length === 0 || selectedRegions.length === 0) {
-        tableHead.innerHTML = "<tr><th>일자</th></tr>";
-        tableBody.innerHTML = '<tr><td class="empty-message">표시할 데이터가 없습니다.</td></tr>';
+      if (!records.length || !regions.length) {
+        tableHead.innerHTML = "<tr><th>DATE</th></tr>";
+        tableBody.innerHTML = `<tr><td class="empty-message">NO DATA FOR SELECTED CONDITIONS</td></tr>`;
         return;
       }
 
-      // 피벗 구조 만들기: 세로축 = 날짜, 가로축 = 항로
-      const pivotData = {};
-      records.forEach(r => {
-        if (!pivotData[r.DATE]) pivotData[r.DATE] = {};
-        pivotData[r.DATE][r.REGION] = r.VALUE;
+      const pivot = {};
+      records.forEach(record => {
+        if (!pivot[record.DATE]) pivot[record.DATE] = {};
+        pivot[record.DATE][record.REGION] = record.VALUE;
       });
 
-      const dates = Object.keys(pivotData).sort().reverse(); // 최신 날짜가 위로
+      tableHead.innerHTML = `
+        <tr>
+          <th>DATE</th>
+          ${regions.map(region => `<th>${escapeHtml(region)}</th>`).join("")}
+        </tr>
+      `;
 
-      // 헤더 구성
-      let headHtml = '<tr><th>일자</th>';
-      selectedRegions.forEach(reg => {
-        headHtml += `<th class="numeric">${escapeHtml(reg)}</th>`;
-      });
-      headHtml += '</tr>';
-      tableHead.innerHTML = headHtml;
-
-      // 바디 구성
-      let bodyHtml = "";
-      dates.forEach(date => {
-        bodyHtml += `<tr><td>${escapeHtml(formatDate(date))}</td>`;
-        selectedRegions.forEach(reg => {
-          const val = pivotData[date][reg];
-          bodyHtml += `<td class="numeric">${val !== undefined ? escapeHtml(formatNumber(val)) : "-"}</td>`;
-        });
-        bodyHtml += `</tr>`;
-      });
-      tableBody.innerHTML = bodyHtml;
+      tableBody.innerHTML = Object.keys(pivot).sort().reverse().map(date => `
+        <tr>
+          <td>${escapeHtml(formatDate(date))}</td>
+          ${regions.map(region => `
+            <td>${pivot[date][region] !== undefined ? formatNumber(pivot[date][region]) : "-"}</td>
+          `).join("")}
+        </tr>
+      `).join("");
     }
 
-    function downloadCSV() {
-      const records = getFilteredRecords();
-      const selectedRegions = getSelectedRegions();
+    function updatePeriodDisplay() {
+      const bounds = getDateBounds();
+      let text = "PERIOD: -";
 
-      if (records.length === 0 || selectedRegions.length === 0) {
-        alert("다운로드할 데이터가 없습니다.");
-        return;
+      if (bounds.min && bounds.max) {
+        text = currentRange
+          ? `PERIOD: ${currentRange.start} → ${currentRange.end}`
+          : `PERIOD: ${bounds.min} → ${bounds.max} / ALL HISTORY`;
       }
 
-      const pivotData = {};
-      records.forEach(r => {
-        if (!pivotData[r.DATE]) pivotData[r.DATE] = {};
-        pivotData[r.DATE][r.REGION] = r.VALUE;
-      });
-
-      const dates = Object.keys(pivotData).sort().reverse();
-
-      let csvRows = [];
-      // 헤더
-      let headers = ["DATE", ...selectedRegions];
-      csvRows.push(headers.join(","));
-
-      // 데이터 행
-      dates.forEach(date => {
-        let row = [date];
-        selectedRegions.forEach(reg => {
-          let val = pivotData[date][reg];
-          row.push(val !== undefined ? val : "");
-        });
-        csvRows.push(row.join(","));
-      });
-
-      const csvString = csvRows.join("\n");
-      const blob = new Blob(["\uFEFF" + csvString], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.setAttribute("href", url);
-      a.setAttribute("download", `${currentIndex}_dashboard_data.csv`);
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      document.getElementById("periodDisplay").textContent = text;
     }
 
-    function renderDashboard() {
+    function renderDashboard(renderChartToo = true) {
       const records = getFilteredRecords();
+      updatePeriodDisplay();
       updateKpis(records);
-      renderChart(records);
+
+      if (renderChartToo) renderChart(records);
       renderTable(records);
     }
 
     function selectIndex(indexName) {
       currentIndex = indexName;
+      currentRange = null;
+      currentPreset = "ALL";
+
+      const indexData = getIndexData();
+      selectedRegions = new Set(getDefaultRegions(indexData.regions));
 
       document.getElementById("scfiTab").classList.toggle("active", indexName === "SCFI");
       document.getElementById("bdiTab").classList.toggle("active", indexName === "BDI");
+      document.getElementById("dashboardTitle").textContent = INDEX_INFO[indexName].title;
+      document.getElementById("dashboardDescription").textContent = INDEX_INFO[indexName].description;
+      document.getElementById("routeSearch").value = "";
 
-      populateControls();
+      updatePeriodButtons();
+      renderRouteList();
       renderDashboard();
+    }
+
+    function downloadCSV() {
+      const records = getFilteredRecords();
+      const regions = [...selectedRegions];
+
+      if (!records.length || !regions.length) {
+        alert("다운로드할 데이터가 없습니다.");
+        return;
+      }
+
+      const pivot = {};
+      records.forEach(record => {
+        if (!pivot[record.DATE]) pivot[record.DATE] = {};
+        pivot[record.DATE][record.REGION] = record.VALUE;
+      });
+
+      const rows = [
+        ["DATE", ...regions].join(","),
+        ...Object.keys(pivot).sort().reverse().map(date => [
+          date,
+          ...regions.map(region => pivot[date][region] ?? "")
+        ].join(","))
+      ];
+
+      const blob = new Blob(
+        ["\uFEFF" + rows.join("\n")],
+        { type: "text/csv;charset=utf-8;" }
+      );
+
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${currentIndex}_shipping_index_${currentPreset}.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
     }
 
     async function loadDashboardData() {
@@ -2283,27 +2512,30 @@ def generate_html_file():
         });
 
         if (!response.ok) {
-          throw new Error("JSON request failed: HTTP " + response.status);
+          throw new Error(`HTTP ${response.status}`);
         }
 
         dashboardData = await response.json();
-        const generatedAt = dashboardData.generated_at ? dashboardData.generated_at : "-";
 
-        setStatus(true, "데이터 로드 완료", "최종 갱신: " + generatedAt);
+        setStatus(
+          true,
+          "SYSTEM / DATA ONLINE",
+          `LAST REFRESH: ${dashboardData.generated_at || "-"}`
+        );
 
-        populateControls();
-        renderDashboard();
+        selectIndex("SCFI");
 
       } catch (error) {
         console.error(error);
-        setStatus(false, "데이터 로드 실패", "shipping_index_data.json 파일을 불러올 수 없습니다.");
-        document.getElementById("dashboardDescription").textContent = "대시보드 데이터를 불러오는 중 오류가 발생했습니다.";
+        setStatus(
+          false,
+          "SYSTEM / DATA ERROR",
+          "shipping_index_data.json LOAD FAILED"
+        );
       }
     }
 
-    document.addEventListener("DOMContentLoaded", function() {
-      loadDashboardData();
-    });
+    document.addEventListener("DOMContentLoaded", loadDashboardData);
   </script>
 </body>
 </html>
@@ -2311,6 +2543,7 @@ def generate_html_file():
 
     atomic_write_text(HTML_PATH, html_content)
     log(f"[HTML] 저장 완료: {HTML_PATH}")
+
     
 # =============================================================================
 # 11. Main Execution
