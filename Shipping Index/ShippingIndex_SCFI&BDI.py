@@ -2081,9 +2081,40 @@ def generate_html_file():
       );
     }
 
-    function getDefaultRegions(regions) {
-      if (currentIndex === "BDI" && regions.includes("BDI")) return ["BDI"];
-      return regions.slice(0, Math.min(3, regions.length));
+       function getDefaultRegions(regions) {
+      if (!regions || regions.length === 0) return [];
+
+      // 1. BDI의 경우: BDI 종합 지수 우선 선택
+      if (currentIndex === "BDI") {
+        if (regions.includes("BDI")) return ["BDI"];
+        return [regions[0]];
+      }
+
+      // 2. SCFI의 경우: '종합' 지수 1개만 기본 선택
+      // KSG 데이터 상의 종합 지수 표기 후보군 (우선순위 순)
+      const compositeCandidates = [
+        "SCFI",
+        "종합",
+        "종합지수",
+        "COMPOSITE",
+        "COMPREHENSIVE",
+        "SCFI 종합",
+        "SCFI(종합)"
+      ];
+
+      for (const candidate of compositeCandidates) {
+        const matched = regions.find(r => r.trim().toUpperCase() === candidate);
+        if (matched) return [matched];
+      }
+
+      // '종합' 또는 'COMPOSITE' 단어가 포함된 항로/지수명 탐색
+      const partialMatched = regions.find(r =>
+        r.includes("종합") || r.toUpperCase().includes("COMPOSITE") || r.toUpperCase().includes("SCFI")
+      );
+      if (partialMatched) return [partialMatched];
+
+      // 만약 종합 지수 명칭을 찾지 못할 경우 첫 번째 항목 1개만 선택
+      return [regions[0]];
     }
 
     function renderRouteList() {
