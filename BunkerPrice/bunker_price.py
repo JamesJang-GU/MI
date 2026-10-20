@@ -36,7 +36,6 @@ from pathlib import Path
 warnings.filterwarnings("ignore")
 
 import pandas as pd
-import plotly.graph_objects as go
 from bs4 import BeautifulSoup
 from flask import Flask, Response, render_template_string, request
 from selenium import webdriver
