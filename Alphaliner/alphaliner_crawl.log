@@ -286,3 +286,14 @@
 2026-10-20 06:54:58,385 [INFO] [CRON] Alphaliner Dashboard 갱신 완료
 2026-10-20 06:54:58,385 [INFO] ============================================================
 2026-10-20 06:54:58,385 [INFO] [SYSTEM] Alphaliner batch process completed. Process exiting.
+2026-10-20 07:25:08,672 [INFO] ============================================================
+2026-10-20 07:25:08,672 [INFO] [CRON] Alphaliner Dashboard 갱신 시작
+2026-10-20 07:25:08,672 [INFO] ============================================================
+2026-10-20 07:25:09,028 [INFO] [FETCH] Alphaliner TOP 100 웹사이트 접속 중...
+2026-10-20 07:25:13,245 [INFO] [FETCH] 수집 성공: Date=2026-10-20, TOP100=100, GlobalTEU=34,933,934, GlobalShips=7,669
+2026-10-20 07:25:13,325 [INFO] [DB] 신규 Alphaliner Snapshot 저장 완료: id=9, date=2026-10-20, operators=100
+2026-10-20 07:25:13,359 [INFO] [STATIC] JSON 생성 완료: alphaliner_data.json (누적 스냅샷 9개)
+2026-10-20 07:25:13,359 [INFO] [STATIC] HTML 생성 완료: index.html
+2026-10-20 07:25:13,359 [INFO] [CRON] Alphaliner Dashboard 갱신 완료
+2026-10-20 07:25:13,360 [INFO] ============================================================
+2026-10-20 07:25:13,360 [INFO] [SYSTEM] Alphaliner batch process completed. Process exiting.
