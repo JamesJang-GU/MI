@@ -51,7 +51,6 @@ HEADERS = {
 EXPECTED_COLUMNS = ["rank", "provider", "hq", "revenue", "teu", "air_tons"]
 
 app = Flask(__name__)
-RUNTIME_CONFIG = None
 
 # 2. Utilities
 def log(message):
@@ -166,18 +165,22 @@ def save_today_data(df):
     finally:
         conn.close()
 
-# 5. Dashboard Generation (Simplified for brevity)
+# 5. Dashboard Generation
 def build_static_dashboard():
     log("[BUILD] HTML 대시보드 생성 중...")
-    # (실제 HTML 템플릿 생성 로직이 여기에 포함됩니다. 
-    # 이전 대화에서 완성된 HTML 템플릿 코드를 여기에 그대로 넣어야 합니다.)
-    # 여기서는 예시로 간단한 파일 생성만 표시합니다.
-    with open(STATIC_HTML_PATH, "w", encoding="utf-8") as f:
-        f.write("
+    html_content = """
+    
+    
+    Forwarder Dashboard
+    
 Forwarder Dashboard
 
 Generated successfully.
-")
+
+    
+    """
+    with open(STATIC_HTML_PATH, "w", encoding="utf-8") as f:
+        f.write(html_content)
     log("[BUILD] 완료")
 
 # 6. Main Execution
@@ -201,10 +204,11 @@ def main():
     if args.build_static or (not args.crawl_only and not args.once):
         build_static_dashboard()
 
-    # 3. Run Server (if not crawl-only or once)
+    # 3. Run Server
     if not args.crawl_only and not args.once:
         log(f"[SERVER] Starting server at http://{args.host}:{args.port}")
-        # Flask server startup logic...
+        # Flask server logic would go here for local testing
+        # For GitHub Actions, we typically only want build_static or crawl_only
 
 if __name__ == "__main__":
     main()
