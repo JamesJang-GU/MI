@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Market Intelligence Portal - Main Dashboard Generator
-통합 포털 index.html 생성 스크립트
+통합 포털 index.html 생성 스크립트 (Bloomberg Terminal Single-Screen Layout)
 """
 
 import html
@@ -22,9 +22,7 @@ OUTPUT_JSON = BASE_DIR / "dashboard_summary.json"
 
 # 각 모듈별 DB 경로
 DB_PATHS = {
-    # shipping_index.py에서 실제 생성하는 파일
     "shipping": BASE_DIR / "Shipping Index" / "index_history.db",
-
     "alphaliner": BASE_DIR / "Alphaliner" / "alphaliner_data.db",
     "bunker": BASE_DIR / "BunkerPrice" / "bunker_price_data.db",
     "forwarder": BASE_DIR / "Forwarder" / "freight_forwarders_data.db",
@@ -67,7 +65,6 @@ def get_latest_available_date(*dates):
     ISO 형식(YYYY-MM-DD) 기준으로 비교한다.
     """
     valid_dates = [date for date in dates if date and date != "-"]
-
     return max(valid_dates) if valid_dates else "-"
 
 # =========================================================
@@ -136,18 +133,7 @@ def get_tac_summary():
     return summary
 
 def get_shipping_summary():
-    """
-    SCFI / BDI Shipping Index 요약 정보 조회.
-
-    shipping_index.py의 실제 DB 구조:
-    - DB 파일: index_history.db
-    - 테이블: index_raw
-    - 컬럼:
-        dt          : 날짜
-        region      : 항로 또는 지수명
-        value       : 지수값
-        index_name  : SCFI 또는 BDI
-    """
+    """SCFI / BDI Shipping Index 요약 정보 조회"""
     summary = {
         "title": "Shipping Index (SCFI / BDI)",
         "path": "Shipping Index/index.html",
@@ -171,17 +157,10 @@ def get_shipping_summary():
 
             if not table_exists(cursor, "index_raw"):
                 logger.warning(
-                    "Shipping Index table 'index_raw' not found: "
-                    f"{db_path}"
+                    f"Shipping Index table 'index_raw' not found: {db_path}"
                 )
                 return summary
 
-            # -------------------------------------------------
-            # SCFI 종합지수 최신값 조회
-            #
-            # 실제 KSG 화면의 종합지수 헤더 표기를 고려하여
-            # 주요 후보를 모두 허용한다.
-            # -------------------------------------------------
             scfi_row = cursor.execute(
                 """
                 SELECT
@@ -213,12 +192,6 @@ def get_shipping_summary():
                 """
             ).fetchone()
 
-            # -------------------------------------------------
-            # BDI 종합지수 최신값 조회
-            #
-            # shipping_index.py의 BDI_REGION_PRIORITY에서
-            # BDI는 종합 Baltic Dry Index로 사용된다.
-            # -------------------------------------------------
             bdi_row = cursor.execute(
                 """
                 SELECT
@@ -233,44 +206,8 @@ def get_shipping_summary():
                 """
             ).fetchone()
 
-            # SCFI 종합지수 후보를 찾지 못한 경우,
-            # GitHub Actions 로그에서 실제 region명을 확인할 수 있도록 출력
-            if not scfi_row:
-                scfi_regions = cursor.execute(
-                    """
-                    SELECT DISTINCT region
-                    FROM index_raw
-                    WHERE index_name = 'SCFI'
-                    ORDER BY region
-                    """
-                ).fetchall()
-
-                logger.warning(
-                    "SCFI composite region not found. "
-                    f"Available SCFI regions: "
-                    f"{[row[0] for row in scfi_regions]}"
-                )
-
-            # BDI 데이터가 없는 경우 실제 저장 region을 출력
-            if not bdi_row:
-                bdi_regions = cursor.execute(
-                    """
-                    SELECT DISTINCT region
-                    FROM index_raw
-                    WHERE index_name = 'BDI'
-                    ORDER BY region
-                    """
-                ).fetchall()
-
-                logger.warning(
-                    "BDI composite region not found. "
-                    f"Available BDI regions: "
-                    f"{[row[0] for row in bdi_regions]}"
-                )
-
         if scfi_row:
             scfi_date, scfi_value, scfi_region = scfi_row
-
             summary["scfi_date"] = str(scfi_date or "-")
             summary["scfi_latest"] = (
                 f"{float(scfi_value):,.1f}"
@@ -278,16 +215,8 @@ def get_shipping_summary():
                 else "-"
             )
 
-            logger.info(
-                "[Shipping] SCFI loaded: "
-                f"date={scfi_date}, "
-                f"value={scfi_value}, "
-                f"region={scfi_region}"
-            )
-
         if bdi_row:
             bdi_date, bdi_value, bdi_region = bdi_row
-
             summary["bdi_date"] = str(bdi_date or "-")
             summary["bdi_latest"] = (
                 f"{float(bdi_value):,.0f}"
@@ -295,20 +224,11 @@ def get_shipping_summary():
                 else "-"
             )
 
-            logger.info(
-                "[Shipping] BDI loaded: "
-                f"date={bdi_date}, "
-                f"value={bdi_value}, "
-                f"region={bdi_region}"
-            )
-
         if scfi_row or bdi_row:
             summary["status"] = "Active"
 
     except Exception as error:
-        logger.exception(
-            f"Failed to read Shipping Index DB: {error}"
-        )
+        logger.exception(f"Failed to read Shipping Index DB: {error}")
 
     return summary
 
@@ -379,7 +299,6 @@ def get_alphaliner_summary():
 
             if d_row:
                 operator_name, market_share = d_row
-
                 if market_share is None:
                     summary["top1_operator"] = str(operator_name or "-")
                 else:
@@ -417,9 +336,7 @@ def get_forwarder_summary():
             cursor = conn.cursor()
 
             if not table_exists(cursor, "forwarder_rankings"):
-                logger.warning(
-                    "Forwarder table not found: forwarder_rankings"
-                )
+                logger.warning("Forwarder table not found: forwarder_rankings")
                 return summary
 
             top_ocean = cursor.execute(
@@ -446,7 +363,6 @@ def get_forwarder_summary():
 
         if top_ocean:
             company_name, ocean_teu = top_ocean
-
             summary["top1_ocean"] = (
                 f"{company_name} ({float(ocean_teu):,.0f} TEU)"
                 if ocean_teu is not None
@@ -455,7 +371,6 @@ def get_forwarder_summary():
 
         if top_air:
             company_name, air_tons = top_air
-
             summary["top1_air"] = (
                 f"{company_name} ({float(air_tons):,.0f} MT)"
                 if air_tons is not None
@@ -471,10 +386,7 @@ def get_forwarder_summary():
     return summary
 
 def get_bunker_summary():
-    """Bunker Price 요약 정보 조회
-
-    현재는 실제 DB 테이블을 읽지 않으며 BunkerPrice 폴더의 존재 여부만 확인한다.
-    """
+    """Bunker Price 요약 정보 조회"""
     summary = {
         "title": "Bunker Price (VLSFO)",
         "path": "BunkerPrice/index.html",
@@ -486,7 +398,6 @@ def get_bunker_summary():
     }
 
     bunker_dir = BASE_DIR / "BunkerPrice"
-
     if bunker_dir.exists():
         summary["status"] = "Active"
 
@@ -497,7 +408,7 @@ def get_macro_summary():
     summary = {
         "title": "Macro Economies & GSCPI",
         "path": "GDP&Inflation/index.html",
-        "category": "Macro",
+        "category": "Global",
         "latest_date": "-",
         "gscpi_latest": "-",
         "status": "No Data",
@@ -526,7 +437,6 @@ def get_macro_summary():
 
         if row:
             data_date, gscpi_value = row
-
             summary["latest_date"] = str(data_date or "-")
             summary["gscpi_latest"] = (
                 f"{float(gscpi_value):,.2f}"
@@ -541,391 +451,464 @@ def get_macro_summary():
     return summary
 
 # =========================================================
-# 4. HTML 템플릿
+# 4. Bloomberg Style HTML Template (Single Screen Layout)
 # =========================================================
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Market Intelligence Portal</title>
+  <title>MARKET INTELLIGENCE // TERMINAL PORTAL</title>
   <style>
     :root {
-      --bg: #0f172a;
-      --card-bg: #1e293b;
-      --card-border: #334155;
-      --text-main: #f8fafc;
+      --bg-dark: #0a0e17;
+      --bg-panel: #111827;
+      --bg-item: #0d131f;
+      --bg-hover: #162235;
+      --amber: #f59e0b;
+      --amber-bright: #fbbf24;
+      --cyan: #06b6d4;
+      --cyan-bright: #22d3ee;
+      --green: #10b981;
+      --red: #f43f5e;
+      --text: #e2e8f0;
       --text-muted: #94a3b8;
-      --accent-blue: #38bdf8;
-      --accent-emerald: #34d399;
-      --badge-bg: #334155;
+      --text-dim: #64748b;
+      --border: #1e293b;
+      --border-light: #334155;
+      --mono: "Roboto Mono", "Consolas", "Courier New", monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", Arial, sans-serif;
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: var(--bg-dark);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 12px;
+      line-height: 1.35;
+      overflow-x: hidden;
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
-        Roboto, "Helvetica Neue", Arial, sans-serif;
-      background-color: var(--bg);
-      color: var(--text-main);
-      padding: 2.5rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      padding: 10px 16px;
       min-height: 100vh;
+      justify-content: space-between;
     }
 
     .container {
-      max-width: 1200px;
+      max-width: 1600px;
+      width: 100%;
       margin: 0 auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 10px;
     }
 
-    header {
-      margin-bottom: 2.5rem;
-      border-bottom: 1px solid var(--card-border);
-      padding-bottom: 1.5rem;
+    /* Top Bloomberg Bar & Header */
+    .top-bar {
       display: flex;
       justify-content: space-between;
-      align-items: flex-end;
-      flex-wrap: wrap;
-      gap: 1rem;
+      align-items: center;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 11px;
     }
 
-    h1 {
-      font-size: 2rem;
-      font-weight: 700;
-      letter-spacing: -0.025em;
-      background: linear-gradient(135deg, #38bdf8, #818cf8);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+    .top-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge-term {
+      background: var(--amber);
+      color: #000;
+      font-weight: 800;
+      padding: 1px 5px;
+      border-radius: 2px;
+      font-size: 10px;
+    }
+
+    .title-main {
+      font-size: 16px;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: -0.3px;
     }
 
     .updated-at {
-      font-size: 0.875rem;
-      color: var(--text-muted);
+      color: var(--text-dim);
+    }
+    .updated-at span { color: var(--amber); }
+
+    /* Section Groups */
+    .section-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
     }
 
     .section-title {
-      font-size: 1.25rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      margin: 2rem 0 1rem;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--amber);
+      font-family: var(--mono);
+      letter-spacing: 0.5px;
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 6px;
+      text-transform: uppercase;
     }
+    .section-title::before { content: "//"; color: var(--text-dim); font-weight: 800; }
 
-    .section-title::before {
-      content: "";
-      display: inline-block;
-      width: 4px;
-      height: 1.2rem;
-      background: var(--accent-blue);
-      border-radius: 2px;
-    }
-
-    .grid {
+    /* Compact Grids */
+    .grid-4 {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-      gap: 1.25rem;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
     }
 
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .grid-split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    /* Bloomberg Cards */
     .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 1.5rem;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px 12px;
       text-decoration: none;
       color: inherit;
-      transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
+      position: relative;
+      transition: all 0.15s ease;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background: var(--border-light);
     }
 
     .card:hover {
-      transform: translateY(-4px);
-      border-color: var(--accent-blue);
-      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+      background: var(--bg-hover);
+      border-color: var(--amber);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
     }
+    .card:hover::before { background: var(--amber); }
 
     .card-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 0.75rem;
-      margin-bottom: 1rem;
+      gap: 6px;
+      margin-bottom: 6px;
     }
 
     .card-title {
-      font-size: 1.15rem;
-      font-weight: 600;
-      color: var(--text-main);
+      font-size: 12.5px;
+      font-weight: 700;
+      color: #ffffff;
+      font-family: var(--mono);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .badge {
-      flex-shrink: 0;
-      font-size: 0.75rem;
-      padding: 0.25rem 0.6rem;
-      border-radius: 9999px;
-      font-weight: 500;
+      font-size: 9.5px;
+      padding: 1px 5px;
+      border-radius: 2px;
+      font-weight: 700;
+      font-family: var(--mono);
     }
 
     .badge.active {
-      background: rgba(52, 211, 153, 0.15);
-      color: var(--accent-emerald);
-      border: 1px solid rgba(52, 211, 153, 0.3);
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--green);
+      border: 1px solid var(--green);
     }
 
     .badge.nodata {
-      background: var(--badge-bg);
-      color: var(--text-muted);
+      background: rgba(100, 116, 139, 0.15);
+      color: var(--text-dim);
+      border: 1px solid var(--border);
     }
 
+    /* KPI Rows */
     .kpi-group {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 0.75rem;
-      margin: 1rem 0;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin: 4px 0 6px 0;
     }
 
     .kpi-item {
-      background: rgba(15, 23, 42, 0.6);
-      padding: 0.75rem;
-      border-radius: 8px;
-      border: 1px solid rgba(255, 255, 255, 0.05);
+      background: var(--bg-item);
+      padding: 6px 8px;
+      border-radius: 3px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
     }
 
     .kpi-label {
-      font-size: 0.75rem;
+      font-size: 10px;
       color: var(--text-muted);
-      margin-bottom: 0.25rem;
+      font-family: var(--mono);
+      margin-bottom: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .kpi-val {
-      font-size: 1.1rem;
-      font-weight: 700;
-      color: var(--text-main);
-      overflow-wrap: anywhere;
+      font-size: 14px;
+      font-weight: 800;
+      color: #ffffff;
+      font-family: var(--mono);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    .small-value {
-      font-size: 0.95rem;
-    }
+    .kpi-val.highlight { color: var(--cyan-bright); }
+    .kpi-val.amber { color: var(--amber); }
 
+    .small-value { font-size: 11px; }
+
+    /* Card Footer */
     .card-footer {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-      margin-top: 1rem;
+      font-size: 10px;
+      color: var(--text-dim);
+      font-family: var(--mono);
       display: flex;
       justify-content: space-between;
-      gap: 0.75rem;
-      border-top: 1px solid rgba(255, 255, 255, 0.05);
-      padding-top: 0.75rem;
+      align-items: center;
+      border-top: 1px solid var(--border);
+      padding-top: 5px;
+      margin-top: 4px;
     }
 
     .arrow {
-      flex-shrink: 0;
-      color: var(--accent-blue);
-      font-weight: bold;
+      color: var(--amber);
+      font-weight: 800;
     }
 
-    @media (max-width: 500px) {
-      body {
-        padding: 1.25rem 1rem;
-      }
+    /* Bottom Status Bar */
+    footer {
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 10px;
+    }
 
-      .grid {
-        grid-template-columns: 1fr;
-      }
-
-      .kpi-group {
-        grid-template-columns: 1fr;
-      }
-
-      .card-footer {
-        flex-direction: column;
-      }
+    @media (max-width: 1200px) {
+      .grid-4 { grid-template-columns: repeat(2, 1fr); }
+      .grid-split { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <header>
-      <div>
-        <h1>Market Intelligence Portal</h1>
-        <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 0.25rem;">
-          글로벌 해운, 항공, 거시경제 실시간 대시보드
-        </p>
+    <header class="top-bar">
+      <div class="top-left">
+        <span class="badge-term">TERMINAL</span>
+        <span class="title-main">MARKET INTELLIGENCE // MAIN PORTAL</span>
       </div>
-      <div class="updated-at">갱신 시각: __GENERATED_AT__</div>
+      <div class="updated-at">UPDATED: <span>__GENERATED_AT__</span></div>
     </header>
 
-    <div class="section-title">Sea Logistics (해운)</div>
-
-    <div class="grid">
-      <a href="__SHIPPING_PATH__" class="card">
-        <div>
-          <div class="card-header">
-            <span class="card-title">Shipping Index (SCFI / BDI)</span>
-            <span class="badge __SHIPPING_STATUS_CLASS__">__SHIPPING_STATUS__</span>
-          </div>
-
-          <div class="kpi-group">
-            <div class="kpi-item">
-              <div class="kpi-label">SCFI 종합지수</div>
-              <div class="kpi-val">__SHIPPING_SCFI__</div>
+    <!-- 1. Sea Section (4 Cards) -->
+    <section class="section-group">
+      <div class="section-title">Sea</div>
+      <div class="grid-4">
+        <!-- Shipping Index -->
+        <a href="__SHIPPING_PATH__" class="card">
+          <div>
+            <div class="card-header">
+              <span class="card-title">Shipping Index (SCFI / BDI)</span>
+              <span class="badge __SHIPPING_STATUS_CLASS__">__SHIPPING_STATUS__</span>
             </div>
-
-            <div class="kpi-item">
-              <div class="kpi-label">BDI 종합지수</div>
-              <div class="kpi-val">__SHIPPING_BDI__</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="card-footer">
-          <span>최신 일자: __SHIPPING_DATE__</span>
-          <span class="arrow">대시보드 보기 &rarr;</span>
-        </div>
-      </a>
-
-      <a href="__ALPHALINER_PATH__" class="card">
-        <div>
-          <div class="card-header">
-            <span class="card-title">Alphaliner TOP 100</span>
-            <span class="badge __ALPHALINER_STATUS_CLASS__">__ALPHALINER_STATUS__</span>
-          </div>
-
-          <div class="kpi-group">
-            <div class="kpi-item">
-              <div class="kpi-label">전세계 총 선복량 (TEU)</div>
-              <div class="kpi-val">__ALPHALINER_TEU__</div>
-            </div>
-
-            <div class="kpi-item">
-              <div class="kpi-label">1위 선사 점유율</div>
-              <div class="kpi-val small-value">__ALPHALINER_TOP1__</div>
+            <div class="kpi-group">
+              <div class="kpi-item">
+                <div class="kpi-label">SCFI 종합지수</div>
+                <div class="kpi-val highlight">__SHIPPING_SCFI__</div>
+              </div>
+              <div class="kpi-item">
+                <div class="kpi-label">BDI 종합지수</div>
+                <div class="kpi-val amber">__SHIPPING_BDI__</div>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div class="card-footer">
-          <span>최신 일자: __ALPHALINER_DATE__</span>
-          <span class="arrow">대시보드 보기 &rarr;</span>
-        </div>
-      </a>
-
-      <a href="__BUNKER_PATH__" class="card">
-        <div>
-          <div class="card-header">
-            <span class="card-title">Bunker Price (VLSFO)</span>
-            <span class="badge __BUNKER_STATUS_CLASS__">__BUNKER_STATUS__</span>
+          <div class="card-footer">
+            <span>Date: __SHIPPING_DATE__</span>
+            <span class="arrow">OPEN &rarr;</span>
           </div>
+        </a>
 
-          <div class="kpi-group">
-            <div class="kpi-item">
-              <div class="kpi-label">주요 항만 가격</div>
-              <div class="kpi-val small-value">Rotterdam / Singapore</div>
+        <!-- Alphaliner TOP 100 -->
+        <a href="__ALPHALINER_PATH__" class="card">
+          <div>
+            <div class="card-header">
+              <span class="card-title">Alphaliner TOP 100</span>
+              <span class="badge __ALPHALINER_STATUS_CLASS__">__ALPHALINER_STATUS__</span>
             </div>
-
-            <div class="kpi-item">
-              <div class="kpi-label">유종</div>
-              <div class="kpi-val small-value">VLSFO / LSMGO</div>
+            <div class="kpi-group">
+              <div class="kpi-item">
+                <div class="kpi-label">총 선복량 (TEU)</div>
+                <div class="kpi-val">__ALPHALINER_TEU__</div>
+              </div>
+              <div class="kpi-item">
+                <div class="kpi-label">1위 선사 점유율</div>
+                <div class="kpi-val small-value highlight">__ALPHALINER_TOP1__</div>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div class="card-footer">
-          <span>최신 가격 트렌드 확인</span>
-          <span class="arrow">대시보드 보기 &rarr;</span>
-        </div>
-      </a>
-
-      <a href="__FORWARDER_PATH__" class="card">
-        <div>
-          <div class="card-header">
-            <span class="card-title">Global Top 25 Forwarders</span>
-            <span class="badge __FORWARDER_STATUS_CLASS__">__FORWARDER_STATUS__</span>
+          <div class="card-footer">
+            <span>Date: __ALPHALINER_DATE__</span>
+            <span class="arrow">OPEN &rarr;</span>
           </div>
+        </a>
 
-          <div class="kpi-group">
-            <div class="kpi-item">
-              <div class="kpi-label">해상 1위 포워더</div>
-              <div class="kpi-val small-value">__FORWARDER_OCEAN__</div>
+        <!-- Bunker Price -->
+        <a href="__BUNKER_PATH__" class="card">
+          <div>
+            <div class="card-header">
+              <span class="card-title">Bunker Price (VLSFO)</span>
+              <span class="badge __BUNKER_STATUS_CLASS__">__BUNKER_STATUS__</span>
             </div>
-
-            <div class="kpi-item">
-              <div class="kpi-label">항공 1위 포워더</div>
-              <div class="kpi-val small-value">__FORWARDER_AIR__</div>
+            <div class="kpi-group">
+              <div class="kpi-item">
+                <div class="kpi-label">주요 항만 가격</div>
+                <div class="kpi-val small-value">RDM / SIN</div>
+              </div>
+              <div class="kpi-item">
+                <div class="kpi-label">유종 모니터링</div>
+                <div class="kpi-val small-value amber">VLSFO / LSMGO</div>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div class="card-footer">
-          <span>A&A 글로벌 랭킹 분석</span>
-          <span class="arrow">대시보드 보기 &rarr;</span>
-        </div>
-      </a>
-    </div>
-
-    <div class="section-title">Air Cargo & Macro (항공 및 거시경제)</div>
-
-    <div class="grid">
-      <a href="__TAC_PATH__" class="card">
-        <div>
-          <div class="card-header">
-            <span class="card-title">Air Freight (TAC Index)</span>
-            <span class="badge __TAC_STATUS_CLASS__">__TAC_STATUS__</span>
+          <div class="card-footer">
+            <span>Fuel Oil Price Trends</span>
+            <span class="arrow">OPEN &rarr;</span>
           </div>
+        </a>
 
-          <div class="kpi-group">
-            <div class="kpi-item">
-              <div class="kpi-label">종합 지수 (Overall)</div>
-              <div class="kpi-val">__TAC_INDEX__</div>
+        <!-- Forwarder Top 25 -->
+        <a href="__FORWARDER_PATH__" class="card">
+          <div>
+            <div class="card-header">
+              <span class="card-title">Global Top 25 Forwarders</span>
+              <span class="badge __FORWARDER_STATUS_CLASS__">__FORWARDER_STATUS__</span>
             </div>
-
-            <div class="kpi-item">
-              <div class="kpi-label">주간 변동률 (W/W)</div>
-              <div class="kpi-val">__TAC_WEEKLY__</div>
+            <div class="kpi-group">
+              <div class="kpi-item">
+                <div class="kpi-label">해상 1위 포워더</div>
+                <div class="kpi-val small-value">__FORWARDER_OCEAN__</div>
+              </div>
+              <div class="kpi-item">
+                <div class="kpi-label">항공 1위 포워더</div>
+                <div class="kpi-val small-value highlight">__FORWARDER_AIR__</div>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div class="card-footer">
-          <span>최신 일자: __TAC_DATE__ (노선 수: __TAC_ROUTES__)</span>
-          <span class="arrow">대시보드 보기 &rarr;</span>
-        </div>
-      </a>
-
-      <a href="__MACRO_PATH__" class="card">
-        <div>
-          <div class="card-header">
-            <span class="card-title">Macro Economies & GSCPI</span>
-            <span class="badge __MACRO_STATUS_CLASS__">__MACRO_STATUS__</span>
+          <div class="card-footer">
+            <span>A&A Global Ranking Analysis</span>
+            <span class="arrow">OPEN &rarr;</span>
           </div>
+        </a>
+      </div>
+    </section>
 
-          <div class="kpi-group">
-            <div class="kpi-item">
-              <div class="kpi-label">글로벌 공급망 압력 (GSCPI)</div>
-              <div class="kpi-val">__MACRO_GSCPI__</div>
+    <!-- 2. Air & Global Split Section -->
+    <div class="grid-split">
+      <!-- Air Section (1 Card) -->
+      <section class="section-group">
+        <div class="section-title">Air</div>
+        <a href="__TAC_PATH__" class="card">
+          <div>
+            <div class="card-header">
+              <span class="card-title">Air Freight (TAC Index)</span>
+              <span class="badge __TAC_STATUS_CLASS__">__TAC_STATUS__</span>
             </div>
-
-            <div class="kpi-item">
-              <div class="kpi-label">거시 지표 범위</div>
-              <div class="kpi-val small-value">WorldBank GDP / CPI</div>
+            <div class="kpi-group">
+              <div class="kpi-item">
+                <div class="kpi-label">종합 지수 (Overall)</div>
+                <div class="kpi-val highlight">__TAC_INDEX__</div>
+              </div>
+              <div class="kpi-item">
+                <div class="kpi-label">주간 변동률 (W/W)</div>
+                <div class="kpi-val amber">__TAC_WEEKLY__</div>
+              </div>
             </div>
           </div>
-        </div>
+          <div class="card-footer">
+            <span>Date: __TAC_DATE__ (Routes: __TAC_ROUTES__)</span>
+            <span class="arrow">OPEN &rarr;</span>
+          </div>
+        </a>
+      </section>
 
-        <div class="card-footer">
-          <span>최신 일자: __MACRO_DATE__</span>
-          <span class="arrow">대시보드 보기 &rarr;</span>
-        </div>
-      </a>
+      <!-- Global Section (1 Card) -->
+      <section class="section-group">
+        <div class="section-title">Global</div>
+        <a href="__MACRO_PATH__" class="card">
+          <div>
+            <div class="card-header">
+              <span class="card-title">Macro Economies & GSCPI</span>
+              <span class="badge __MACRO_STATUS_CLASS__">__MACRO_STATUS__</span>
+            </div>
+            <div class="kpi-group">
+              <div class="kpi-item">
+                <div class="kpi-label">공급망 압력 (GSCPI)</div>
+                <div class="kpi-val highlight">__MACRO_GSCPI__</div>
+              </div>
+              <div class="kpi-item">
+                <div class="kpi-label">거시 지표 범위</div>
+                <div class="kpi-val small-value">WorldBank GDP / CPI</div>
+              </div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <span>Date: __MACRO_DATE__</span>
+            <span class="arrow">OPEN &rarr;</span>
+          </div>
+        </a>
+      </section>
     </div>
   </div>
+
+  <footer>
+    <div>MARKET INTELLIGENCE PLATFORM // REAL-TIME LOGISTICS & MACRO DASHBOARDS</div>
+    <div>TERMINAL FEED: ACTIVE</div>
+  </footer>
 </body>
 </html>
 """
@@ -946,7 +929,6 @@ def main():
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # SCFI 및 BDI 중 실제 최신 일자를 카드 하단에 표시
     shipping_latest_date = get_latest_available_date(
         shipping["scfi_date"],
         shipping["bdi_date"],
@@ -959,151 +941,73 @@ def main():
     )
 
     # Shipping
-    html_output = html_output.replace(
-        "__SHIPPING_PATH__",
-        safe_html(shipping["path"]),
-    )
-    html_output = html_output.replace(
-        "__SHIPPING_STATUS__",
-        safe_html(shipping["status"]),
-    )
+    html_output = html_output.replace("__SHIPPING_PATH__", safe_html(shipping["path"]))
+    html_output = html_output.replace("__SHIPPING_STATUS__", safe_html(shipping["status"]))
     html_output = html_output.replace(
         "__SHIPPING_STATUS_CLASS__",
         "active" if shipping["status"] == "Active" else "nodata",
     )
-    html_output = html_output.replace(
-        "__SHIPPING_SCFI__",
-        safe_html(shipping["scfi_latest"]),
-    )
-    html_output = html_output.replace(
-        "__SHIPPING_BDI__",
-        safe_html(shipping["bdi_latest"]),
-    )
-    html_output = html_output.replace(
-        "__SHIPPING_DATE__",
-        safe_html(shipping_latest_date),
-    )
+    html_output = html_output.replace("__SHIPPING_SCFI__", safe_html(shipping["scfi_latest"]))
+    html_output = html_output.replace("__SHIPPING_BDI__", safe_html(shipping["bdi_latest"]))
+    html_output = html_output.replace("__SHIPPING_DATE__", safe_html(shipping_latest_date))
 
     # Alphaliner
-    html_output = html_output.replace(
-        "__ALPHALINER_PATH__",
-        safe_html(alphaliner["path"]),
-    )
-    html_output = html_output.replace(
-        "__ALPHALINER_STATUS__",
-        safe_html(alphaliner["status"]),
-    )
+    html_output = html_output.replace("__ALPHALINER_PATH__", safe_html(alphaliner["path"]))
+    html_output = html_output.replace("__ALPHALINER_STATUS__", safe_html(alphaliner["status"]))
     html_output = html_output.replace(
         "__ALPHALINER_STATUS_CLASS__",
         "active" if alphaliner["status"] == "Active" else "nodata",
     )
-    html_output = html_output.replace(
-        "__ALPHALINER_TEU__",
-        safe_html(alphaliner["total_teu"]),
-    )
-    html_output = html_output.replace(
-        "__ALPHALINER_TOP1__",
-        safe_html(alphaliner["top1_operator"]),
-    )
-    html_output = html_output.replace(
-        "__ALPHALINER_DATE__",
-        safe_html(alphaliner["latest_date"]),
-    )
+    html_output = html_output.replace("__ALPHALINER_TEU__", safe_html(alphaliner["total_teu"]))
+    html_output = html_output.replace("__ALPHALINER_TOP1__", safe_html(alphaliner["top1_operator"]))
+    html_output = html_output.replace("__ALPHALINER_DATE__", safe_html(alphaliner["latest_date"]))
 
     # Bunker
-    html_output = html_output.replace(
-        "__BUNKER_PATH__",
-        safe_html(bunker["path"]),
-    )
-    html_output = html_output.replace(
-        "__BUNKER_STATUS__",
-        safe_html(bunker["status"]),
-    )
+    html_output = html_output.replace("__BUNKER_PATH__", safe_html(bunker["path"]))
+    html_output = html_output.replace("__BUNKER_STATUS__", safe_html(bunker["status"]))
     html_output = html_output.replace(
         "__BUNKER_STATUS_CLASS__",
         "active" if bunker["status"] == "Active" else "nodata",
     )
 
     # Forwarder
-    html_output = html_output.replace(
-        "__FORWARDER_PATH__",
-        safe_html(forwarder["path"]),
-    )
-    html_output = html_output.replace(
-        "__FORWARDER_STATUS__",
-        safe_html(forwarder["status"]),
-    )
+    html_output = html_output.replace("__FORWARDER_PATH__", safe_html(forwarder["path"]))
+    html_output = html_output.replace("__FORWARDER_STATUS__", safe_html(forwarder["status"]))
     html_output = html_output.replace(
         "__FORWARDER_STATUS_CLASS__",
         "active" if forwarder["status"] == "Active" else "nodata",
     )
-    html_output = html_output.replace(
-        "__FORWARDER_OCEAN__",
-        safe_html(forwarder["top1_ocean"]),
-    )
-    html_output = html_output.replace(
-        "__FORWARDER_AIR__",
-        safe_html(forwarder["top1_air"]),
-    )
+    html_output = html_output.replace("__FORWARDER_OCEAN__", safe_html(forwarder["top1_ocean"]))
+    html_output = html_output.replace("__FORWARDER_AIR__", safe_html(forwarder["top1_air"]))
 
     # TAC Index
-    html_output = html_output.replace(
-        "__TAC_PATH__",
-        safe_html(tac["path"]),
-    )
-    html_output = html_output.replace(
-        "__TAC_STATUS__",
-        safe_html(tac["status"]),
-    )
+    html_output = html_output.replace("__TAC_PATH__", safe_html(tac["path"]))
+    html_output = html_output.replace("__TAC_STATUS__", safe_html(tac["status"]))
     html_output = html_output.replace(
         "__TAC_STATUS_CLASS__",
         "active" if tac["status"] == "Active" else "nodata",
     )
-    html_output = html_output.replace(
-        "__TAC_INDEX__",
-        safe_html(tac["overall_index"]),
-    )
-    html_output = html_output.replace(
-        "__TAC_WEEKLY__",
-        safe_html(tac["weekly_change"]),
-    )
-    html_output = html_output.replace(
-        "__TAC_DATE__",
-        safe_html(tac["latest_date"]),
-    )
-    html_output = html_output.replace(
-        "__TAC_ROUTES__",
-        safe_html(tac["route_count"]),
-    )
+    html_output = html_output.replace("__TAC_INDEX__", safe_html(tac["overall_index"]))
+    html_output = html_output.replace("__TAC_WEEKLY__", safe_html(tac["weekly_change"]))
+    html_output = html_output.replace("__TAC_DATE__", safe_html(tac["latest_date"]))
+    html_output = html_output.replace("__TAC_ROUTES__", safe_html(tac["route_count"]))
 
     # Macro
-    html_output = html_output.replace(
-        "__MACRO_PATH__",
-        safe_html(macro["path"]),
-    )
-    html_output = html_output.replace(
-        "__MACRO_STATUS__",
-        safe_html(macro["status"]),
-    )
+    html_output = html_output.replace("__MACRO_PATH__", safe_html(macro["path"]))
+    html_output = html_output.replace("__MACRO_STATUS__", safe_html(macro["status"]))
     html_output = html_output.replace(
         "__MACRO_STATUS_CLASS__",
         "active" if macro["status"] == "Active" else "nodata",
     )
-    html_output = html_output.replace(
-        "__MACRO_GSCPI__",
-        safe_html(macro["gscpi_latest"]),
-    )
-    html_output = html_output.replace(
-        "__MACRO_DATE__",
-        safe_html(macro["latest_date"]),
-    )
+    html_output = html_output.replace("__MACRO_GSCPI__", safe_html(macro["gscpi_latest"]))
+    html_output = html_output.replace("__MACRO_DATE__", safe_html(macro["latest_date"]))
 
     # index.html 원자적 저장
     temp_path = OUTPUT_HTML.with_suffix(".tmp")
     temp_path.write_text(html_output, encoding="utf-8")
     temp_path.replace(OUTPUT_HTML)
 
-    # API 또는 외부 활용용 JSON 요약 저장
+    # JSON 요약 저장
     summary_data = {
         "generated_at": now_str,
         "shipping": shipping,
@@ -1124,11 +1028,6 @@ def main():
     )
 
     logger.info(f"[SUCCESS] Portal HTML built: {OUTPUT_HTML}")
-    logger.info(
-        "[Shipping Summary] "
-        f"SCFI={shipping['scfi_latest']} ({shipping['scfi_date']}), "
-        f"BDI={shipping['bdi_latest']} ({shipping['bdi_date']})"
-    )
 
 if __name__ == "__main__":
     main()
