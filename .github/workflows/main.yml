@@ -115,7 +115,26 @@ jobs:
       # =====================================================
       - name: Crawl Forwarder and generate static dashboard
         run: |
-          python "Forwarder/forwarder.py" --crawl-only
+          echo "===== Forwarder folder structure ====="
+          find "Forwarder" -maxdepth 3 -type f | sort
+
+          echo "===== Python files in Forwarder ====="
+          find "Forwarder" -maxdepth 3 -type f -iname "*.py" -print
+
+          # A&A Top 25 Dashboard 코드가 담긴 Python 파일을 자동 탐색
+          FORWARDER_SCRIPT=$(grep -rl \
+            --include="*.py" \
+            "A&A Top 25 Dashboard" \
+            "Forwarder" | head -n 1)
+
+          if [ -z "$FORWARDER_SCRIPT" ]; then
+            echo "ERROR: 'A&A Top 25 Dashboard' 문자열이 포함된 Python 파일을 Forwarder 폴더에서 찾지 못했습니다."
+            exit 1
+          fi
+
+          echo "Forwarder script found: $FORWARDER_SCRIPT"
+          python "$FORWARDER_SCRIPT" --crawl-only
+
 
       # =====================================================
       # 8-2. Forwarder 생성 결과 확인
