@@ -2014,7 +2014,7 @@ def run_cron_job(url=DEFAULT_URL):
 # =========================================================
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="A&A Top 25 Global Freight Forwarders Dashboard"
+        description="A&A Top 25 Forwarders Dashboard"
     )
 
     parser.add_argument(
