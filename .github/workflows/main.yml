@@ -94,7 +94,6 @@ jobs:
 
       # =====================================================
       # 8. Alphaliner 생성 결과 확인
-      # 기존 Template Missing HTML이 다시 생성되면 실패 처리
       # =====================================================
       - name: Verify Alphaliner generated files
         run: |
@@ -130,7 +129,7 @@ jobs:
       # =====================================================
       # 9. 변경된 DB / JSON / HTML을 한 번에 Commit & Push
       # =====================================================
-  - name: Commit and push dashboard data
+      - name: Commit and push dashboard data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
