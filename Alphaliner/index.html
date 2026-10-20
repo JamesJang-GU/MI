@@ -1,487 +1,435 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Alphaliner TOP 100 Liner Operators</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-  <style>
-    :root {
-      --bg-dark: #0a0e17;
-      --bg-panel: #111827;
-      --bg-panel-alt: #162032;
-      --bg-hover: #1e293b;
-      --amber: #f59e0b;
-      --amber-bright: #fbbf24;
-      --cyan: #06b6d4;
-      --cyan-bright: #22d3ee;
-      --green: #10b981;
-      --red: #f43f5e;
-      --blue: #3b82f6;
-      --text: #e2e8f0;
-      --text-muted: #94a3b8;
-      --text-dim: #64748b;
-      --border: #1e293b;
-      --border-dark: #334155;
-      --mono: "Roboto Mono", "Consolas", "Courier New", monospace;
-      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", Arial, sans-serif;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--bg-dark);
-      color: var(--text);
-      font-family: var(--sans);
-      font-size: 13px;
-      line-height: 1.45;
-    }
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MI Terminal | Alphaliner TOP 100</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #02060b;
+  --panel: #07111c;
+  --panel2: #0b1825;
+  --panel3: #0e2131;
+  --line: #23394d;
+  --text: #dce9f5;
+  --muted: #8aa0b5;
+  --orange: #ff8a00;
+  --blue: #39a8ff;
+  --green: #2bd682;
+  --red: #ff5c5c;
+  --purple: #be7bff;
+}
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Roboto Mono", Consolas, "Noto Sans KR", monospace;
+  font-size: 12px;
+}
+button, input, select { font: inherit; }
+a { color: inherit; text-decoration: none; }
 
-    /* Header (Bloomberg Terminal Style) */
-    .header {
-      background: linear-gradient(180deg, #111827 0%, #0c121d 100%);
-      color: #ffffff;
-      padding: 18px 24px;
-      border-bottom: 2px solid var(--amber);
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-    }
-    .header-inner {
-      max-width: 1540px;
-      margin: 0 auto;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 16px;
-    }
-    .header h1 {
-      margin: 0;
-      font-size: 22px;
-      font-weight: 800;
-      letter-spacing: -0.3px;
-      color: #ffffff;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .header h1::before {
-      content: "■";
-      color: var(--amber);
-      font-size: 14px;
-    }
-    .header p {
-      margin: 4px 0 0;
-      color: var(--text-muted);
-      font-size: 12px;
-      font-family: var(--mono);
-    }
+.topbar {
+  min-height: 54px;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  border-bottom: 1px solid var(--line);
+  background: #050a11;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.brand-mark {
+  color: var(--orange);
+  font-size: 18px;
+  font-weight: 900;
+}
+.brand-title {
+  font-size: 13px;
+  color: white;
+  letter-spacing: .8px;
+  font-weight: 700;
+}
+.nav-link {
+  padding: 7px 11px;
+  border: 1px solid #34526e;
+  color: var(--blue);
+  font-size: 11px;
+}
+.nav-link:hover {
+  color: #fff;
+  background: #12344f;
+}
 
-    .header-controls {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
+.terminal {
+  max-width: 1720px;
+  margin: 0 auto;
+  padding: 18px 20px 32px;
+}
+.status {
+  padding: 9px 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  font-size: 10px;
+}
+.workspace {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 14px;
+}
+.panel {
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+.panel-header {
+  min-height: 39px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  background: var(--panel2);
+  border-bottom: 1px solid var(--line);
+}
+.panel-title {
+  color: var(--orange);
+  font-size: 10px;
+  letter-spacing: .8px;
+  font-weight: 700;
+}
+.filter-section {
+  padding: 13px;
+  border-bottom: 1px solid #172a3a;
+}
+.label {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: .65px;
+  margin-bottom: 8px;
+  font-weight: 700;
+}
 
-    /* Date Selection Box */
-    .selector-box {
-      display: flex;
-      align-items: center;
-      background: #000000;
-      border: 1px solid var(--border-dark);
-      border-radius: 4px;
-      padding: 4px 10px;
-      gap: 8px;
-    }
-    .selector-box label {
-      font-size: 11px;
-      font-weight: 700;
-      color: var(--amber);
-      font-family: var(--mono);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      white-space: nowrap;
-    }
-    .selector-box select {
-      background: #111827;
-      color: var(--cyan-bright);
-      font-family: var(--mono);
-      font-size: 12px;
-      font-weight: 600;
-      border: 1px solid var(--border);
-      border-radius: 3px;
-      padding: 5px 10px;
-      outline: none;
-      cursor: pointer;
-    }
-    .selector-box select:focus {
-      border-color: var(--amber);
-    }
+.custom-select {
+  width: 100%;
+  background: #040910;
+  border: 1px solid var(--line);
+  color: var(--blue);
+  padding: 7px 8px;
+  font-size: 11px;
+  outline: none;
+}
+.custom-select:focus {
+  border-color: var(--orange);
+}
 
-    /* Action Button (CSV) */
-    .btn-csv {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: var(--amber);
-      color: #000000;
-      font-family: var(--mono);
-      font-size: 12px;
-      font-weight: 800;
-      padding: 7px 14px;
-      border-radius: 4px;
-      border: none;
-      cursor: pointer;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-      transition: all 0.15s ease;
-      text-decoration: none;
-      white-space: nowrap;
-    }
-    .btn-csv:hover {
-      background: var(--amber-bright);
-      box-shadow: 0 0 12px rgba(245, 158, 11, 0.4);
-      transform: translateY(-1px);
-    }
-    .btn-csv svg { width: 14px; height: 14px; fill: currentColor; }
+.btn {
+  min-height: 31px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  background: #07101a;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  width: 100%;
+  display: block;
+  text-align: center;
+}
+.btn:hover {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+.btn.active {
+  border-color: var(--orange);
+  background: var(--orange);
+  color: #0a0a0a;
+}
 
-    /* Layout & Cards */
-    .container { max-width: 1540px; margin: 0 auto; padding: 20px 24px; }
-    .status {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 16px;
-      color: var(--text-dim);
-      font-family: var(--mono);
-      font-size: 12px;
-    }
-    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); }
-    .status-dot.success { background: var(--green); box-shadow: 0 0 8px var(--green); }
-    .status-dot.error { background: var(--red); box-shadow: 0 0 8px var(--red); }
+.heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+h1 {
+  color: #fff;
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: .2px;
+}
+.subtitle {
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 6px;
+}
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  margin-bottom: 12px;
+}
+.kpi {
+  min-height: 94px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+.kpi-label {
+  display: block;
+  min-height: 25px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.3;
+}
+.kpi-value {
+  display: block;
+  margin-top: 10px;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+}
+.kpi-sub {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 9px;
+}
+.positive { color: var(--green); }
+.negative { color: var(--red); }
 
-    .section-title {
-      font-size: 14px;
-      font-weight: 700;
-      color: var(--amber);
-      font-family: var(--mono);
-      margin: 24px 0 12px 0;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .section-title::before {
-      content: "//";
-      color: var(--text-dim);
-      font-weight: 800;
-    }
+.chart-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.chart-wrap {
+  position: relative;
+  height: 280px;
+  padding: 12px;
+}
 
-    .kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-    .card {
-      background: var(--bg-panel);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 14px 16px;
-      position: relative;
-      overflow: hidden;
-    }
-    .card::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 2px;
-      background: var(--border-dark);
-    }
-    .kpi-label {
-      color: var(--text-muted);
-      font-size: 11.5px;
-      font-family: var(--mono);
-      font-weight: 600;
-      margin-bottom: 6px;
-    }
-    .kpi-value {
-      color: #ffffff;
-      font-size: 21px;
-      font-weight: 800;
-      font-family: var(--mono);
-    }
-    .kpi-sub {
-      margin-top: 4px;
-      color: var(--cyan);
-      font-size: 11px;
-      font-family: var(--mono);
-    }
+.table-wrap {
+  overflow-x: auto;
+  padding: 12px;
+  max-height: 600px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  min-width: 1100px;
+}
+th, td {
+  padding: 7px 9px;
+  text-align: right;
+  border-bottom: 1px solid #1c3041;
+  border-right: 1px solid #142230;
+  white-space: nowrap;
+}
+th {
+  color: var(--muted);
+  background: #0a1723;
+  font-size: 10px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
 
-    /* Charts */
-    .chart-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      margin-bottom: 20px;
-    }
-    .chart-card { min-height: 360px; }
-    .chart-title {
-      margin: 0 0 2px;
-      color: #ffffff;
-      font-size: 14px;
-      font-weight: 700;
-      font-family: var(--mono);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .chart-title::before {
-      content: "■";
-      color: var(--amber);
-      font-size: 10px;
-    }
-    .chart-note { margin: 0 0 12px; color: var(--text-dim); font-size: 11px; font-family: var(--mono); }
-    .chart-wrap { position: relative; height: 270px; }
+/* 2-tier Group Headers */
+tr.group-header th {
+  text-align: center;
+  font-weight: 700;
+  border-bottom: 1px solid #1c3041;
+}
+th.group-main { background: #0c1825; color: var(--orange); }
+th.group-total { background: #0a2136; color: var(--blue); }
+th.group-owned { background: #0a1f2f; color: #a5c7e5; }
+th.group-chartered { background: #0f2438; color: #a5c7e5; }
+th.group-orderbook { background: #1c2618; color: var(--green); }
 
-    /* Tables (Alphaliner 2-tier Bloomberg Grid) */
-    .table-card { overflow: hidden; padding: 0; margin-bottom: 24px; border: 1px solid var(--border); }
-    .table-heading {
-      padding: 12px 16px;
-      background: #0d131f;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-    .table-heading h2 {
-      margin: 0;
-      color: #ffffff;
-      font-size: 14px;
-      font-weight: 700;
-      font-family: var(--mono);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .table-heading h2::before {
-      content: "■";
-      color: var(--amber);
-      font-size: 10px;
-    }
-    .table-heading p { margin: 0; color: var(--text-dim); font-size: 11px; font-family: var(--mono); }
-    .table-scroll { overflow-x: auto; max-height: 640px; overflow-y: auto; }
+.rank-cell { color: var(--orange); font-weight: 700; text-align: center; width: 45px; }
+.operator-cell { text-align: left; font-weight: 700; color: #fff; }
+.sub-col { color: #6b849c; }
 
-    table.alpha-table {
-      width: 100%;
-      border-collapse: separate;
-      border-spacing: 0;
-      min-width: 1200px;
-      font-size: 12px;
-      background: var(--bg-panel);
-    }
-    table.alpha-table thead { position: sticky; top: 0; z-index: 3; }
+.delta-pos { color: var(--green); font-weight: 700; }
+.delta-neg { color: var(--red); font-weight: 700; }
+.delta-zero { color: var(--muted); }
 
-    /* 2-tier Group Headers */
-    table.alpha-table thead tr.group-header th {
-      color: #ffffff;
-      padding: 6px 10px;
-      text-align: center;
-      font-weight: 800;
-      font-size: 11px;
-      font-family: var(--mono);
-      letter-spacing: 0.5px;
-      border-right: 1px solid rgba(255, 255, 255, 0.08);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    }
-    table.alpha-table thead tr.group-header th.group-main { background: #1e293b; color: var(--amber); }
-    table.alpha-table thead tr.group-header th.group-total { background: #0f2c4a; color: var(--cyan-bright); }
-    table.alpha-table thead tr.group-header th.group-owned { background: #132a3e; }
-    table.alpha-table thead tr.group-header th.group-chartered { background: #1a2d42; }
-    table.alpha-table thead tr.group-header th.group-orderbook { background: #242c38; color: #fbbf24; }
+.badge-rank-up {
+  color: var(--green);
+  border: 1px solid #155e3b;
+  background: #062416;
+  padding: 1px 4px;
+  font-size: 9px;
+  font-weight: 700;
+}
+.badge-rank-down {
+  color: var(--red);
+  border: 1px solid #6b2222;
+  background: #240a0a;
+  padding: 1px 4px;
+  font-size: 9px;
+  font-weight: 700;
+}
 
-    table.alpha-table thead tr.col-header th {
-      background: #0b111c;
-      color: var(--text-muted);
-      padding: 7px 10px;
-      text-align: left;
-      font-weight: 700;
-      font-size: 11px;
-      font-family: var(--mono);
-      border-bottom: 1px solid var(--border-dark);
-      border-right: 1px solid var(--border);
-      white-space: nowrap;
-    }
-    table.alpha-table td {
-      padding: 6px 10px;
-      border-bottom: 1px solid #141e2e;
-      border-right: 1px solid #141e2e;
-      white-space: nowrap;
-      font-family: var(--mono);
-    }
-    table.alpha-table tbody tr:nth-child(even) { background: #0e1522; }
-    table.alpha-table tbody tr:hover { background: var(--bg-hover); }
+.empty {
+  padding: 40px 15px;
+  color: var(--muted);
+  text-align: center;
+}
 
-    .number { text-align: right; }
-    .rank-cell { color: var(--amber); font-weight: 800; text-align: center; width: 55px; }
-    .operator-cell { font-weight: 700; color: #ffffff; font-family: var(--sans); }
-    .sub-col { color: var(--text-dim); }
-
-    /* Delta Indicators */
-    .delta-pos { color: var(--red); font-weight: 700; }
-    .delta-neg { color: var(--cyan); font-weight: 700; }
-    .delta-zero { color: var(--text-dim); font-weight: 600; }
-    .badge-rank-up {
-      display: inline-block;
-      padding: 1px 5px;
-      border-radius: 2px;
-      background: rgba(244, 63, 94, 0.15);
-      border: 1px solid var(--red);
-      color: var(--red);
-      font-size: 10px;
-      font-weight: 700;
-      font-family: var(--mono);
-    }
-    .badge-rank-down {
-      display: inline-block;
-      padding: 1px 5px;
-      border-radius: 2px;
-      background: rgba(6, 182, 212, 0.15);
-      border: 1px solid var(--cyan);
-      color: var(--cyan);
-      font-size: 10px;
-      font-weight: 700;
-      font-family: var(--mono);
-    }
-
-    .error-message, .info-box {
-      padding: 14px 16px;
-      border-radius: 4px;
-      background: var(--bg-panel);
-      border: 1px solid var(--border);
-      font-size: 12px;
-      font-family: var(--mono);
-    }
-    .error-message { border-color: var(--red); color: var(--red); background: rgba(244, 63, 94, 0.05); }
-    .info-box { background: #0d131f; border-color: var(--border); margin-bottom: 16px; color: var(--text-muted); }
-    .footer {
-      padding: 16px 0 10px;
-      color: var(--text-dim);
-      font-size: 11px;
-      font-family: var(--mono);
-      text-align: right;
-      border-top: 1px solid var(--border);
-      margin-top: 20px;
-    }
-    .footer a { color: var(--amber); text-decoration: none; }
-    .footer a:hover { text-decoration: underline; }
-
-    @media (max-width: 1024px) {
-      .kpi-grid, .chart-grid { grid-template-columns: 1fr 1fr; }
-    }
-    @media (max-width: 640px) {
-      .container { padding: 12px; }
-      .header h1 { font-size: 18px; }
-      .kpi-grid, .chart-grid { grid-template-columns: 1fr; }
-      .header-inner { flex-direction: column; align-items: flex-start; }
-      .header-controls { width: 100%; justify-content: space-between; }
-    }
-  </style>
+@media (max-width: 1100px) {
+  .workspace { grid-template-columns: 1fr; }
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .chart-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 650px) {
+  .terminal { padding: 12px; }
+  .kpi-grid { grid-template-columns: 1fr; }
+  .status { display: block; line-height: 1.8; }
+}
+</style>
 </head>
+
 <body>
-  <header class="header">
-    <div class="header-inner">
-      <div>
-        <h1>Alphaliner TOP 100 Liner Operators</h1>
-        <p>Global container liner operator capacity, fleet, orderbook & snapshot delta monitoring</p>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">MI&lt;GO&gt;</span>
+    <span class="brand-title">ALPHALINER TOP 100 MONITOR</span>
+  </div>
+  <a class="nav-link" href="../index.html">← MAIN PORTAL</a>
+</header>
+
+<main class="terminal">
+  <section class="status">
+    <span id="statusText">SYSTEM / ALPHALINER DATA ONLINE</span>
+    <span>LAST REFRESH: <span id="generatedAt">-</span></span>
+  </section>
+
+  <div class="workspace">
+    <aside class="panel">
+      <div class="panel-header">
+        <span class="panel-title">FUNCTIONS / TIME TRAVEL</span>
       </div>
-      <div class="header-controls">
-        <div class="selector-box">
-          <label for="snapshotSelect">Comparison Base Date</label>
-          <select id="snapshotSelect">
-            <option value="">Loading historical dates...</option>
-          </select>
-        </div>
-        <button id="btnExportCsv" class="btn-csv" title="TOP 100 선사 데이터 CSV 다운로드">
-          <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-          Export CSV
+
+      <section class="filter-section">
+        <span class="label">COMPARISON BASE DATE</span>
+        <select id="snapshotSelect" class="custom-select">
+          <option value="">Loading historical dates...</option>
+        </select>
+      </section>
+
+      <section class="filter-section">
+        <span class="label">EXPORT DATA</span>
+        <button class="btn" style="border-color:#34526e;color:#39a8ff;" onclick="exportToCsv()">
+          EXPORT TOP 100 CSV
         </button>
-      </div>
-    </div>
-  </header>
+      </section>
 
-  <main class="container">
-    <div class="status">
-      <span id="statusDot" class="status-dot"></span>
-      <span id="statusText">Alphaliner 데이터를 불러오는 중입니다.</span>
-    </div>
+      <section class="filter-section" style="border-bottom:none;">
+        <span class="label">DATA SOURCE</span>
+        <div style="color:var(--muted);font-size:10px;line-height:1.5;">
+          Official ExtJS Store: Top100description<br>
+          Historical SQLite snapshots with Delta time-travel analysis.
+        </div>
+      </section>
+    </aside>
 
-    <section id="dashboard" style="display:none;">
-      <!-- Highlights KPI (전 세계 공식 집계 & TOP 100 분리) -->
-      <div class="kpi-grid">
-        <article class="card">
-          <div class="kpi-label">Global Total TEU (전 세계 선복량)</div>
-          <div id="globalTeu" class="kpi-value">-</div>
-          <div id="top100TeuSub" class="kpi-sub">TOP 100: -</div>
-        </article>
-        <article class="card">
-          <div class="kpi-label">Global Active Ships (운항 선박 수)</div>
-          <div id="globalShips" class="kpi-value">-</div>
-          <div id="top100ShipsSub" class="kpi-sub">TOP 100: -</div>
-        </article>
-        <article class="card">
-          <div class="kpi-label">Market Leader (1위 선사)</div>
-          <div id="leaderName" class="kpi-value" style="color:var(--amber);">-</div>
-          <div id="leaderSub" class="kpi-sub">-</div>
-        </article>
-        <article class="card">
-          <div class="kpi-label">Market Top 10 Share (상위 10사 점유율)</div>
-          <div id="top10Share" class="kpi-value" style="color:var(--cyan-bright);">-</div>
-          <div id="top10TeuSub" class="kpi-sub">-</div>
-        </article>
+    <section>
+      <div class="heading">
+        <div>
+          <h1>TOP 100 CONTAINER LINER OPERATORS</h1>
+          <div class="subtitle">Global Fleet Capacity, Orderbook & Historical Snapshot Delta</div>
+        </div>
       </div>
+
+      <!-- Highlights KPI -->
+      <section class="kpi-grid">
+        <div class="kpi">
+          <span class="kpi-label">GLOBAL TOTAL<br>CAPACITY (TEU)</span>
+          <span class="kpi-value" id="globalTeu">-</span>
+          <span class="kpi-sub" id="top100TeuSub">TOP 100: -</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">GLOBAL ACTIVE<br>SHIPS (FLEET)</span>
+          <span class="kpi-value" id="globalShips">-</span>
+          <span class="kpi-sub" id="top100ShipsSub">TOP 100: -</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">MARKET LEADER<br>RANK #1</span>
+          <span class="kpi-value" id="leaderName" style="color:var(--orange);">-</span>
+          <span class="kpi-sub" id="leaderSub">-</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">TOP 10 SHARE<br>CONCENTRATION</span>
+          <span class="kpi-value" id="top10Share" style="color:var(--blue);">-</span>
+          <span class="kpi-sub" id="top10TeuSub">-</span>
+        </div>
+      </section>
 
       <!-- Delta Comparison Summary -->
-      <div class="section-title">선택 시점 대비 최신 변동 요약 (Snapshot Delta Summary)</div>
-      <div id="deltaSummaryContainer">
-        <div class="kpi-grid">
-          <article class="card">
-            <div class="kpi-label">TOP 100 선복량 증감 (Δ TEU)</div>
-            <div id="deltaTeuTotal" class="kpi-value">-</div>
-            <div id="deltaTeuSub" class="kpi-sub">vs Selected Date</div>
-          </article>
-          <article class="card">
-            <div class="kpi-label">TOP 100 선박 수 증감 (Δ Ships)</div>
-            <div id="deltaShipsTotal" class="kpi-value">-</div>
-            <div id="deltaShipsSub" class="kpi-sub">vs Selected Date</div>
-          </article>
-          <article class="card">
-            <div class="kpi-label">최대 선복량 증가 선사 (Top Gainer)</div>
-            <div id="topGainName" class="kpi-value">-</div>
-            <div id="topGainVal" class="kpi-sub">-</div>
-          </article>
-          <article class="card">
-            <div class="kpi-label">최대 선복량 감소 선사 (Top Loser)</div>
-            <div id="topLossName" class="kpi-value">-</div>
-            <div id="topLossVal" class="kpi-sub">-</div>
-          </article>
+      <section class="panel" style="margin-bottom:14px;">
+        <div class="panel-header">
+          <span class="panel-title">DELTA ANALYSIS / VS BASE DATE</span>
+          <span class="panel-title" id="deltaSubTitle">-</span>
         </div>
-      </div>
+        <div style="padding:10px;">
+          <div class="kpi-grid" id="deltaKpiContainer" style="margin-bottom:0;">
+            <div class="kpi">
+              <span class="kpi-label">TOP 100 Δ CAPACITY<br>(PERIOD CHANGE)</span>
+              <span class="kpi-value" id="deltaTeuTotal">-</span>
+              <span class="kpi-sub" id="deltaTeuSub">-</span>
+            </div>
+            <div class="kpi">
+              <span class="kpi-label">TOP 100 Δ SHIPS<br>(PERIOD CHANGE)</span>
+              <span class="kpi-value" id="deltaShipsTotal">-</span>
+              <span class="kpi-sub" id="deltaShipsSub">-</span>
+            </div>
+            <div class="kpi">
+              <span class="kpi-label">TOP GAINER<br>(MAX CAPACITY UP)</span>
+              <span class="kpi-value" id="topGainName">-</span>
+              <span class="kpi-sub" id="topGainVal">-</span>
+            </div>
+            <div class="kpi">
+              <span class="kpi-label">TOP LOSER<br>(MAX CAPACITY DOWN)</span>
+              <span class="kpi-value" id="topLossName">-</span>
+              <span class="kpi-sub" id="topLossVal">-</span>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <!-- Charts -->
       <div class="chart-grid">
-        <section class="card chart-card">
-          <h2 class="chart-title">상위 10개 선사 선복량 (Top 10 Capacity)</h2>
-          <p class="chart-note">Latest snapshot · 단위: TEU</p>
+        <section class="panel">
+          <div class="panel-header">
+            <span class="panel-title">TOP 10 OPERATOR CAPACITY / TEU</span>
+          </div>
           <div class="chart-wrap">
             <canvas id="topOperatorsChart"></canvas>
           </div>
         </section>
 
-        <section class="card chart-card">
-          <h2 class="chart-title">전 세계 및 TOP 100 총 선복량 추이 (Historical Capacity)</h2>
-          <p class="chart-note">All historical snapshots · 단위: Million TEU</p>
+        <section class="panel">
+          <div class="panel-header">
+            <span class="panel-title">GLOBAL VS TOP 100 CAPACITY TREND / MILLION TEU</span>
+          </div>
           <div class="chart-wrap">
             <canvas id="historyChart"></canvas>
           </div>
@@ -489,26 +437,24 @@
       </div>
 
       <!-- Delta Comparison Table -->
-      <section class="card table-card" id="deltaTableCard">
-        <div class="table-heading">
-          <div>
-            <h2>선택 시점 대비 선사별 상세 변동 (Delta Detail)</h2>
-            <p id="deltaTableNote">비교 대상 스냅샷 데이터를 불러오는 중...</p>
-          </div>
+      <section class="panel" id="deltaTableCard" style="margin-bottom:14px;">
+        <div class="panel-header">
+          <span class="panel-title">OPERATOR CAPACITY & SHARE DELTA DETAIL</span>
+          <span class="panel-title" id="deltaTableNote">-</span>
         </div>
-        <div class="table-scroll">
-          <table class="alpha-table">
+        <div class="table-wrap">
+          <table>
             <thead>
-              <tr class="col-header">
-                <th style="text-align:center;">Rank</th>
-                <th>순위 변동</th>
-                <th>Operator</th>
-                <th class="number">최신 TEU</th>
-                <th class="number">선택 시점 TEU</th>
-                <th class="number">증감 (Δ TEU)</th>
-                <th class="number">최신 점유율</th>
-                <th class="number">선택 시점 점유율</th>
-                <th class="number">점유율 증감 (Δ %p)</th>
+              <tr>
+                <th style="text-align:center; width:45px;">RANK</th>
+                <th style="text-align:center;">RANK Δ</th>
+                <th style="text-align:left;">OPERATOR</th>
+                <th>LATEST TEU</th>
+                <th>BASE TEU</th>
+                <th>Δ TEU</th>
+                <th>LATEST %</th>
+                <th>BASE %</th>
+                <th>Δ %P</th>
               </tr>
             </thead>
             <tbody id="deltaTableBody"></tbody>
@@ -516,16 +462,14 @@
         </div>
       </section>
 
-      <!-- Detailed Authentic Alphaliner 2-tier Group Table -->
-      <section class="card table-card">
-        <div class="table-heading">
-          <div>
-            <h2>TOP 100 선사별 전체 현황 (Alphaliner Official View)</h2>
-            <p id="tableNote">-</p>
-          </div>
+      <!-- 2-Tier Authentic Alphaliner Official Table -->
+      <section class="panel">
+        <div class="panel-header">
+          <span class="panel-title">ALPHALINER OFFICIAL TOP 100 FLEET BREAKDOWN</span>
+          <span class="panel-title" id="tableNote">-</span>
         </div>
-        <div class="table-scroll">
-          <table class="alpha-table">
+        <div class="table-wrap">
+          <table>
             <thead>
               <tr class="group-header">
                 <th colspan="2" class="group-main">OPERATOR</th>
@@ -534,21 +478,21 @@
                 <th colspan="3" class="group-chartered">EXISTING (CHARTERED)</th>
                 <th colspan="3" class="group-orderbook">ORDERBOOK</th>
               </tr>
-              <tr class="col-header">
-                <th style="text-align:center; width:50px;">Rank</th>
-                <th>Operator Name</th>
-                <th class="number">TEU</th>
-                <th class="number">Ships</th>
-                <th class="number">Share</th>
-                <th class="number">TEU</th>
-                <th class="number">Ships</th>
-                <th class="number">% Own</th>
-                <th class="number">TEU</th>
-                <th class="number">Ships</th>
-                <th class="number">% Char</th>
-                <th class="number">TEU</th>
-                <th class="number">Ships</th>
-                <th class="number">% Exist</th>
+              <tr>
+                <th style="text-align:center; width:45px;">RANK</th>
+                <th style="text-align:left;">OPERATOR NAME</th>
+                <th>TEU</th>
+                <th>SHIPS</th>
+                <th>SHARE</th>
+                <th>TEU</th>
+                <th>SHIPS</th>
+                <th>% OWN</th>
+                <th>TEU</th>
+                <th>SHIPS</th>
+                <th>% CHAR</th>
+                <th>TEU</th>
+                <th>SHIPS</th>
+                <th>% EXIST</th>
               </tr>
             </thead>
             <tbody id="operatorTableBody"></tbody>
@@ -556,556 +500,517 @@
         </div>
       </section>
     </section>
+  </div>
+</main>
 
-    <section id="messageBox"></section>
+<script>
+let topOperatorsChart = null;
+let historyChart = null;
+let allSnapshots = {};
+let snapshotList = [];
+let latestSnapshotId = null;
 
-    <div class="footer">
-      Source: <a href="https://alphaliner.axsmarine.com/PublicTop100/" target="_blank" rel="noopener">Alphaliner TOP 100</a>
-      · Generated: <span id="generatedAt" style="color:var(--amber);">-</span>
-    </div>
-  </main>
+function numberFormat(val) {
+  if (val === null || val === undefined || isNaN(val)) return "-";
+  return new Intl.NumberFormat("en-US").format(Number(val));
+}
 
-  <script>
-    let topOperatorsChart = null;
-    let historyChart = null;
-    let allSnapshots = {};
-    let snapshotList = [];
-    let latestSnapshotId = null;
+function decimalFormat(val, digits = 2) {
+  if (val === null || val === undefined || isNaN(val)) return "-";
+  return Number(val).toLocaleString("en-US", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits
+  });
+}
 
-    function numberFormat(value) {
-      if (value === null || value === undefined || isNaN(value)) return "-";
-      return new Intl.NumberFormat("en-US").format(Number(value));
-    }
+function fmtDelta(val, isPct = false) {
+  if (val === null || val === undefined || isNaN(val)) return "-";
+  const num = Number(val);
+  const sign = num > 0 ? "+" : "";
+  if (isPct) return sign + num.toFixed(2) + "%p";
+  return sign + numberFormat(num);
+}
 
-    function decimalFormat(value, digits = 2) {
-      if (value === null || value === undefined || isNaN(value)) return "-";
-      return Number(value).toLocaleString("en-US", {
-        minimumFractionDigits: digits,
-        maximumFractionDigits: digits
-      });
-    }
+function deltaSpan(val, isPct = false) {
+  if (val === null || val === undefined || isNaN(val) || val === 0) {
+    return '<span class="delta-zero">-</span>';
+  }
+  const num = Number(val);
+  const cls = num > 0 ? "delta-pos" : "delta-neg";
+  const arrow = num > 0 ? "+ " : "";
+  return `<span class="${cls}">${arrow}${fmtDelta(num, isPct)}</span>`;
+}
 
-    function fmtDelta(val, isPct = false) {
-      if (val === null || val === undefined || isNaN(val)) return "-";
-      const num = Number(val);
-      const sign = num > 0 ? "+" : "";
-      if (isPct) {
-        return sign + num.toFixed(2) + "%p";
-      }
-      return sign + numberFormat(num);
-    }
+function rankMoveBadge(diff) {
+  if (!diff || isNaN(diff) || diff === 0) {
+    return '<span class="delta-zero">-</span>';
+  }
+  if (diff > 0) {
+    return `<span class="badge-rank-up">▲ UP ${diff}</span>`;
+  }
+  return `<span class="badge-rank-down">▼ DN ${Math.abs(diff)}</span>`;
+}
 
-    function deltaSpan(val, isPct = false) {
-      if (val === null || val === undefined || isNaN(val) || val === 0) {
-        return '<span class="delta-zero">-</span>';
-      }
-      const num = Number(val);
-      const cls = num > 0 ? "delta-pos" : "delta-neg";
-      const arrow = num > 0 ? "▲ " : "▼ ";
-      return `<span class="${cls}">${arrow}${fmtDelta(num, isPct)}</span>`;
-    }
+function escapeHtml(val) {
+  return String(val ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
 
-    function rankMoveBadge(diff) {
-      if (!diff || isNaN(diff) || diff === 0) {
-        return '<span class="delta-zero">-</span>';
-      }
-      if (diff > 0) {
-        return `<span class="badge-rank-up">▲ Up ${diff}</span>`;
-      }
-      return `<span class="badge-rank-down">▼ Down ${Math.abs(diff)}</span>`;
-    }
+function renderKpis(snapshot) {
+  const rows = snapshot.rows || [];
+  const top100Teu = rows.reduce((sum, r) => sum + Number(r.total_teu || 0), 0);
+  const top100Ships = rows.reduce((sum, r) => sum + Number(r.total_ships || 0), 0);
 
-    function escapeHtml(value) {
-      return String(value ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-    }
+  const globalTeu = snapshot.global_teu || top100Teu;
+  const globalShips = snapshot.global_ships || top100Ships;
 
-    function showError(message) {
-      document.getElementById("statusDot").className = "status-dot error";
-      document.getElementById("statusText").textContent = "데이터 로드 오류";
-      document.getElementById("messageBox").innerHTML =
-        '<div class="error-message"><strong>Alphaliner Dashboard 데이터를 표시할 수 없습니다.</strong><br>' +
-        escapeHtml(message) +
-        '<br><br>저장소의 <code>alphaliner_history.db</code> 및 <code>alphaliner_data.json</code> 파일 상태를 확인해 주세요.</div>';
-    }
+  document.getElementById("globalTeu").textContent = numberFormat(globalTeu);
+  document.getElementById("top100TeuSub").textContent = `TOP 100: ${numberFormat(top100Teu)} TEU`;
 
-    function renderKpis(snapshot) {
-      const rows = snapshot.rows || [];
-      const top100Teu = rows.reduce((sum, row) => sum + Number(row.total_teu || 0), 0);
-      const top100Ships = rows.reduce((sum, row) => sum + Number(row.total_ships || 0), 0);
+  document.getElementById("globalShips").textContent = numberFormat(globalShips);
+  document.getElementById("top100ShipsSub").textContent = `TOP 100: ${numberFormat(top100Ships)} SHIPS`;
 
-      const globalTeu = snapshot.global_teu || top100Teu;
-      const globalShips = snapshot.global_ships || top100Ships;
+  const leader = rows.length ? rows[0] : null;
+  if (leader) {
+    document.getElementById("leaderName").textContent = leader.operator_name || "-";
+    const shareText = leader.market_share ? (decimalFormat(leader.market_share, 2) + "% SHARE") : "";
+    document.getElementById("leaderSub").textContent =
+      numberFormat(leader.total_teu) + " TEU · " + shareText;
+  }
 
-      document.getElementById("globalTeu").textContent = numberFormat(globalTeu) + " TEU";
-      document.getElementById("top100TeuSub").textContent = `TOP 100 합계: ${numberFormat(top100Teu)} TEU`;
+  const top10Teu = rows.slice(0, 10).reduce((sum, r) => sum + Number(r.total_teu || 0), 0);
+  const top10Share = globalTeu > 0 ? ((top10Teu / globalTeu) * 100) : 0;
+  document.getElementById("top10Share").textContent = decimalFormat(top10Share, 2) + "%";
+  document.getElementById("top10TeuSub").textContent = `TOP 10 TOTAL: ${numberFormat(top10Teu)} TEU`;
+}
 
-      document.getElementById("globalShips").textContent = numberFormat(globalShips) + " 척";
-      document.getElementById("top100ShipsSub").textContent = `TOP 100 선박: ${numberFormat(top100Ships)} 척`;
+function renderDeltaAnalysis(latestSnapshot, compareSnapshot) {
+  const latestRows = latestSnapshot.rows || [];
+  const prevRows = compareSnapshot ? (compareSnapshot.rows || []) : [];
 
-      const leader = rows.length ? rows[0] : null;
-      if (leader) {
-        document.getElementById("leaderName").textContent = leader.operator_name || "-";
-        const shareText = leader.market_share ? (decimalFormat(leader.market_share, 2) + "% share") : "";
-        document.getElementById("leaderSub").textContent =
-          numberFormat(leader.total_teu) + " TEU" + (shareText ? (" · " + shareText) : "");
-      }
+  if (!prevRows.length || latestSnapshot.snapshot_id === compareSnapshot.snapshot_id) {
+    document.getElementById("deltaSubTitle").textContent = "SAME SNAPSHOT SELECTED";
+    document.getElementById("deltaTeuTotal").textContent = "-";
+    document.getElementById("deltaShipsTotal").textContent = "-";
+    document.getElementById("topGainName").textContent = "-";
+    document.getElementById("topGainVal").textContent = "-";
+    document.getElementById("topLossName").textContent = "-";
+    document.getElementById("topLossVal").textContent = "-";
+    document.getElementById("deltaTableCard").style.display = "none";
+    return;
+  }
 
-      const top10Teu = rows.slice(0, 10).reduce((sum, r) => sum + Number(r.total_teu || 0), 0);
-      const top10Share = globalTeu > 0 ? ((top10Teu / globalTeu) * 100) : 0;
-      document.getElementById("top10Share").textContent = decimalFormat(top10Share, 2) + "%";
-      document.getElementById("top10TeuSub").textContent = `Top 10 합계: ${numberFormat(top10Teu)} TEU`;
-    }
+  document.getElementById("deltaTableCard").style.display = "block";
+  document.getElementById("deltaSubTitle").textContent = `${latestSnapshot.data_date} vs ${compareSnapshot.data_date}`;
 
-    function renderDeltaAnalysis(latestSnapshot, compareSnapshot) {
-      const latestRows = latestSnapshot.rows || [];
-      const prevRows = compareSnapshot ? (compareSnapshot.rows || []) : [];
+  const prevMap = new Map();
+  prevRows.forEach(r => prevMap.set(r.operator_name, r));
 
-      if (!prevRows.length || latestSnapshot.snapshot_id === compareSnapshot.snapshot_id) {
-        document.getElementById("deltaSummaryContainer").innerHTML =
-          '<div class="info-box">동일한 시점이 선택되었거나 비교 대상 데이터가 없습니다. 상단 드롭다운에서 다른 과거 날짜를 선택해 보세요.</div>';
-        document.getElementById("deltaTableCard").style.display = "none";
-        return;
-      }
+  const curTotalTeu = latestRows.reduce((sum, r) => sum + Number(r.total_teu || 0), 0);
+  const prevTotalTeu = prevRows.reduce((sum, r) => sum + Number(r.total_teu || 0), 0);
+  const diffTotalTeu = curTotalTeu - prevTotalTeu;
 
-      document.getElementById("deltaTableCard").style.display = "block";
+  const curTotalShips = latestRows.reduce((sum, r) => sum + Number(r.total_ships || 0), 0);
+  const prevTotalShips = prevRows.reduce((sum, r) => sum + Number(r.total_ships || 0), 0);
+  const diffTotalShips = curTotalShips - prevTotalShips;
 
-      const prevMap = new Map();
-      prevRows.forEach(r => prevMap.set(r.operator_name, r));
+  document.getElementById("deltaTeuTotal").innerHTML = deltaSpan(diffTotalTeu);
+  document.getElementById("deltaTeuSub").textContent = `VS ${compareSnapshot.data_date}`;
 
-      const curTotalTeu = latestRows.reduce((sum, r) => sum + Number(r.total_teu || 0), 0);
-      const prevTotalTeu = prevRows.reduce((sum, r) => sum + Number(r.total_teu || 0), 0);
-      const diffTotalTeu = curTotalTeu - prevTotalTeu;
+  document.getElementById("deltaShipsTotal").innerHTML = deltaSpan(diffTotalShips);
+  document.getElementById("deltaShipsSub").textContent = `VS ${compareSnapshot.data_date}`;
 
-      const curTotalShips = latestRows.reduce((sum, r) => sum + Number(r.total_ships || 0), 0);
-      const prevTotalShips = prevRows.reduce((sum, r) => sum + Number(r.total_ships || 0), 0);
-      const diffTotalShips = curTotalShips - prevTotalShips;
+  const deltaList = [];
+  latestRows.forEach(cur => {
+    const prev = prevMap.get(cur.operator_name);
+    const prevTeu = prev ? Number(prev.total_teu || 0) : 0;
+    const curTeu = Number(cur.total_teu || 0);
+    const diffTeu = prev ? (curTeu - prevTeu) : curTeu;
 
-      document.getElementById("deltaSummaryContainer").innerHTML = `
-        <div class="kpi-grid">
-          <article class="card">
-            <div class="kpi-label">TOP 100 선복량 증감 (Δ TEU)</div>
-            <div class="kpi-value">${deltaSpan(diffTotalTeu)}</div>
-            <div class="kpi-sub">vs ${compareSnapshot.data_date}</div>
-          </article>
-          <article class="card">
-            <div class="kpi-label">TOP 100 선박 수 증감 (Δ Ships)</div>
-            <div class="kpi-value">${deltaSpan(diffTotalShips)}</div>
-            <div class="kpi-sub">vs ${compareSnapshot.data_date}</div>
-          </article>
-          <article class="card">
-            <div class="kpi-label">최대 선복량 증가 선사</div>
-            <div class="kpi-value" id="topGainName">-</div>
-            <div class="kpi-sub" id="topGainVal">-</div>
-          </article>
-          <article class="card">
-            <div class="kpi-label">최대 선복량 감소 선사</div>
-            <div id="topLossName" class="kpi-value">-</div>
-            <div id="topLossVal" class="kpi-sub">-</div>
-          </article>
-        </div>
-      `;
+    const prevShare = prev ? Number(prev.market_share || 0) : 0;
+    const curShare = Number(cur.market_share || 0);
+    const diffShare = prev ? (curShare - prevShare) : curShare;
 
-      const deltaList = [];
-      latestRows.forEach(cur => {
-        const prev = prevMap.get(cur.operator_name);
-        const prevTeu = prev ? Number(prev.total_teu || 0) : 0;
-        const curTeu = Number(cur.total_teu || 0);
-        const diffTeu = prev ? (curTeu - prevTeu) : curTeu;
+    const prevRank = prev ? Number(prev.rank) : null;
+    const rankDiff = prevRank ? (prevRank - Number(cur.rank)) : 0;
 
-        const prevShare = prev ? Number(prev.market_share || 0) : 0;
-        const curShare = Number(cur.market_share || 0);
-        const diffShare = prev ? (curShare - prevShare) : curShare;
+    deltaList.push({
+      rank: cur.rank,
+      operator_name: cur.operator_name,
+      curTeu,
+      prevTeu,
+      diffTeu,
+      curShare,
+      prevShare,
+      diffShare,
+      rankDiff,
+      hasPrev: !!prev
+    });
+  });
 
-        const prevRank = prev ? Number(prev.rank) : null;
-        const rankDiff = prevRank ? (prevRank - Number(cur.rank)) : 0;
+  const sortedByGain = [...deltaList].filter(d => d.hasPrev).sort((a, b) => b.diffTeu - a.diffTeu);
+  if (sortedByGain.length) {
+    const topGain = sortedByGain[0];
+    const topLoss = sortedByGain[sortedByGain.length - 1];
 
-        deltaList.push({
-          rank: cur.rank,
-          operator_name: cur.operator_name,
-          curTeu: curTeu,
-          prevTeu: prevTeu,
-          diffTeu: diffTeu,
-          curShare: curShare,
-          prevShare: prevShare,
-          diffShare: diffShare,
-          rankDiff: rankDiff,
-          hasPrev: !!prev
-        });
-      });
+    document.getElementById("topGainName").textContent = topGain.operator_name;
+    document.getElementById("topGainVal").innerHTML = deltaSpan(topGain.diffTeu) + " TEU";
 
-      const sortedByGain = [...deltaList].filter(d => d.hasPrev).sort((a, b) => b.diffTeu - a.diffTeu);
-      if (sortedByGain.length) {
-        const topGain = sortedByGain[0];
-        const topLoss = sortedByGain[sortedByGain.length - 1];
+    document.getElementById("topLossName").textContent = topLoss.operator_name;
+    document.getElementById("topLossVal").innerHTML = deltaSpan(topLoss.diffTeu) + " TEU";
+  }
 
-        document.getElementById("topGainName").textContent = topGain.operator_name;
-        document.getElementById("topGainVal").innerHTML = deltaSpan(topGain.diffTeu) + " TEU";
+  document.getElementById("deltaTableNote").textContent =
+    `BASE: ${compareSnapshot.data_date} → LATEST: ${latestSnapshot.data_date}`;
 
-        document.getElementById("topLossName").textContent = topLoss.operator_name;
-        document.getElementById("topLossVal").innerHTML = deltaSpan(topLoss.diffTeu) + " TEU";
-      }
+  const tbody = document.getElementById("deltaTableBody");
+  tbody.innerHTML = deltaList.map(item => `
+    <tr>
+      <td class="rank-cell">${escapeHtml(item.rank)}</td>
+      <td style="text-align:center;">${rankMoveBadge(item.rankDiff)}</td>
+      <td class="operator-cell">${escapeHtml(item.operator_name)}</td>
+      <td>${numberFormat(item.curTeu)}</td>
+      <td class="sub-col">${item.hasPrev ? numberFormat(item.prevTeu) : "-"}</td>
+      <td>${item.hasPrev ? deltaSpan(item.diffTeu) : '<span class="badge-rank-up">NEW</span>'}</td>
+      <td>${decimalFormat(item.curShare, 2)}%</td>
+      <td class="sub-col">${item.hasPrev ? decimalFormat(item.prevShare, 2) + "%" : "-"}</td>
+      <td>${item.hasPrev ? deltaSpan(item.diffShare, true) : "-"}</td>
+    </tr>
+  `).join("");
+}
 
-      document.getElementById("deltaTableNote").textContent =
-        `기준일: 최신 (${latestSnapshot.data_date}) vs 선택 기준일 (${compareSnapshot.data_date})`;
+function renderTopOperatorsChart(rows) {
+  const top10 = rows.slice(0, 10);
+  if (topOperatorsChart) topOperatorsChart.destroy();
 
-      const tbody = document.getElementById("deltaTableBody");
-      tbody.innerHTML = deltaList.map(item => `
-        <tr>
-          <td class="rank-cell">${escapeHtml(item.rank)}</td>
-          <td>${rankMoveBadge(item.rankDiff)}</td>
-          <td class="operator-cell">${escapeHtml(item.operator_name)}</td>
-          <td class="number">${numberFormat(item.curTeu)}</td>
-          <td class="number">${item.hasPrev ? numberFormat(item.prevTeu) : "-"}</td>
-          <td class="number">${item.hasPrev ? deltaSpan(item.diffTeu) : '<span class="badge-rank-up">NEW</span>'}</td>
-          <td class="number">${decimalFormat(item.curShare, 2)}%</td>
-          <td class="number">${item.hasPrev ? decimalFormat(item.prevShare, 2) + "%" : "-"}</td>
-          <td class="number">${item.hasPrev ? deltaSpan(item.diffShare, true) : "-"}</td>
-        </tr>
-      `).join("");
-    }
-
-    function renderTopOperatorsChart(rows) {
-      const top10 = rows.slice(0, 10);
-      if (topOperatorsChart) topOperatorsChart.destroy();
-
-      topOperatorsChart = new Chart(
-        document.getElementById("topOperatorsChart"),
-        {
-          type: "bar",
-          data: {
-            labels: top10.map(row => row.operator_name),
-            datasets: [{
-              label: "Total TEU",
-              data: top10.map(row => Number(row.total_teu || 0)),
-              backgroundColor: "rgba(245, 158, 11, 0.85)",
-              hoverBackgroundColor: "#fbbf24",
-              borderColor: "#f59e0b",
-              borderWidth: 1,
-              borderRadius: 2
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            indexAxis: "y",
-            plugins: {
-              legend: { display: false },
-              tooltip: {
-                backgroundColor: "#000000",
-                titleColor: "#f59e0b",
-                bodyColor: "#ffffff",
-                borderColor: "#334155",
-                borderWidth: 1,
-                callbacks: {
-                  label: context => numberFormat(context.raw) + " TEU"
-                }
-              }
-            },
-            scales: {
-              x: {
-                ticks: {
-                  color: "#94a3b8",
-                  font: { family: "'Roboto Mono', monospace", size: 10 },
-                  callback: value => (Number(value) / 1000000).toFixed(1) + "M"
-                },
-                grid: { color: "rgba(255, 255, 255, 0.05)" }
-              },
-              y: {
-                ticks: {
-                  color: "#e2e8f0",
-                  font: { family: "'Roboto Mono', monospace", size: 11, weight: "bold" }
-                },
-                grid: { display: false }
-              }
+  topOperatorsChart = new Chart(
+    document.getElementById("topOperatorsChart"),
+    {
+      type: "bar",
+      data: {
+        labels: top10.map(r => r.operator_name),
+        datasets: [{
+          label: "Capacity (TEU)",
+          data: top10.map(r => Number(r.total_teu || 0)),
+          backgroundColor: "#ff8a00",
+          borderColor: "#ff8a00",
+          borderWidth: 1,
+          borderRadius: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: "y",
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: "#07111c",
+            titleColor: "#ff8a00",
+            bodyColor: "#dce9f5",
+            borderColor: "#23394d",
+            borderWidth: 1,
+            callbacks: {
+              label: ctx => numberFormat(ctx.raw) + " TEU"
             }
           }
-        }
-      );
-    }
-
-    function renderHistoryChart(history) {
-      if (historyChart) historyChart.destroy();
-
-      const labels = history.map(row => row.data_date || "");
-      const globalValues = history.map(row => Number(row.global_teu || row.total_teu || 0) / 1000000);
-      const top100Values = history.map(row => Number(row.total_teu || 0) / 1000000);
-
-      historyChart = new Chart(
-        document.getElementById("historyChart"),
-        {
-          type: "line",
-          data: {
-            labels: labels,
-            datasets: [
-              {
-                label: "Global Total",
-                data: globalValues,
-                borderColor: "#10b981",
-                backgroundColor: "rgba(16, 185, 129, 0.08)",
-                fill: true,
-                tension: 0.2,
-                pointRadius: 3,
-                pointBackgroundColor: "#10b981"
-              },
-              {
-                label: "TOP 100 Total",
-                data: top100Values,
-                borderColor: "#06b6d4",
-                backgroundColor: "transparent",
-                borderDash: [3, 3],
-                tension: 0.2,
-                pointRadius: 2,
-                pointBackgroundColor: "#06b6d4"
-              }
-            ]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                display: true,
-                position: "top",
-                labels: {
-                  color: "#94a3b8",
-                  font: { family: "'Roboto Mono', monospace", size: 11 }
-                }
-              },
-              tooltip: {
-                backgroundColor: "#000000",
-                titleColor: "#06b6d4",
-                bodyColor: "#ffffff",
-                borderColor: "#334155",
-                borderWidth: 1,
-                callbacks: {
-                  label: context => `${context.dataset.label}: ${decimalFormat(context.raw, 2)}M TEU`
-                }
-              }
+        },
+        scales: {
+          x: {
+            ticks: {
+              color: "#8aa0b5",
+              font: { family: '"Roboto Mono", monospace', size: 10 },
+              callback: v => (Number(v) / 1000000).toFixed(1) + "M"
             },
-            scales: {
-              y: {
-                ticks: {
-                  color: "#94a3b8",
-                  font: { family: "'Roboto Mono', monospace", size: 10 },
-                  callback: value => value + "M"
-                },
-                grid: { color: "rgba(255, 255, 255, 0.05)" }
-              },
-              x: {
-                ticks: {
-                  color: "#94a3b8",
-                  font: { family: "'Roboto Mono', monospace", size: 10 }
-                },
-                grid: { display: false }
-              }
+            grid: { color: "#172a3a" }
+          },
+          y: {
+            ticks: {
+              color: "#dce9f5",
+              font: { family: '"Roboto Mono", monospace', size: 10, weight: "bold" }
+            },
+            grid: { display: false }
+          }
+        }
+      }
+    }
+  );
+}
+
+function renderHistoryChart(history) {
+  if (historyChart) historyChart.destroy();
+
+  const labels = history.map(r => r.data_date || "");
+  const globalValues = history.map(r => Number(r.global_teu || r.total_teu || 0) / 1000000);
+  const top100Values = history.map(r => Number(r.total_teu || 0) / 1000000);
+
+  historyChart = new Chart(
+    document.getElementById("historyChart"),
+    {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: "Global Total",
+            data: globalValues,
+            borderColor: "#2bd682",
+            backgroundColor: "rgba(43, 214, 130, 0.08)",
+            fill: true,
+            tension: 0.1,
+            pointRadius: 2,
+            pointBackgroundColor: "#2bd682"
+          },
+          {
+            label: "TOP 100 Total",
+            data: top100Values,
+            borderColor: "#39a8ff",
+            backgroundColor: "transparent",
+            borderDash: [3, 3],
+            tension: 0.1,
+            pointRadius: 2,
+            pointBackgroundColor: "#39a8ff"
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: "top",
+            labels: {
+              color: "#8aa0b5",
+              font: { family: '"Roboto Mono", monospace', size: 10 }
+            }
+          },
+          tooltip: {
+            backgroundColor: "#07111c",
+            titleColor: "#39a8ff",
+            bodyColor: "#dce9f5",
+            borderColor: "#23394d",
+            borderWidth: 1,
+            callbacks: {
+              label: ctx => `${ctx.dataset.label}: ${decimalFormat(ctx.raw, 2)}M TEU`
             }
           }
-        }
-      );
-    }
-
-    function renderAuthenticTable(rows, snapshotDate) {
-      const tbody = document.getElementById("operatorTableBody");
-
-      tbody.innerHTML = rows.map(row => {
-        const totalTeu = Number(row.total_teu || 0);
-        const ownedTeu = Number(row.existing_owned_teu || 0);
-        const chartTeu = Number(row.existing_chartered_teu || 0);
-
-        const ownedPct = totalTeu > 0 && row.existing_owned_teu !== null
-          ? ((ownedTeu / totalTeu) * 100).toFixed(1) + "%"
-          : "-";
-
-        const chartPct = totalTeu > 0 && row.existing_chartered_teu !== null
-          ? ((chartTeu / totalTeu) * 100).toFixed(1) + "%"
-          : "-";
-
-        const shareStr = row.market_share !== null && row.market_share !== undefined
-          ? decimalFormat(row.market_share, 2) + "%"
-          : "-";
-
-        const orderbookPct = row.orderbook_pct_existing !== null && row.orderbook_pct_existing !== undefined
-          ? decimalFormat(row.orderbook_pct_existing, 1) + "%"
-          : "-";
-
-        return `
-          <tr>
-            <td class="rank-cell">${escapeHtml(row.rank)}</td>
-            <td class="operator-cell">${escapeHtml(row.operator_name)}</td>
-
-            <!-- TOTAL -->
-            <td class="number font-bold" style="color:var(--cyan-bright);">${numberFormat(row.total_teu)}</td>
-            <td class="number">${numberFormat(row.total_ships)}</td>
-            <td class="number" style="color:var(--cyan);">${shareStr}</td>
-
-            <!-- EXISTING OWNED -->
-            <td class="number">${numberFormat(row.existing_owned_teu)}</td>
-            <td class="number sub-col">${numberFormat(row.existing_owned_ships)}</td>
-            <td class="number sub-col">${ownedPct}</td>
-
-            <!-- EXISTING CHARTERED -->
-            <td class="number">${numberFormat(row.existing_chartered_teu)}</td>
-            <td class="number sub-col">${numberFormat(row.existing_chartered_ships)}</td>
-            <td class="number sub-col">${chartPct}</td>
-
-            <!-- ORDERBOOK -->
-            <td class="number" style="color:var(--amber);">${numberFormat(row.orderbook_teu)}</td>
-            <td class="number sub-col">${numberFormat(row.orderbook_ships)}</td>
-            <td class="number sub-col">${orderbookPct}</td>
-          </tr>
-        `;
-      }).join("");
-
-      document.getElementById("tableNote").textContent =
-        "기준일: " + (snapshotDate || "-") + " · 총 " + numberFormat(rows.length) + "개 선사 전체 현황";
-    }
-
-    function exportToCsv() {
-      const select = document.getElementById("snapshotSelect");
-      const targetId = select.value ? parseInt(select.value) : latestSnapshotId;
-      const targetSnapshot = allSnapshots[targetId];
-
-      if (!targetSnapshot || !targetSnapshot.rows || !targetSnapshot.rows.length) {
-        alert("내보낼 데이터가 없습니다.");
-        return;
-      }
-
-      const headers = [
-        "Rank", "Operator", "Total_TEU", "Total_Ships", "Market_Share_Pct",
-        "Owned_TEU", "Owned_Ships", "Owned_Pct",
-        "Chartered_TEU", "Chartered_Ships", "Chartered_Pct",
-        "Orderbook_TEU", "Orderbook_Ships", "Orderbook_Pct_Existing"
-      ];
-
-      const csvRows = [headers.join(",")];
-
-      targetSnapshot.rows.forEach(row => {
-        const totalTeu = Number(row.total_teu || 0);
-        const ownedTeu = Number(row.existing_owned_teu || 0);
-        const chartTeu = Number(row.existing_chartered_teu || 0);
-
-        const ownedPct = totalTeu > 0 && row.existing_owned_teu !== null
-          ? ((ownedTeu / totalTeu) * 100).toFixed(2)
-          : "";
-        const chartPct = totalTeu > 0 && row.existing_chartered_teu !== null
-          ? ((chartTeu / totalTeu) * 100).toFixed(2)
-          : "";
-
-        const opName = `"${String(row.operator_name || '').replace(/"/g, '""')}"`;
-
-        const values = [
-          row.rank ?? "",
-          opName,
-          row.total_teu ?? "",
-          row.total_ships ?? "",
-          row.market_share ?? "",
-          row.existing_owned_teu ?? "",
-          row.existing_owned_ships ?? "",
-          ownedPct,
-          row.existing_chartered_teu ?? "",
-          row.existing_chartered_ships ?? "",
-          chartPct,
-          row.orderbook_teu ?? "",
-          row.orderbook_ships ?? "",
-          row.orderbook_pct_existing ?? ""
-        ];
-
-        csvRows.push(values.join(","));
-      });
-
-      const csvString = "\uFEFF" + csvRows.join("\r\n");
-      const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      const filename = `Alphaliner_TOP100_${targetSnapshot.data_date || "latest"}.csv`;
-
-      link.setAttribute("href", url);
-      link.setAttribute("download", filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }
-
-    function handleSnapshotChange() {
-      const select = document.getElementById("snapshotSelect");
-      const compareId = select.value ? parseInt(select.value) : (snapshotList.length > 1 ? snapshotList[snapshotList.length - 2].snapshot_id : latestSnapshotId);
-
-      const latestSnapshot = allSnapshots[latestSnapshotId];
-      const compareSnapshot = allSnapshots[compareId];
-
-      if (!latestSnapshot) return;
-
-      renderKpis(latestSnapshot);
-      renderDeltaAnalysis(latestSnapshot, compareSnapshot);
-      renderTopOperatorsChart(latestSnapshot.rows);
-      renderAuthenticTable(latestSnapshot.rows, latestSnapshot.data_date);
-    }
-
-    async function loadDashboard() {
-      try {
-        const response = await fetch("./alphaliner_data.json?v=" + Date.now(), { cache: "no-store" });
-        if (!response.ok) {
-          throw new Error("alphaliner_data.json HTTP " + response.status);
-        }
-
-        const data = await response.json();
-        allSnapshots = data.snapshots || {};
-        const history = Array.isArray(data.history) ? data.history : [];
-
-        // snapshot_id 및 data_date 기준 정렬
-        snapshotList = Object.values(allSnapshots).sort((a, b) => a.snapshot_id - b.snapshot_id);
-
-        if (!snapshotList.length) {
-          throw new Error("저장된 스냅샷 데이터가 없습니다.");
-        }
-
-        const latestSnapshot = snapshotList[snapshotList.length - 1];
-        latestSnapshotId = latestSnapshot.snapshot_id;
-
-        // 드롭다운 옵션 채우기 (최신부터 가장 과거 순으로 전체 배치)
-        const select = document.getElementById("snapshotSelect");
-        select.innerHTML = "";
-
-        for (let i = snapshotList.length - 1; i >= 0; i--) {
-          const s = snapshotList[i];
-          const opt = document.createElement("option");
-          opt.value = s.snapshot_id;
-          if (i === snapshotList.length - 1) {
-            opt.textContent = `Latest (${s.data_date})`;
-          } else if (i === snapshotList.length - 2) {
-            opt.textContent = `Previous (${s.data_date})`;
-            opt.selected = true; // 기본값으로 직전 스냅샷 선택
-          } else {
-            opt.textContent = `${s.data_date} (${s.captured_at ? s.captured_at.slice(0, 10) : ''})`;
+        },
+        scales: {
+          y: {
+            ticks: {
+              color: "#8aa0b5",
+              font: { family: '"Roboto Mono", monospace', size: 10 },
+              callback: v => v + "M"
+            },
+            grid: { color: "#172a3a" }
+          },
+          x: {
+            ticks: {
+              color: "#8aa0b5",
+              font: { family: '"Roboto Mono", monospace', size: 10 }
+            },
+            grid: { display: false }
           }
-          select.appendChild(opt);
         }
-
-        select.addEventListener("change", handleSnapshotChange);
-        document.getElementById("btnExportCsv").addEventListener("click", exportToCsv);
-
-        renderHistoryChart(history);
-        handleSnapshotChange();
-
-        document.getElementById("generatedAt").textContent = data.generated_at || "-";
-        document.getElementById("statusDot").className = "status-dot success";
-        document.getElementById("statusText").textContent =
-          "정상 로드 · 총 " + snapshotList.length + "개 히스토리 스냅샷 (전체 과거 시점 탐색 가능)";
-
-        document.getElementById("dashboard").style.display = "block";
-      } catch (error) {
-        console.error(error);
-        showError(error.message || String(error));
       }
     }
+  );
+}
 
-    loadDashboard();
-  </script>
+function renderAuthenticTable(rows, snapshotDate) {
+  const tbody = document.getElementById("operatorTableBody");
+
+  tbody.innerHTML = rows.map(r => {
+    const totalTeu = Number(r.total_teu || 0);
+    const ownedTeu = Number(r.existing_owned_teu || 0);
+    const chartTeu = Number(r.existing_chartered_teu || 0);
+
+    const ownedPct = totalTeu > 0 && r.existing_owned_teu !== null
+      ? ((ownedTeu / totalTeu) * 100).toFixed(1) + "%"
+      : "-";
+
+    const chartPct = totalTeu > 0 && r.existing_chartered_teu !== null
+      ? ((chartTeu / totalTeu) * 100).toFixed(1) + "%"
+      : "-";
+
+    const shareStr = r.market_share !== null && r.market_share !== undefined
+      ? decimalFormat(r.market_share, 2) + "%"
+      : "-";
+
+    const orderbookPct = r.orderbook_pct_existing !== null && r.orderbook_pct_existing !== undefined
+      ? decimalFormat(r.orderbook_pct_existing, 1) + "%"
+      : "-";
+
+    return `
+      <tr>
+        <td class="rank-cell">${escapeHtml(r.rank)}</td>
+        <td class="operator-cell">${escapeHtml(r.operator_name)}</td>
+
+        <!-- TOTAL -->
+        <td style="color:var(--blue);font-weight:700;">${numberFormat(r.total_teu)}</td>
+        <td>${numberFormat(r.total_ships)}</td>
+        <td style="color:var(--blue);">${shareStr}</td>
+
+        <!-- EXISTING OWNED -->
+        <td>${numberFormat(r.existing_owned_teu)}</td>
+        <td class="sub-col">${numberFormat(r.existing_owned_ships)}</td>
+        <td class="sub-col">${ownedPct}</td>
+
+        <!-- EXISTING CHARTERED -->
+        <td>${numberFormat(r.existing_chartered_teu)}</td>
+        <td class="sub-col">${numberFormat(r.existing_chartered_ships)}</td>
+        <td class="sub-col">${chartPct}</td>
+
+        <!-- ORDERBOOK -->
+        <td style="color:var(--green);font-weight:700;">${numberFormat(r.orderbook_teu)}</td>
+        <td class="sub-col">${numberFormat(r.orderbook_ships)}</td>
+        <td class="sub-col">${orderbookPct}</td>
+      </tr>
+    `;
+  }).join("");
+
+  document.getElementById("tableNote").textContent =
+    `SNAPSHOT: ${snapshotDate || "-"} · ${numberFormat(rows.length)} OPERATORS`;
+}
+
+function exportToCsv() {
+  const select = document.getElementById("snapshotSelect");
+  const targetId = select.value ? parseInt(select.value) : latestSnapshotId;
+  const targetSnapshot = allSnapshots[targetId];
+
+  if (!targetSnapshot || !targetSnapshot.rows || !targetSnapshot.rows.length) {
+    alert("내보낼 데이터가 없습니다.");
+    return;
+  }
+
+  const headers = [
+    "Rank", "Operator", "Total_TEU", "Total_Ships", "Market_Share_Pct",
+    "Owned_TEU", "Owned_Ships", "Owned_Pct",
+    "Chartered_TEU", "Chartered_Ships", "Chartered_Pct",
+    "Orderbook_TEU", "Orderbook_Ships", "Orderbook_Pct_Existing"
+  ];
+
+  const csvRows = [headers.join(",")];
+
+  targetSnapshot.rows.forEach(r => {
+    const totalTeu = Number(r.total_teu || 0);
+    const ownedTeu = Number(r.existing_owned_teu || 0);
+    const chartTeu = Number(r.existing_chartered_teu || 0);
+
+    const ownedPct = totalTeu > 0 && r.existing_owned_teu !== null
+      ? ((ownedTeu / totalTeu) * 100).toFixed(2)
+      : "";
+    const chartPct = totalTeu > 0 && r.existing_chartered_teu !== null
+      ? ((chartTeu / totalTeu) * 100).toFixed(2)
+      : "";
+
+    const opName = `"${String(r.operator_name || '').replace(/"/g, '""')}"`;
+
+    const values = [
+      r.rank ?? "",
+      opName,
+      r.total_teu ?? "",
+      r.total_ships ?? "",
+      r.market_share ?? "",
+      r.existing_owned_teu ?? "",
+      r.existing_owned_ships ?? "",
+      ownedPct,
+      r.existing_chartered_teu ?? "",
+      r.existing_chartered_ships ?? "",
+      chartPct,
+      r.orderbook_teu ?? "",
+      r.orderbook_ships ?? "",
+      r.orderbook_pct_existing ?? ""
+    ];
+
+    csvRows.push(values.join(","));
+  });
+
+  const csvString = "\uFEFF" + csvRows.join("\r\n");
+  const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const filename = `Alphaliner_TOP100_${targetSnapshot.data_date || "latest"}.csv`;
+
+  link.setAttribute("href", url);
+  link.setAttribute("download", filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function handleSnapshotChange() {
+  const select = document.getElementById("snapshotSelect");
+  const compareId = select.value ? parseInt(select.value) : (snapshotList.length > 1 ? snapshotList[snapshotList.length - 2].snapshot_id : latestSnapshotId);
+
+  const latestSnapshot = allSnapshots[latestSnapshotId];
+  const compareSnapshot = allSnapshots[compareId];
+
+  if (!latestSnapshot) return;
+
+  renderKpis(latestSnapshot);
+  renderDeltaAnalysis(latestSnapshot, compareSnapshot);
+  renderTopOperatorsChart(latestSnapshot.rows);
+  renderAuthenticTable(latestSnapshot.rows, latestSnapshot.data_date);
+}
+
+async function loadDashboard() {
+  try {
+    const response = await fetch("./alphaliner_data.json?v=" + Date.now(), { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error("alphaliner_data.json HTTP " + response.status);
+    }
+
+    const data = await response.json();
+    allSnapshots = data.snapshots || {};
+    const history = Array.isArray(data.history) ? data.history : [];
+
+    snapshotList = Object.values(allSnapshots).sort((a, b) => a.snapshot_id - b.snapshot_id);
+
+    if (!snapshotList.length) {
+      throw new Error("저장된 스냅샷 데이터가 없습니다.");
+    }
+
+    const latestSnapshot = snapshotList[snapshotList.length - 1];
+    latestSnapshotId = latestSnapshot.snapshot_id;
+
+    const select = document.getElementById("snapshotSelect");
+    select.innerHTML = "";
+
+    for (let i = snapshotList.length - 1; i >= 0; i--) {
+      const s = snapshotList[i];
+      const opt = document.createElement("option");
+      opt.value = s.snapshot_id;
+      if (i === snapshotList.length - 1) {
+        opt.textContent = `Latest (${s.data_date})`;
+      } else if (i === snapshotList.length - 2) {
+        opt.textContent = `Previous (${s.data_date})`;
+        opt.selected = true;
+      } else {
+        opt.textContent = `${s.data_date}`;
+      }
+      select.appendChild(opt);
+    }
+
+    select.addEventListener("change", handleSnapshotChange);
+
+    renderHistoryChart(history);
+    handleSnapshotChange();
+
+    document.getElementById("generatedAt").textContent = data.generated_at || "-";
+  } catch (error) {
+    console.error(error);
+    document.getElementById("statusText").textContent = "DATA LOAD ERROR: " + error.message;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", loadDashboard);
+</script>
 </body>
 </html>
