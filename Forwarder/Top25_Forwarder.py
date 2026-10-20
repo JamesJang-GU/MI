@@ -262,271 +262,111 @@ HTML = r'''<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Forwarder | A&A Top 25</title>
+  <title>Forwarder Dashboard</title>
   <style>
-    :root {
-      --bg: #02060b;
-      --panel: #07111c;
-      --panel2: #0b1825;
-      --line: #23394d;
-      --text: #dce9f5;
-      --muted: #8aa0b5;
-      --orange: #ff8a00;
-      --blue: #39a8ff;
-      --green: #2bd682;
-      --red: #ff5c5c;
-    }
-
-    * { box-sizing: border-box; }
-
     body {
       margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: "Roboto Mono", Consolas, "Noto Sans KR", monospace;
-      font-size: 12px;
+      padding: 30px;
+      background: #07111c;
+      color: #e8f1f8;
+      font-family: Arial, "Noto Sans KR", sans-serif;
     }
 
-    a { color: inherit; text-decoration: none; }
-    button, select { font: inherit; }
+    h1 { color: #ff8a00; }
 
-    .topbar {
-      min-height: 54px;
-      padding: 0 20px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border-bottom: 1px solid var(--line);
-      background: #050a11;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .brand-mark {
-      color: var(--orange);
-      font-size: 18px;
-      font-weight: 900;
-    }
-
-    .brand-title {
-      color: #fff;
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: .7px;
-    }
-
-    .nav-link {
-      color: var(--blue);
-      border: 1px solid #34526e;
-      padding: 7px 11px;
-      font-size: 10px;
-    }
-
-    .nav-link:hover {
-      color: #fff;
-      background: #12344f;
-    }
-
-    .container {
-      max-width: 1720px;
-      margin: 0 auto;
-      padding: 18px 20px 34px;
-    }
-
-    .status {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 9px 12px;
-      color: var(--muted);
-      background: var(--panel);
-      border: 1px solid var(--line);
-      font-size: 10px;
-    }
-
-    .workspace {
-      display: grid;
-      grid-template-columns: 245px minmax(0, 1fr);
-      gap: 14px;
-      margin-top: 14px;
-    }
-
-    .panel {
-      background: var(--panel);
-      border: 1px solid var(--line);
-    }
-
-    .panel-header {
-      min-height: 39px;
-      padding: 0 12px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      background: var(--panel2);
-      border-bottom: 1px solid var(--line);
-    }
-
-    .panel-title {
-      color: var(--orange);
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: .8px;
-    }
-
-    .filter-block {
-      padding: 13px;
-      border-bottom: 1px solid #172a3a;
-    }
-
-    .filter-block:last-child {
-      border-bottom: none;
-    }
-
-    .label {
-      display: block;
-      color: var(--muted);
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: .6px;
-      margin-bottom: 8px;
-    }
-
-    select {
-      width: 100%;
-      padding: 8px;
-      color: var(--blue);
-      background: #040910;
-      border: 1px solid var(--line);
-      outline: none;
-    }
-
-    select:focus { border-color: var(--orange); }
-
-    .btn {
-      display: block;
-      width: 100%;
-      padding: 8px;
-      cursor: pointer;
-      color: var(--blue);
-      background: #07101a;
-      border: 1px solid #34526e;
-      text-align: center;
-      font-size: 10px;
-      font-weight: 700;
-    }
-
-    .btn:hover {
-      color: var(--orange);
-      border-color: var(--orange);
-    }
-
-    h1 {
-      margin: 0;
-      color: #fff;
-      font-size: 20px;
-      letter-spacing: .2px;
-    }
-
-    .subtitle {
-      margin: 6px 0 14px;
-      color: var(--muted);
-      font-size: 10px;
-    }
-
-    .kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
-      margin-bottom: 14px;
-    }
-
-    .kpi {
-      min-height: 96px;
-      padding: 12px;
-      background: var(--panel);
-      border: 1px solid var(--line);
-    }
-
-    .kpi-label {
-      display: block;
-      min-height: 28px;
-      color: var(--muted);
-      font-size: 9px;
-      line-height: 1.35;
-    }
-
-    .kpi-value {
-      display: block;
-      margin-top: 10px;
-      color: #fff;
-      font-size: 18px;
-      font-weight: 700;
-    }
-
-    .kpi-sub {
-      display: block;
-      margin-top: 5px;
-      color: var(--muted);
-      font-size: 9px;
-    }
-
-    .notice {
-      padding: 10px 12px;
-      margin-bottom: 14px;
-      color: #ffcb85;
-      background: #211608;
-      border: 1px solid #754810;
-    }
-
-    .table-wrap {
-      max-height: 620px;
-      overflow: auto;
-      padding: 12px;
+    .box {
+      max-width: 900px;
+      padding: 24px;
+      background: #0d1b29;
+      border: 1px solid #29455e;
     }
 
     table {
       width: 100%;
-      min-width: 900px;
       border-collapse: collapse;
-      font-size: 11px;
+      margin-top: 20px;
     }
 
     th, td {
-      padding: 8px 9px;
-      border-bottom: 1px solid #1c3041;
-      border-right: 1px solid #142230;
-      white-space: nowrap;
-      text-align: right;
+      padding: 10px;
+      border: 1px solid #29455e;
+      text-align: left;
     }
 
     th {
-      position: sticky;
-      top: 0;
-      z-index: 1;
-      color: var(--muted);
-      background: #0a1723;
-      font-size: 10px;
+      color: #ffb04a;
+      background: #13283a;
+    }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>A&A Top 25 Global Freight Forwarders</h1>
+
+    <p>
+      Last run: {{ meta.run_at }}
+      / Status: {{ meta.status }}
+      / Rows: {{ meta.row_count }}
+    </p>
+
+    {% if is_empty %}
+      <p>표시할 데이터가 없습니다.</p>
+    {% else %}
+      <p>Latest Date: <strong>{{ latest_date }}</strong></p>
+      <p>Total Revenue: <strong>{{ total_revenue }}</strong></p>
+      <p>Total Ocean TEU: <strong>{{ total_teu }}</strong></p>
+      <p>Total Air Tons: <strong>{{ total_air }}</strong></p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Provider</th>
+            <th>HQ</th>
+            <th>Revenue ($M)</th>
+            <th>Ocean TEU</th>
+            <th>Air Tons</th>
+          </tr>
+        </thead>
+        <tbody id="rankingTableBody"></tbody>
+      </table>
+    {% endif %}
+  </div>
+
+  {% if not is_empty %}
+  <script>
+    const dataByDate = {{ data_json | safe }};
+    const latestDate = "{{ latest_date }}";
+    const rows = dataByDate[latestDate] || [];
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
     }
 
-    th.left, td.left { text-align: left; }
-    th.center, td.center { text-align: center; }
-
-    .rank {
-      color: var(--orange);
-      font-weight: 700;
+    function formatNumber(value) {
+      return new Intl.NumberFormat("en-US").format(Number(value || 0));
     }
 
-    .provider {
-      color: #fff;
-      font-weight: 700;
-    }
-
-    .positive
+    document.getElementById("rankingTableBody").innerHTML = rows.map(row => `
+      <tr>
+        <td>${formatNumber(row.rank)}</td>
+        <td>${escapeHtml(row.provider)}</td>
+        <td>${escapeHtml(row.hq)}</td>
+        <td>${formatNumber(row.revenue)}</td>
+        <td>${formatNumber(row.teu)}</td>
+        <td>${formatNumber(row.air_tons)}</td>
+      </tr>
+    `).join("");
+  </script>
+  {% endif %}
+</body>
+</html>
+'''
 
 # =========================================================
 # 6. Dashboard Rendering
