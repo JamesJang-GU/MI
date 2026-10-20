@@ -108,28 +108,33 @@ jobs:
 
           echo "Alphaliner index.html verification passed."
 
-      # =====================================================
-      # 8-1. Bunker Price 크롤링 및 정적 파일 생성
-      # 실제 실행 경로: BunkerPrice/bunker_price.py
+       # =====================================================
+      # 8-1. Bunker Price / Crude Oil 크롤링 및 정적 파일 생성
       # =====================================================
       - name: Crawl Bunker Price and generate static dashboard
         env:
           CHROME_BINARY: ${{ steps.setup-chrome.outputs.chrome-path }}
         run: |
-          python "BunkerPrice/bunker_price.py"
+          python "BunkerPrice/bunker_price.py" --build-static --refresh
+
 
       # =====================================================
-      # 8-2. Bunker Price 생성 결과 확인
+      # 8-2. Bunker Price / Crude Oil 생성 결과 확인
       # =====================================================
       - name: Verify Bunker Price generated files
         run: |
           echo "===== BunkerPrice files ====="
           ls -alh "BunkerPrice"
 
-          test -f "BunkerPrice/energy_market_data.db"
+          echo "===== OilPrice files ====="
+          ls -alh "BunkerPrice/OilPrice"
+
+          test -f "BunkerPrice/bunker_price_data.db"
           test -f "BunkerPrice/shipandbunker_vlsfo.csv"
           test -f "BunkerPrice/bunker_forecast.csv"
           test -f "BunkerPrice/index.html"
+          test -f "BunkerPrice/OilPrice/index.html"
+          test -f "BunkerPrice/OilPrice/opinet_oil_prices.csv"
 
           echo "Bunker Price verification passed."
 
@@ -143,7 +148,7 @@ jobs:
 
           test -f "index.html"
 
-      # =====================================================
+           # =====================================================
       # 9. 변경된 DB / CSV / JSON / HTML을 한 번에 Commit & Push
       # =====================================================
       - name: Commit and push dashboard data
@@ -162,11 +167,13 @@ jobs:
           git add "Alphaliner/index.html"
           git add "Alphaliner/alphaliner_crawl.log"
 
-          # Bunker Price 생성 파일
-          git add "BunkerPrice/energy_market_data.db"
+          # Bunker Price 생성 파일 (여기 기존 내용을 아래 6줄로 교체)
+          git add "BunkerPrice/bunker_price_data.db"
           git add "BunkerPrice/shipandbunker_vlsfo.csv"
           git add "BunkerPrice/bunker_forecast.csv"
           git add "BunkerPrice/index.html"
+          git add "BunkerPrice/OilPrice/index.html"
+          git add "BunkerPrice/OilPrice/opinet_oil_prices.csv"
 
           # 메인 포털 생성 파일
           git add "index.html"
