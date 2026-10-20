@@ -1,7 +1,4 @@
 ﻿port,series_name,source_type,timestamp_ms,price,source_url,date,date_str
-Fujairah,Fujairah VLSFO,series.options.data,1697414400000,666.5,https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO,2023-10-16,2023-10-16
-Fujairah,Fujairah VLSFO,series.options.data,1697500800000,661.5,https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO,2023-10-17,2023-10-17
-Fujairah,Fujairah VLSFO,series.options.data,1697587200000,671.5,https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO,2023-10-18,2023-10-18
 Fujairah,Fujairah VLSFO,series.options.data,1697673600000,668.5,https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO,2023-10-19,2023-10-19
 Fujairah,Fujairah VLSFO,series.options.data,1697760000000,674.0,https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO,2023-10-20,2023-10-20
 Fujairah,Fujairah VLSFO,series.options.data,1698019200000,667.0,https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO,2023-10-23,2023-10-23
@@ -784,9 +781,7 @@ Fujairah,Fujairah VLSFO,series.options.data,1791849600000,987.5,https://shipandb
 Fujairah,Fujairah VLSFO,series.options.data,1791936000000,986.0,https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO,2026-10-14,2026-10-14
 Fujairah,Fujairah VLSFO,series.options.data,1792022400000,970.5,https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO,2026-10-15,2026-10-15
 Fujairah,Fujairah VLSFO,series.options.data,1792108800000,967.0,https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO,2026-10-16,2026-10-16
-Rotterdam,Rotterdam VLSFO,series.options.data,1697414400000,622.5,https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO,2023-10-16,2023-10-16
-Rotterdam,Rotterdam VLSFO,series.options.data,1697500800000,619.0,https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO,2023-10-17,2023-10-17
-Rotterdam,Rotterdam VLSFO,series.options.data,1697587200000,619.5,https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO,2023-10-18,2023-10-18
+Fujairah,Fujairah VLSFO,series.options.data,1792368000000,973.0,https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO,2026-10-19,2026-10-19
 Rotterdam,Rotterdam VLSFO,series.options.data,1697673600000,622.5,https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO,2023-10-19,2023-10-19
 Rotterdam,Rotterdam VLSFO,series.options.data,1697760000000,626.5,https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO,2023-10-20,2023-10-20
 Rotterdam,Rotterdam VLSFO,series.options.data,1698019200000,625.5,https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO,2023-10-23,2023-10-23
@@ -1569,9 +1564,7 @@ Rotterdam,Rotterdam VLSFO,series.options.data,1791849600000,736.5,https://shipan
 Rotterdam,Rotterdam VLSFO,series.options.data,1791936000000,742.0,https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO,2026-10-14,2026-10-14
 Rotterdam,Rotterdam VLSFO,series.options.data,1792022400000,735.5,https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO,2026-10-15,2026-10-15
 Rotterdam,Rotterdam VLSFO,series.options.data,1792108800000,740.5,https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO,2026-10-16,2026-10-16
-Singapore,Singapore VLSFO,series.options.data,1697414400000,680.5,https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO,2023-10-16,2023-10-16
-Singapore,Singapore VLSFO,series.options.data,1697500800000,672.5,https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO,2023-10-17,2023-10-17
-Singapore,Singapore VLSFO,series.options.data,1697587200000,683.5,https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO,2023-10-18,2023-10-18
+Rotterdam,Rotterdam VLSFO,series.options.data,1792368000000,755.5,https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO,2026-10-19,2026-10-19
 Singapore,Singapore VLSFO,series.options.data,1697673600000,680.5,https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO,2023-10-19,2023-10-19
 Singapore,Singapore VLSFO,series.options.data,1697760000000,686.0,https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO,2023-10-20,2023-10-20
 Singapore,Singapore VLSFO,series.options.data,1698019200000,681.5,https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO,2023-10-23,2023-10-23
@@ -2354,3 +2347,4 @@ Singapore,Singapore VLSFO,series.options.data,1791849600000,907.0,https://shipan
 Singapore,Singapore VLSFO,series.options.data,1791936000000,917.0,https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO,2026-10-14,2026-10-14
 Singapore,Singapore VLSFO,series.options.data,1792022400000,911.5,https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO,2026-10-15,2026-10-15
 Singapore,Singapore VLSFO,series.options.data,1792108800000,913.5,https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO,2026-10-16,2026-10-16
+Singapore,Singapore VLSFO,series.options.data,1792368000000,934.0,https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO,2026-10-19,2026-10-19

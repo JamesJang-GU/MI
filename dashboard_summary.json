@@ -1,13 +1,13 @@
 {
-  "generated_at": "2026-10-20 02:06:02",
+  "generated_at": "2026-10-20 04:52:12",
   "shipping": {
     "title": "Shipping Index (SCFI / BDI)",
     "path": "Shipping Index/index.html",
     "category": "Sea",
     "scfi_latest": "3,679.6",
     "scfi_date": "2026-10-16",
-    "bdi_latest": "2,511",
-    "bdi_date": "2026-10-16",
+    "bdi_latest": "2,546",
+    "bdi_date": "2026-10-19",
     "status": "Active"
   },
   "alphaliner": {

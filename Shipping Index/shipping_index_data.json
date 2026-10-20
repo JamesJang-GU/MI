@@ -1,6 +1,6 @@
 {
   "status": "success",
-  "generated_at": "2026-10-20 02:05:56",
+  "generated_at": "2026-10-20 04:50:52",
   "source_database": "index_history.db",
   "indexes": {
     "SCFI": {
@@ -77272,7 +77272,7 @@
       ],
       "record_count": 12874,
       "latest_date": "2026-10-16",
-      "last_sync": "2026-10-20 02:05:56"
+      "last_sync": "2026-10-20 04:50:52"
     },
     "BDI": {
       "regions": [
@@ -331417,11 +331417,35 @@
           "REGION": "BSI",
           "VALUE": 1865.0,
           "INDEX_NAME": "BDI"
+        },
+        {
+          "DATE": "2026-10-19",
+          "REGION": "BCI",
+          "VALUE": 3365.0,
+          "INDEX_NAME": "BDI"
+        },
+        {
+          "DATE": "2026-10-19",
+          "REGION": "BDI",
+          "VALUE": 2546.0,
+          "INDEX_NAME": "BDI"
+        },
+        {
+          "DATE": "2026-10-19",
+          "REGION": "BPI",
+          "VALUE": 2286.0,
+          "INDEX_NAME": "BDI"
+        },
+        {
+          "DATE": "2026-10-19",
+          "REGION": "BSI",
+          "VALUE": 1868.0,
+          "INDEX_NAME": "BDI"
         }
       ],
-      "record_count": 42356,
-      "latest_date": "2026-10-16",
-      "last_sync": "2026-10-20 02:05:56"
+      "record_count": 42360,
+      "latest_date": "2026-10-19",
+      "last_sync": "2026-10-20 04:50:52"
     }
   }
 }
