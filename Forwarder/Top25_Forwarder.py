@@ -147,7 +147,6 @@ def save_today_data(df):
         df.to_sql("forwarders", conn, if_exists="append", index=False)
         conn.execute("INSERT INTO run_log (run_at, status, message, row_count) VALUES (?, 'SUCCESS', 'OK', ?)", (now, len(df)))
         conn.commit()
-        # Save CSV History
         hist = pd.read_sql_query("SELECT * FROM forwarders ORDER BY date DESC, rank ASC", conn)
         hist.to_csv(STATIC_CSV_PATH, index=False, encoding="utf-8-sig")
     except Exception as e:
@@ -164,14 +163,12 @@ def get_dashboard_data():
         l_date = latest_res[0]
         prev_res = conn.execute("SELECT MAX(date) FROM forwarders WHERE date < ?", (l_date,)).fetchone()
         p_date = prev_res[0] if prev_res[0] else None
-        
         l_df = pd.read_sql_query("SELECT * FROM forwarders WHERE date = ? ORDER BY rank ASC", conn, params=(l_date,))
         if p_date:
             p_df = pd.read_sql_query("SELECT provider, revenue as prev_rev FROM forwarders WHERE date = ?", conn, params=(p_date,))
             l_df = l_df.merge(p_df, on="provider", how="left")
         else:
             l_df["prev_rev"] = None
-
         data = []
         for _, r in l_df.iterrows():
             delta = calculate_percentage_change(r["revenue"], r.get("prev_rev"))
@@ -184,12 +181,11 @@ def get_dashboard_data():
     finally: conn.close()
 
 # =====================================================
-# 5. Dashboard Generation (Fixed)
+# 5. Dashboard Generation
 # =====================================================
 def build_static_dashboard():
     data, ref_date, comp_date = get_dashboard_data()
     if not data: raise RuntimeError("No data for dashboard.")
-
     rows_html = ""
     for item in data:
         d_val = item["revenue_delta"]
@@ -206,15 +202,14 @@ def build_static_dashboard():
                 {format_compact_number(item['air_tons'])}
                 {format_delta(d_val)}
             """
-
     total_rev = sum(i["revenue"] for i in data)
     total_teu = sum(i["teu"] for i in data)
     total_air = sum(i["air_tons"] for i in data)
     comp_txt = f"VS {comp_date}" if comp_date else "NO PRIOR SNAPSHOT"
-
     html_template = f"""
 
 
+    
     FORWARDER MONITOR | MI Terminal
     
 
@@ -245,13 +240,17 @@ Agg. Revenue
 TEU / Air Tons
 
         
-{rows_html}
+
+            {rows_html}
 Rank	Provider / HQ	Revenue	Ocean TEU	Air Tons	Rev Δ
+
+        
 
         
 Source: A&A / 3PL Logistics. Revenue Δ vs latest prior snapshot.
 
     
+
 
 """
     STATIC_HTML_PATH.write_text(html_template, encoding="utf-8")
@@ -271,7 +270,7 @@ def main():
     try:
         df = fetch_top_25_data(args.url)
         save_today_data(df)
-        if args.build_static or not args.crawl_only:
+        if args.build_static or (not args.crawl_only and not args.once):
             build_static_dashboard()
         log("[SUCCESS] Process completed.")
     except Exception as e:
