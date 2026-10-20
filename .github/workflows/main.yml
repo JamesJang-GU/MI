@@ -55,7 +55,7 @@ jobs:
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-          pip install pandas flask selenium webdriver-manager
+          pip install pandas flask selenium beautifulsoup4 lxml webdriver-manager
 
       # =====================================================
       # 5. Shipping Index 크롤링 및 정적 파일 생성
