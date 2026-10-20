@@ -121,39 +121,47 @@ jobs:
           echo "===== Python files in Forwarder ====="
           find "Forwarder" -maxdepth 3 -type f -iname "*.py" -print
 
-          # A&A Top 25 Dashboard 코드가 담긴 Python 파일을 자동 탐색
+          # A&A Top 25 Dashboard 코드가 담긴 Python 파일 자동 탐색
           FORWARDER_SCRIPT=$(grep -rl \
             --include="*.py" \
             "A&A Top 25 Dashboard" \
             "Forwarder" | head -n 1)
 
           if [ -z "$FORWARDER_SCRIPT" ]; then
-            echo "ERROR: 'A&A Top 25 Dashboard' 문자열이 포함된 Python 파일을 Forwarder 폴더에서 찾지 못했습니다."
+            echo "ERROR: Forwarder Python script was not found."
             exit 1
           fi
 
           echo "Forwarder script found: $FORWARDER_SCRIPT"
-          python "$FORWARDER_SCRIPT" --crawl-only
 
+          # 중요:
+          # --crawl-only는 DB만 갱신하고 index.html을 갱신하지 않을 수 있으므로 사용하지 않음
+          python "$FORWARDER_SCRIPT"
+
+          echo "===== Forwarder output files ====="
+          ls -alh "Forwarder"
 
       # =====================================================
       # 8-2. Forwarder 생성 결과 확인
       # =====================================================
       - name: Verify Forwarder generated files
         run: |
-          echo "===== Forwarder files ====="
+          echo "===== Verify Forwarder files ====="
           ls -alh "Forwarder"
 
           test -f "Forwarder/freight_forwarders_data.db"
           test -f "Forwarder/freight_forwarders_history.csv"
           test -f "Forwarder/index.html"
 
-          # forwarder.py의 최신 정적 HTML 템플릿/CSS 적용 여부 확인
-          grep -qF "A&A Top 25 Global Freight Forwarders" "Forwarder/index.html"
-          grep -qF "background: #07111c;" "Forwarder/index.html"
+          # 새 HTML 파일이 실제로 이번 실행에서 생성됐는지 확인
+          test -s "Forwarder/index.html"
+
+          # 새 Bloomberg / MI Terminal 템플릿 식별 문구로 변경 필요
+          grep -qF "FORWARDER_BLOOMBERG_TEMPLATE_V1" "Forwarder/index.html"
           grep -qF 'id="rankingTableBody"' "Forwarder/index.html"
 
-          echo "Forwarder dashboard verification passed."
+          echo "Forwarder Bloomberg-style dashboard verification passed."
+
 
       # =====================================================
       # 8-3. Bunker Price / Crude Oil 크롤링 및 정적 파일 생성
