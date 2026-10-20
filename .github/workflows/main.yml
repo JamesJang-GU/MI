@@ -55,7 +55,7 @@ jobs:
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-          pip install pandas flask selenium beautifulsoup4 lxml webdriver-manager
+          pip install pandas flask selenium beautifulsoup4 lxml webdriver-manager requests
 
       # =====================================================
       # 5. Shipping Index 크롤링 및 정적 파일 생성
@@ -79,6 +79,8 @@ jobs:
           test -f "Shipping Index/index_history.db"
           test -f "Shipping Index/shipping_index_data.json"
           test -f "Shipping Index/index.html"
+
+          echo "Shipping Index verification passed."
 
       # =====================================================
       # 7. Alphaliner 크롤링 및 정적 파일 생성
@@ -108,8 +110,34 @@ jobs:
 
           echo "Alphaliner index.html verification passed."
 
-       # =====================================================
-      # 8-1. Bunker Price / Crude Oil 크롤링 및 정적 파일 생성
+      # =====================================================
+      # 8-1. Forwarder 크롤링 및 정적 파일 생성
+      # =====================================================
+      - name: Crawl Forwarder and generate static dashboard
+        run: |
+          python "Forwarder/forwarder.py" --crawl-only
+
+      # =====================================================
+      # 8-2. Forwarder 생성 결과 확인
+      # =====================================================
+      - name: Verify Forwarder generated files
+        run: |
+          echo "===== Forwarder files ====="
+          ls -alh "Forwarder"
+
+          test -f "Forwarder/freight_forwarders_data.db"
+          test -f "Forwarder/freight_forwarders_history.csv"
+          test -f "Forwarder/index.html"
+
+          # forwarder.py의 최신 정적 HTML 템플릿/CSS 적용 여부 확인
+          grep -qF "A&A Top 25 Global Freight Forwarders" "Forwarder/index.html"
+          grep -qF "background: #07111c;" "Forwarder/index.html"
+          grep -qF 'id="rankingTableBody"' "Forwarder/index.html"
+
+          echo "Forwarder dashboard verification passed."
+
+      # =====================================================
+      # 8-3. Bunker Price / Crude Oil 크롤링 및 정적 파일 생성
       # =====================================================
       - name: Crawl Bunker Price and generate static dashboard
         env:
@@ -117,9 +145,8 @@ jobs:
         run: |
           python "BunkerPrice/bunker_price.py" --build-static --refresh
 
-
       # =====================================================
-      # 8-2. Bunker Price / Crude Oil 생성 결과 확인
+      # 8-4. Bunker Price / Crude Oil 생성 결과 확인
       # =====================================================
       - name: Verify Bunker Price generated files
         run: |
@@ -153,47 +180,31 @@ jobs:
 
           echo "Bunker Price Bloomberg-style dashboard verification passed."
 
-
       # =====================================================
-      # 8-3. 메인 포털 대시보드(루트 index.html) 생성
+      # 8-5. 메인 포털 대시보드(루트 index.html) 생성
       # =====================================================
       - name: Generate Main Portal Dashboard
         run: |
           echo "===== Generating Portal Dashboard (index.html) ====="
+
           python dashboard_generator.py
 
           test -f "index.html"
+          test -f "dashboard_summary.json"
 
-           # =====================================================
-      # 9. 변경된 DB / CSV / JSON / HTML을 한 번에 Commit & Push
+          echo "Main Portal Dashboard verification passed."
+
+      # =====================================================
+      # 9. 변경된 DB / CSV / JSON / HTML을 Commit & Push
       # =====================================================
       - name: Commit and push dashboard data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Shipping Index 생성 파일
-          git add "Shipping Index/index_history.db"
-          git add "Shipping Index/shipping_index_data.json"
-          git add "Shipping Index/index.html"
-
-          # Alphaliner 생성 파일
-          git add "Alphaliner/alphaliner_data.db"
-          git add "Alphaliner/alphaliner_data.json"
-          git add "Alphaliner/index.html"
-          git add "Alphaliner/alphaliner_crawl.log"
-
-          # Bunker Price 생성 파일 (여기 기존 내용을 아래 6줄로 교체)
-          git add "BunkerPrice/bunker_price_data.db"
-          git add "BunkerPrice/shipandbunker_vlsfo.csv"
-          git add "BunkerPrice/bunker_forecast.csv"
-          git add "BunkerPrice/index.html"
-          git add "BunkerPrice/OilPrice/index.html"
-          git add "BunkerPrice/OilPrice/opinet_oil_prices.csv"
-
-          # 메인 포털 생성 파일
-          git add "index.html"
-          git add "dashboard_summary.json"
+          # 생성된 파일의 추가·수정·삭제를 모두 스테이징
+          # bunker_forecast.csv가 없는 경우에도 오류가 발생하지 않음
+          git add -A
 
           if git diff --cached --quiet; then
             echo "No dashboard changes to commit."
