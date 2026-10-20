@@ -54,7 +54,7 @@ CRAWLERS = [
     },
     {
         "name": "Bunker Price",
-        "path": BASE_DIR / "BunkerPrice" / "Bunker Price.py",
+        "path": BASE_DIR / "BunkerPrice" / "bunker_price.py",
         "args": ["--crawl-only"],  # Flask 서버 실행 방지
         "timeout": 20 * 60,
     },
