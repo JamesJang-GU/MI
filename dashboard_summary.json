@@ -1,13 +1,13 @@
 {
-  "generated_at": "2026-10-19 05:50:56",
+  "generated_at": "2026-10-20 00:37:19",
   "shipping": {
     "title": "Shipping Index (SCFI / BDI)",
     "path": "Shipping Index/index.html",
     "category": "Sea",
-    "scfi_latest": "3,686.6",
-    "scfi_date": "2026-09-24",
-    "bdi_latest": "2,545",
-    "bdi_date": "2026-10-15",
+    "scfi_latest": "3,679.6",
+    "scfi_date": "2026-10-16",
+    "bdi_latest": "2,511",
+    "bdi_date": "2026-10-16",
     "status": "Active"
   },
   "alphaliner": {
@@ -15,9 +15,9 @@
     "path": "Alphaliner/index.html",
     "category": "Sea",
     "latest_date": "2026-10-19",
-    "total_teu": "32,688,538",
-    "total_ships": "0",
-    "top1_operator": "Mediterranean Shg Co",
+    "total_teu": "34,113,905",
+    "total_ships": "6,616",
+    "top1_operator": "Mediterranean Shg Co (21.50%)",
     "status": "Active"
   },
   "bunker": {
@@ -51,7 +51,7 @@
   "macro": {
     "title": "Macro Economies & GSCPI",
     "path": "GDP&Inflation/index.html",
-    "category": "Macro",
+    "category": "Global",
     "latest_date": "-",
     "gscpi_latest": "-",
     "status": "No Data"
