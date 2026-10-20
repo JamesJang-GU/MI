@@ -110,13 +110,13 @@ jobs:
 
       # =====================================================
       # 8-1. Bunker Price 크롤링 및 정적 파일 생성
-      # 실제 실행 경로: BunkerPrice/Bunker Price.py
+      # 실제 실행 경로: BunkerPrice/bunker_price.py
       # =====================================================
       - name: Crawl Bunker Price and generate static dashboard
         env:
           CHROME_BINARY: ${{ steps.setup-chrome.outputs.chrome-path }}
         run: |
-          python "BunkerPrice/Bunker Price.py"
+          python "BunkerPrice/bunker_price.py"
 
       # =====================================================
       # 8-2. Bunker Price 생성 결과 확인
