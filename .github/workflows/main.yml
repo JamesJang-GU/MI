@@ -117,9 +117,20 @@ jobs:
           echo "Alphaliner index.html verification passed."
 
       # =====================================================
+      # [추가] 8-1. 메인 포털 대시보드(루트 index.html) 생성
+      # =====================================================
+      - name: Generate Main Portal Dashboard
+        run: |
+          echo "===== Generating Portal Dashboard (index.html) ====="
+          python dashboard_generator.py
+
+          # 루트 index.html 정상 생성 검증
+          test -f "index.html"
+
+      # =====================================================
       # 9. 변경된 DB / JSON / HTML을 한 번에 Commit & Push
       # =====================================================
-      - name: Commit and push dashboard data
+  - name: Commit and push dashboard data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -135,9 +146,13 @@ jobs:
           git add "Alphaliner/index.html"
           git add "Alphaliner/alphaliner_crawl.log"
 
+          # [추가] 메인 포털 루트 생성 파일
+          git add "index.html"
+          git add "dashboard_summary.json"
+
           if git diff --cached --quiet; then
             echo "No dashboard changes to commit."
           else
-            git commit -m "Auto: update Shipping Index and Alphaliner dashboards"
+            git commit -m "Auto: update Shipping Index, Alphaliner and Portal dashboards"
             git push
           fi
