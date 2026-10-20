@@ -732,7 +732,7 @@ HTML = r'''
       let filtered = rows;
 
       if (searchQuery) {
-        filtered = filtered.filter(r =>
+        filtered = filtered.filter(r => 
           r.provider.toLowerCase().includes(searchQuery) ||
           r.hq.toLowerCase().includes(searchQuery)
         );
