@@ -51,13 +51,20 @@ jobs:
 
       # =====================================================
       # 4. Python 라이브러리 설치
-      # Shipping Index: pandas, selenium
-      # Alphaliner: pandas, flask, selenium, webdriver-manager
       # =====================================================
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-          pip install pandas flask selenium webdriver-manager
+
+          pip install \
+            pandas \
+            flask \
+            selenium \
+            webdriver-manager \
+            beautifulsoup4 \
+            lxml \
+            html5lib \
+            plotly
 
       # =====================================================
       # 5. Shipping Index 크롤링 및 정적 파일 생성
@@ -66,6 +73,7 @@ jobs:
         env:
           KSG_ID: ${{ secrets.KSG_ID }}
           KSG_PW: ${{ secrets.KSG_PW }}
+          CHROME_BINARY: ${{ steps.setup-chrome.outputs.chrome-path }}
         run: |
           python "Shipping Index/ShippingIndex_SCFI&BDI.py"
 
@@ -83,8 +91,6 @@ jobs:
 
       # =====================================================
       # 7. Alphaliner 크롤링 및 정적 파일 생성
-      # alphaliner.py는 --cron 실행 시:
-      # DB → alphaliner_data.json → index.html 순서로 생성
       # =====================================================
       - name: Crawl Alphaliner and generate static dashboard
         env:
@@ -116,42 +122,106 @@ jobs:
           echo "Alphaliner index.html verification passed."
 
       # =====================================================
-      # [추가] 8-1. 메인 포털 대시보드(루트 index.html) 생성
+      # 8-1. Bunker Price / Crude Oil 크롤링 및 정적 파일 생성
+      # --crawl-only:
+      # VLSFO + Forecast + Dubai/Brent/WTI 데이터를 수집하고
+      # Bunker Price/index.html 및 OilPrice/index.html 생성
+      # =====================================================
+      - name: Crawl Bunker Price and Crude Oil dashboards
+        env:
+          CHROME_BINARY: ${{ steps.setup-chrome.outputs.chrome-path }}
+        run: |
+          python "Bunker Price/energy_market_dashboard.py" --crawl-only
+
+      # =====================================================
+      # 8-2. Bunker Price / Crude Oil 생성 결과 확인
+      # =====================================================
+      - name: Verify Bunker Price and Crude Oil generated files
+        run: |
+          echo "===== Bunker Price files ====="
+          ls -alh "Bunker Price"
+
+          echo "===== OilPrice files ====="
+          ls -alh "Bunker Price/OilPrice"
+
+          # Bunker Price 생성 파일
+          test -f "Bunker Price/energy_market_data.db"
+          test -f "Bunker Price/shipandbunker_vlsfo.csv"
+          test -f "Bunker Price/bunker_forecast.csv"
+          test -f "Bunker Price/index.html"
+
+          # Crude Oil 생성 파일
+          test -f "Bunker Price/OilPrice/opinet_oil_prices.csv"
+          test -f "Bunker Price/OilPrice/index.html"
+
+          echo "===== Verify Bunker Price dashboard title ====="
+          grep -qF "VLSFO BUNKER PRICE" "Bunker Price/index.html"
+
+          echo "===== Verify Crude Oil dashboard title ====="
+          grep -qF "INTERNATIONAL CRUDE OIL PRICE" "Bunker Price/OilPrice/index.html"
+
+          echo "Bunker Price and Crude Oil verification passed."
+
+      # =====================================================
+      # 8-3. 메인 포털 대시보드(루트 index.html) 생성
+      # Bunker Price 파일 생성 후 실행
       # =====================================================
       - name: Generate Main Portal Dashboard
         run: |
           echo "===== Generating Portal Dashboard (index.html) ====="
+
           python dashboard_generator.py
 
           # 루트 index.html 정상 생성 검증
           test -f "index.html"
 
       # =====================================================
-      # 9. 변경된 DB / JSON / HTML을 한 번에 Commit & Push
+      # 9. 변경된 DB / CSV / JSON / HTML을 한 번에 Commit & Push
       # =====================================================
       - name: Commit and push dashboard data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          # -------------------------------------------------
           # Shipping Index 생성 파일
+          # -------------------------------------------------
           git add "Shipping Index/index_history.db"
           git add "Shipping Index/shipping_index_data.json"
           git add "Shipping Index/index.html"
 
+          # -------------------------------------------------
           # Alphaliner 생성 파일
+          # -------------------------------------------------
           git add "Alphaliner/alphaliner_data.db"
           git add "Alphaliner/alphaliner_data.json"
           git add "Alphaliner/index.html"
           git add "Alphaliner/alphaliner_crawl.log"
 
-          # [추가] 메인 포털 루트 생성 파일
+          # -------------------------------------------------
+          # Bunker Price / VLSFO 생성 파일
+          # -------------------------------------------------
+          git add "Bunker Price/energy_market_data.db"
+          git add "Bunker Price/shipandbunker_vlsfo.csv"
+          git add "Bunker Price/bunker_forecast.csv"
+          git add "Bunker Price/index.html"
+
+          # -------------------------------------------------
+          # Crude Oil / Opinet 생성 파일
+          # -------------------------------------------------
+          git add "Bunker Price/OilPrice/opinet_oil_prices.csv"
+          git add "Bunker Price/OilPrice/index.html"
+
+          # -------------------------------------------------
+          # 메인 포털 생성 파일
+          # -------------------------------------------------
           git add "index.html"
           git add "dashboard_summary.json"
 
+          # 변경사항이 있는 경우에만 Commit / Push
           if git diff --cached --quiet; then
             echo "No dashboard changes to commit."
           else
-            git commit -m "Auto: update Shipping Index, Alphaliner and Portal dashboards"
+            git commit -m "Auto: update MI dashboards"
             git push
           fi
