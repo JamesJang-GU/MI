@@ -2255,6 +2255,12 @@ document.addEventListener("DOMContentLoaded", render);
     log("[HTML] Product dashboard generated: index.html")
 
 def generate_oil_static_html(oil_long_df, fetched_at):
+    """
+    Generate OilPrice/index.html.
+
+    일반 문자열 템플릿을 사용하여 CSS / JavaScript 중괄호가
+    Python f-string 문법으로 해석되는 문제를 방지한다.
+    """
     oil_records = dataframe_to_records(
         oil_long_df,
         "date",
@@ -2270,14 +2276,14 @@ def generate_oil_static_html(oil_long_df, fetched_at):
         ensure_ascii=False,
     )
 
-    html = f"""<!doctype html>
+    html_template = """<!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MI Terminal | Crude Oil Price</title>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-<style>{TERMINAL_CSS}</style>
+<style>__TERMINAL_CSS__</style>
 </head>
 
 <body>
@@ -2292,7 +2298,7 @@ def generate_oil_static_html(oil_long_df, fetched_at):
 <main class="terminal">
   <section class="status">
     <span>SYSTEM / OPINET DATA ONLINE</span>
-    <span>LAST REFRESH: {fetched_at}</span>
+    <span>LAST REFRESH: __FETCHED_AT__</span>
   </section>
 
   <div class="workspace">
@@ -2315,14 +2321,26 @@ def generate_oil_static_html(oil_long_df, fetched_at):
       <section class="filter-section">
         <span class="label">SELECT SERIES</span>
         <div class="series-list">
-          <label class="series-item"><input type="checkbox" value="Dubai" checked onchange="render()"> Dubai</label>
-          <label class="series-item"><input type="checkbox" value="Brent" checked onchange="render()"> Brent</label>
-          <label class="series-item"><input type="checkbox" value="WTI" checked onchange="render()"> WTI</label>
+          <label class="series-item">
+            <input type="checkbox" value="Dubai" checked onchange="render()"> Dubai
+          </label>
+          <label class="series-item">
+            <input type="checkbox" value="Brent" checked onchange="render()"> Brent
+          </label>
+          <label class="series-item">
+            <input type="checkbox" value="WTI" checked onchange="render()"> WTI
+          </label>
         </div>
       </section>
 
       <section class="filter-section">
-        <button class="btn" style="width:100%;border-color:#34526e;color:#39a8ff;" onclick="downloadCSV()">EXPORT FILTERED CSV</button>
+        <button
+          class="btn"
+          style="width:100%;border-color:#34526e;color:#39a8ff;"
+          onclick="downloadCSV()"
+        >
+          EXPORT FILTERED CSV
+        </button>
       </section>
     </aside>
 
@@ -2330,7 +2348,9 @@ def generate_oil_static_html(oil_long_df, fetched_at):
       <div class="heading">
         <div>
           <h1>INTERNATIONAL CRUDE OIL PRICE</h1>
-          <div class="subtitle">Dubai · Brent · WTI / USD per Barrel</div>
+          <div class="subtitle">
+            Dubai · Brent · WTI / USD per Barrel
+          </div>
         </div>
       </div>
 
@@ -2340,21 +2360,25 @@ def generate_oil_static_html(oil_long_df, fetched_at):
           <span class="kpi-value" id="latestValue">-</span>
           <span class="kpi-sub" id="latestDate">-</span>
         </div>
+
         <div class="kpi">
           <span class="kpi-label">PERIOD<br>AVERAGE</span>
           <span class="kpi-value" id="averageValue">-</span>
           <span class="kpi-sub">USD / BBL</span>
         </div>
+
         <div class="kpi">
           <span class="kpi-label">PERIOD<br>HIGH / LOW</span>
           <span class="kpi-value" id="highLow">-</span>
           <span class="kpi-sub">HIGH / LOW</span>
         </div>
+
         <div class="kpi">
           <span class="kpi-label">CHANGE<br>FIRST → LAST</span>
           <span class="kpi-value" id="changeValue">-</span>
           <span class="kpi-sub" id="changeRate">-</span>
         </div>
+
         <div class="kpi">
           <span class="kpi-label">OBSERVATIONS<br>/ SERIES</span>
           <span class="kpi-value" id="recordCount">-</span>
@@ -2364,7 +2388,9 @@ def generate_oil_static_html(oil_long_df, fetched_at):
 
       <section class="panel">
         <div class="panel-header">
-          <span class="panel-title">CRUDE OIL PRICE HISTORY / RANGE SLIDER ENABLED</span>
+          <span class="panel-title">
+            CRUDE OIL PRICE HISTORY / RANGE SLIDER ENABLED
+          </span>
           <span class="panel-title">USD PER BARREL</span>
         </div>
         <div id="chart"></div>
@@ -2374,114 +2400,585 @@ def generate_oil_static_html(oil_long_df, fetched_at):
 </main>
 
 <script>
-const OIL_DATA = {oil_json};
+const OIL_DATA = __OIL_JSON__;
 
-const COLORS = {{
+const COLORS = {
   Dubai: "#ff8a00",
   Brent: "#39a8ff",
   WTI: "#2bd682"
-}};
+};
 
 let currentRange = null;
 let currentPreset = "ALL";
 
-function selectedTypes() {{
-  return Array.from(document.querySelectorAll(".series-list input:checked"))
-    .map(x => x.value);
-}}
+function selectedTypes() {
+  return Array.from(
+    document.querySelectorAll(".series-list input:checked")
+  ).map(element => element.value);
+}
 
-function formatNumber(value, decimals=2) {{
-  if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
-  return Number(value).toLocaleString("en-US", {{
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals
-  }});
-}}
+function formatNumber(value, decimals = 2) {
+  if (
+    value === null ||
+    value === undefined ||
+    Number.isNaN(Number(value))
+  ) {
+    return "-";
+  }
 
-function bounds() {{
-  const data = [...OIL_DATA].sort((a,b) => a.DATE.localeCompare(b.DATE));
-  return {{
+  return Number(value).toLocaleString(
+    "en-US",
+    {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
+    }
+  );
+}
+
+function bounds() {
+  const data = [...OIL_DATA].sort(
+    (a, b) => a.DATE.localeCompare(b.DATE)
+  );
+
+  return {
     min: data[0]?.DATE || null,
     max: data[data.length - 1]?.DATE || null
-  }};
-}}
+  };
+}
 
-function setPreset(preset) {{
-  const b = bounds();
-  if (!b.max) return;
+function setPreset(preset) {
+  const rangeBounds = bounds();
+
+  if (!rangeBounds.max) {
+    return;
+  }
 
   currentPreset = preset;
 
-  if (preset === "ALL") {{
+  if (preset === "ALL") {
     currentRange = null;
-  }} else if (preset === "YTD") {{
-    currentRange = {{ start: b.max.slice(0,4) + "-01-01", end: b.max }};
-  }} else {{
-    const date = new Date(b.max + "T00:00:00");
-    date.setFullYear(date.getFullYear() - Number(preset.replace("Y","")));
-    currentRange = {{ start: date.toISOString().slice(0,10), end: b.max }};
-  }}
+  } else if (preset === "YTD") {
+    currentRange = {
+      start: rangeBounds.max.slice(0, 4) + "-01-01",
+      end: rangeBounds.max
+    };
+  } else {
+    const date = new Date(rangeBounds.max + "T00:00:00");
 
-  document.querySelectorAll("[data-period]").forEach(btn => {{
-    btn.classList.toggle("active", btn.dataset.period === preset);
-  }});
+    date.setFullYear(
+      date.getFullYear() - Number(preset.replace("Y", ""))
+    );
+
+    currentRange = {
+      start: date.toISOString().slice(0, 10),
+      end: rangeBounds.max
+    };
+  }
+
+  document.querySelectorAll("[data-period]").forEach(button => {
+    button.classList.toggle(
+      "active",
+      button.dataset.period === preset
+    );
+  });
 
   render();
-}}
+}
 
-function filteredData() {{
-  const types = selectedTypes();
+function filteredData() {
+  const selected = selectedTypes();
 
-  return OIL_DATA.filter(row => {{
-    if (!types.includes(row.OIL_TYPE)) return false;
-    if (!currentRange) return true;
-    return row.DATE >= currentRange.start && row.DATE <= currentRange.end;
-  }});
-}}
+  return OIL_DATA.filter(row => {
+    if (!selected.includes(row.OIL_TYPE)) {
+      return false;
+    }
 
-function dailyAverage(rows) {{
-  const grouped = {{}};
+    if (!currentRange) {
+      return true;
+    }
 
-  rows.forEach(row => {{
-    if (!grouped[row.DATE]) grouped[row.DATE] = [];
+    return (
+      row.DATE >= currentRange.start &&
+      row.DATE <= currentRange.end
+    );
+  });
+}
+
+function dailyAverage(rows) {
+  const grouped = {};
+
+  rows.forEach(row => {
+    if (!grouped[row.DATE]) {
+      grouped[row.DATE] = [];
+    }
+
     grouped[row.DATE].push(Number(row.PRICE));
-  }});
+  });
 
-  return Object.keys(grouped).sort().map(date => ({{
-    date,
-    value: grouped[date].reduce((a,b) => a+b, 0) / grouped[date].length
-  }}));
-}}
+  return Object.keys(grouped)
+    .sort()
+    .map(date => ({
+      date: date,
+      value: grouped[date].reduce(
+        (sum, value) => sum + value,
+        0
+      ) / grouped[date].length
+    }));
+}
 
-function updateKpis(rows) {{
-  document.getElementById("recordCount").textContent = rows.length.toLocaleString("en-US");
-  document.getElementById("seriesCount").textContent = selectedTypes().length + " SERIES SELECTED";
+function updateKpis(rows) {
+  document.getElementById("recordCount").textContent =
+    rows.length.toLocaleString("en-US");
 
-  if (!rows.length) {{
-    ["latestValue","averageValue","highLow","changeValue"].forEach(id => {{
+  document.getElementById("seriesCount").textContent =
+    selectedTypes().length + " SERIES SELECTED";
+
+  if (!rows.length) {
+    [
+      "latestValue",
+      "averageValue",
+      "highLow",
+      "changeValue"
+    ].forEach(id => {
       document.getElementById(id).textContent = "-";
-    }});
+    });
+
     document.getElementById("latestDate").textContent = "NO DATA";
     document.getElementById("changeRate").textContent = "-";
+
     return;
-  }}
+  }
 
-  const avgByDay = dailyAverage(rows);
-  const first = avgByDay[0];
-  const latest = avgByDay[avgByDay.length - 1];
+  const averages = dailyAverage(rows);
+  const first = averages[0];
+  const latest = averages[averages.length - 1];
+
   const values = rows.map(row => Number(row.PRICE));
+  const average = values.reduce(
+    (sum, value) => sum + value,
+    0
+  ) / values.length;
 
-  const avg = values.reduce((a,b) => a+b, 0) / values.length;
   const high = Math.max(...values);
   const low = Math.min(...values);
+
   const change = latest.value - first.value;
-  const rate = first.value ? change / first.value * 100 : 0;
+  const rate = first.value
+    ? (change / first.value) * 100
+    : 0;
 
-  document.getElementById("latestValue").textContent = formatNumber(latest.value);
-  document.getElementById("latestDate").textContent = latest.date + " AVG";
-  document.getElementById("averageValue").textContent = formatNumber(avg);
+  document.getElementById("latestValue").textContent =
+    formatNumber(latest.value);
+
+  document.getElementById("latestDate").textContent =
+    latest.date + " AVG";
+
+  document.getElementById("averageValue").textContent =
+    formatNumber(average);
+
   document.getElementById("highLow").textContent =
-    formatNumber(high,0) + " / " + formatNumber(low,0);
+    formatNumber(high, 0) + " / " + formatNumber(low, 0);
 
-  const el = document.getElementById("changeValue");
-  el.textContent = (change > 0 ? "+" : "")
+  const changeElement = document.getElementById("changeValue");
+
+  changeElement.textContent =
+    (change > 0 ? "+" : "") + formatNumber(change);
+
+  changeElement.className =
+    "kpi-value " +
+    (
+      change > 0
+        ? "positive"
+        : change < 0
+          ? "negative"
+          : ""
+    );
+
+  document.getElementById("changeRate").textContent =
+    (rate > 0 ? "+" : "") +
+    formatNumber(rate, 2) +
+    "% / " +
+    first.date +
+    " → " +
+    latest.date;
+}
+
+function renderChart(rows) {
+  const chart = document.getElementById("chart");
+
+  if (!rows.length) {
+    Plotly.purge(chart);
+    chart.innerHTML =
+      '<div class="empty">NO DATA FOR SELECTED CONDITIONS</div>';
+    return;
+  }
+
+  const groups = {};
+
+  rows.forEach(row => {
+    if (!groups[row.OIL_TYPE]) {
+      groups[row.OIL_TYPE] = [];
+    }
+
+    groups[row.OIL_TYPE].push(row);
+  });
+
+  const traces = [];
+
+  Object.entries(groups).forEach(([oilType, data]) => {
+    data.sort((a, b) => a.DATE.localeCompare(b.DATE));
+
+    traces.push({
+      x: data.map(row => row.DATE),
+      y: data.map(row => Number(row.PRICE)),
+      type: "scatter",
+      mode: "lines",
+      name: oilType,
+      line: {
+        color: COLORS[oilType] || "#dce9f5",
+        width: 2.2
+      },
+      hovertemplate:
+        "<b>" + oilType + "</b>" +
+        "<br>DATE: %{x}" +
+        "<br>PRICE: $%{y:,.2f}/bbl" +
+        "<extra></extra>"
+    });
+  });
+
+  const rangeBounds = bounds();
+
+  const chartRange = currentRange
+    ? [currentRange.start, currentRange.end]
+    : [rangeBounds.min, rangeBounds.max];
+
+  const layout = {
+    margin: {
+      l: 72,
+      r: 26,
+      t: 22,
+      b: 68
+    },
+    paper_bgcolor: "#07111c",
+    plot_bgcolor: "#07111c",
+    font: {
+      family: '"Roboto Mono", Consolas, monospace',
+      color: "#c9d6e2",
+      size: 11
+    },
+    hovermode: "x unified",
+    legend: {
+      orientation: "h",
+      x: 0,
+      y: 1.12
+    },
+    xaxis: {
+      type: "date",
+      range: chartRange,
+      gridcolor: "#1f3040",
+      linecolor: "#405568",
+      rangeslider: {
+        visible: true,
+        bgcolor: "#050c14",
+        bordercolor: "#405568",
+        thickness: 0.09
+      }
+    },
+    yaxis: {
+      title: "USD / BBL",
+      gridcolor: "#1f3040",
+      linecolor: "#405568"
+    }
+  };
+
+  Plotly.newPlot(
+    chart,
+    traces,
+    layout,
+    {
+      responsive: true,
+      displaylogo: false,
+      modeBarButtonsToRemove: [
+        "select2d",
+        "lasso2d"
+      ]
+    }
+  );
+
+  chart.on("plotly_relayout", event => {
+    const start = event["xaxis.range[0]"];
+    const end = event["xaxis.range[1]"];
+
+    if (!start || !end) {
+      return;
+    }
+
+    currentRange = {
+      start: String(start).slice(0, 10),
+      end: String(end).slice(0, 10)
+    };
+
+    currentPreset = "CUSTOM";
+
+    document.querySelectorAll("[data-period]").forEach(button => {
+      button.classList.remove("active");
+    });
+
+    render();
+  });
+}
+
+function render() {
+  const rows = filteredData();
+
+  updateKpis(rows);
+  renderChart(rows);
+}
+
+function downloadCSV() {
+  const rows = filteredData();
+
+  if (!rows.length) {
+    alert("다운로드할 데이터가 없습니다.");
+    return;
+  }
+
+  const content = [
+    "DATE,OIL_TYPE,PRICE",
+    ...rows.map(
+      row =>
+        row.DATE +
+        "," +
+        row.OIL_TYPE +
+        "," +
+        row.PRICE
+    )
+  ].join("\\n");
+
+  const blob = new Blob(
+    ["\\uFEFF" + content],
+    {
+      type: "text/csv;charset=utf-8;"
+    }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = "opinet_oil_prices_filtered.csv";
+
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+
+  URL.revokeObjectURL(url);
+}
+
+document.addEventListener("DOMContentLoaded", render);
+</script>
+</body>
+</html>
+"""
+
+    html = (
+        html_template
+        .replace("__TERMINAL_CSS__", TERMINAL_CSS)
+        .replace("__FETCHED_AT__", str(fetched_at))
+        .replace("__OIL_JSON__", oil_json)
+    )
+
+    atomic_write_text(
+        OIL_HTML_PATH,
+        html,
+    )
+
+    log("[HTML] Oil dashboard generated: OilPrice/index.html")
+
+# =============================================================================
+# 9. Static Build Process
+# =============================================================================
+
+def build_static_dashboard(force_refresh=False):
+    """
+    Collect or load all datasets, export CSV files, and generate
+    GitHub Pages-compatible static HTML dashboards.
+    """
+    log("=" * 70)
+    log("[BUILD] Energy Market Dashboard static build started")
+    log(f"[BUILD] Force refresh: {force_refresh}")
+    log("=" * 70)
+
+    product_df, product_fetched_at = load_or_collect_data(
+        force_refresh=force_refresh,
+    )
+
+    forecast_df, forecast_fetched_at, forecast_message = (
+        load_or_collect_forecast_data(
+            force_refresh=force_refresh,
+        )
+    )
+
+    if forecast_message:
+        log(f"[FORECAST] {forecast_message}")
+
+    oil_df, oil_fetched_at = oil_load_or_collect_data(
+        force_refresh=force_refresh,
+    )
+
+    oil_long_df = oil_to_long(oil_df)
+
+    export_static_csv_files(
+        product_df,
+        forecast_df,
+    )
+
+    export_oil_csv(oil_long_df)
+
+    generate_product_static_html(
+        product_df,
+        forecast_df,
+        product_fetched_at,
+    )
+
+    generate_oil_static_html(
+        oil_long_df,
+        oil_fetched_at,
+    )
+
+    log("=" * 70)
+    log("[BUILD] Static dashboard build completed")
+    log(f"[BUILD] Bunker HTML: {BASE_DIR / 'index.html'}")
+    log(f"[BUILD] Oil HTML:    {OIL_HTML_PATH}")
+    log("=" * 70)
+
+# =============================================================================
+# 10. Flask Local Preview
+# =============================================================================
+
+@app.route("/")
+def product_dashboard():
+    html_path = BASE_DIR / "index.html"
+
+    if not html_path.exists():
+        return Response(
+            "Dashboard file not found. Run with --build-static first.",
+            status=404,
+            mimetype="text/plain",
+        )
+
+    return Response(
+        html_path.read_text(encoding="utf-8"),
+        mimetype="text/html",
+    )
+
+@app.route("/OilPrice/")
+@app.route("/OilPrice/index.html")
+def oil_dashboard():
+    if not OIL_HTML_PATH.exists():
+        return Response(
+            "Oil dashboard file not found. Run with --build-static first.",
+            status=404,
+            mimetype="text/plain",
+        )
+
+    return Response(
+        OIL_HTML_PATH.read_text(encoding="utf-8"),
+        mimetype="text/html",
+    )
+
+@app.route("/shipandbunker_vlsfo.csv")
+def product_csv_file():
+    if not PRODUCT_CSV_PATH.exists():
+        return Response("CSV file not found.", status=404)
+
+    return Response(
+        PRODUCT_CSV_PATH.read_text(encoding="utf-8-sig"),
+        mimetype="text/csv",
+    )
+
+@app.route("/bunker_forecast.csv")
+def forecast_csv_file():
+    if not FORECAST_CSV_PATH.exists():
+        return Response("Forecast CSV file not found.", status=404)
+
+    return Response(
+        FORECAST_CSV_PATH.read_text(encoding="utf-8-sig"),
+        mimetype="text/csv",
+    )
+
+@app.route("/OilPrice/opinet_oil_prices.csv")
+def oil_csv_file():
+    if not OIL_CSV_PATH.exists():
+        return Response("Oil CSV file not found.", status=404)
+
+    return Response(
+        OIL_CSV_PATH.read_text(encoding="utf-8-sig"),
+        mimetype="text/csv",
+    )
+
+# =============================================================================
+# 11. CLI Entry Point
+# =============================================================================
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description="Energy Market Dashboard Builder",
+    )
+
+    parser.add_argument(
+        "--build-static",
+        action="store_true",
+        help="Create CSV and HTML files for GitHub Pages.",
+    )
+
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Force Selenium crawling instead of using SQLite cache.",
+    )
+
+    parser.add_argument(
+        "--serve",
+        action="store_true",
+        help="Start a local Flask preview server.",
+    )
+
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Flask preview host. Default: 127.0.0.1",
+    )
+
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=5000,
+        help="Flask preview port. Default: 5000",
+    )
+
+    return parser.parse_args()
+
+def main():
+    args = parse_arguments()
+
+    # 옵션이 없을 때도 GitHub Actions/CLI에서 정적 생성이 되도록 설정
+    if args.build_static or not args.serve:
+        build_static_dashboard(
+            force_refresh=args.refresh,
+        )
+
+    if args.serve:
+        log(
+            f"[SERVER] Local preview: "
+            f"http://{args.host}:{args.port}"
+        )
+
+        app.run(
+            host=args.host,
+            port=args.port,
+            debug=False,
+        )
+
+if __name__ == "__main__":
+    main()
