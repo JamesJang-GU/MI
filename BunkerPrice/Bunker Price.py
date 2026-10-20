@@ -1,6 +1,24 @@
 # -*- coding: utf-8 -*-
+"""
+Energy Market Dashboard
+- VLSFO / Bunker Price: Ship & Bunker
+- Crude Oil: Opinet (Dubai / Brent / WTI)
+- Static GitHub Pages Build Supported
+
+Generated files:
+  Bunker Price/
+  ├── index.html
+  ├── shipandbunker_vlsfo.csv
+  ├── bunker_forecast.csv
+  ├── energy_market_data.db
+  └── OilPrice/
+      ├── index.html
+      └── opinet_oil_prices.csv
+"""
+
 import argparse
 import datetime as dt
+import json
 import os
 import re
 import socket
@@ -19,7 +37,6 @@ warnings.filterwarnings("ignore")
 
 import pandas as pd
 import plotly.graph_objects as go
-import requests
 from bs4 import BeautifulSoup
 from flask import Flask, Response, render_template_string, request
 from selenium import webdriver
@@ -31,25 +48,49 @@ from selenium.webdriver.support.ui import Select, WebDriverWait
 
 app = Flask(__name__)
 
-# =========================================================
-# 1. Configuration & Constants
-# =========================================================
-TAC_BLUE = "#3498db"
-TAC_BLUE_DARK = "#1f3447"
-TAC_GREEN = "#27ae60"
-TAC_GRID = "#d5dde7"
-TAC_TEXT = "#243746"
-TAC_RED = "#c0392b"
-TAC_PURPLE = "#9b59b6"
-TAC_ORANGE = "#f39c12"
+# =============================================================================
+# 1. Configuration
+# =============================================================================
 
+BASE_DIR = Path(__file__).resolve().parent
+
+DB_FILENAME = "energy_market_data.db"
+
+PRODUCT_TABLE = "product_vlsfo"
+FORECAST_TABLE = "bunker_forecast"
+OIL_TABLE = "oil_prices"
+
+PRODUCT_CSV_PATH = BASE_DIR / "shipandbunker_vlsfo.csv"
+FORECAST_CSV_PATH = BASE_DIR / "bunker_forecast.csv"
+
+OIL_DIR = BASE_DIR / "OilPrice"
+OIL_HTML_PATH = OIL_DIR / "index.html"
+OIL_CSV_PATH = OIL_DIR / "opinet_oil_prices.csv"
+
+# Ship & Bunker
 BASE_SOURCE_URL = "https://shipandbunker.com/prices"
-ROTTERDAM_URL = "https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO"
-FUJAIRAH_URL = "https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO"
-SINGAPORE_URL = "https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO"
 
-URLS = [ROTTERDAM_URL, FUJAIRAH_URL, SINGAPORE_URL]
-ALL_PORTS = ["Rotterdam", "Fujairah", "Singapore"]
+ROTTERDAM_URL = (
+    "https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO"
+)
+FUJAIRAH_URL = (
+    "https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO"
+)
+SINGAPORE_URL = (
+    "https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO"
+)
+
+URLS = [
+    ROTTERDAM_URL,
+    FUJAIRAH_URL,
+    SINGAPORE_URL,
+]
+
+ALL_PORTS = [
+    "Rotterdam",
+    "Fujairah",
+    "Singapore",
+]
 
 FORECAST_URLS = {
     "Rotterdam": ROTTERDAM_URL,
@@ -57,27 +98,66 @@ FORECAST_URLS = {
     "Singapore": SINGAPORE_URL,
 }
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_FILENAME = "energy_market_data.db"
-PRODUCT_TABLE = "product_vlsfo"
-FORECAST_TABLE = "bunker_forecast"
+FORECAST_PRODUCT_COLUMNS = [
+    "VLSFO",
+    "MGO",
+    "LSMGO",
+    "HSFO",
+]
 
-# GitHub Pages Paths
-STATIC_PRODUCT_HREF = "./index.html"
-STATIC_OIL_HREF = "../OilPrice/index.html"
+# Opinet
+OIL_SOURCE_URL = "https://www.opinet.co.kr/glopcoilSelect.do"
 
-DATA_CACHE = {"df": None, "fetched_at": None}
-FORECAST_CACHE = {"df": None, "fetched_at": None, "message": ""}
-FORECAST_PRODUCT_COLUMNS = ["VLSFO", "MGO", "LSMGO", "HSFO"]
+OIL_ALL_TYPES = [
+    "Dubai",
+    "Brent",
+    "WTI",
+]
 
-# =========================================================
-# 2. SQLite DB Utilities
-# =========================================================
+OIL_DEFAULT_START = "2008-01-02"
+
+# Terminal Colors
+TERM_BG = "#02060b"
+TERM_PANEL = "#07111c"
+TERM_PANEL_2 = "#0b1825"
+TERM_BORDER = "#23394d"
+TERM_TEXT = "#dce9f5"
+TERM_MUTED = "#8aa0b5"
+TERM_ORANGE = "#ff8a00"
+TERM_BLUE = "#39a8ff"
+TERM_GREEN = "#2bd682"
+TERM_RED = "#ff5c5c"
+TERM_PURPLE = "#be7bff"
+
+DATA_CACHE = {
+    "df": None,
+    "fetched_at": None,
+}
+
+FORECAST_CACHE = {
+    "df": None,
+    "fetched_at": None,
+    "message": "",
+}
+
+OIL_CACHE = {
+    "df": None,
+    "fetched_at": None,
+}
+
+def log(message):
+    print(message, flush=True)
+
+# =============================================================================
+# 2. SQLite Utilities
+# =============================================================================
+
 def get_db_path():
     return BASE_DIR / DB_FILENAME
 
 def get_db_conn():
     conn = sqlite3.connect(get_db_path())
+
     conn.execute("""
         CREATE TABLE IF NOT EXISTS data_meta (
             dataset TEXT PRIMARY KEY,
@@ -85,24 +165,34 @@ def get_db_conn():
             updated_at TEXT
         )
     """)
+
     conn.commit()
     return conn
 
 def db_table_exists(table_name):
     conn = get_db_conn()
+
     try:
-        cur = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        row = conn.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type='table' AND name=?
+            """,
             (table_name,),
-        )
-        return cur.fetchone() is not None
+        ).fetchone()
+
+        return row is not None
+
     finally:
         conn.close()
 
 def set_dataset_meta(dataset, fetched_at=None):
     fetched_at = fetched_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     conn = get_db_conn()
+
     try:
         conn.execute("""
             INSERT INTO data_meta(dataset, fetched_at, updated_at)
@@ -111,105 +201,233 @@ def set_dataset_meta(dataset, fetched_at=None):
                 fetched_at=excluded.fetched_at,
                 updated_at=excluded.updated_at
         """, (dataset, fetched_at, updated_at))
+
         conn.commit()
+
     finally:
         conn.close()
 
 def get_dataset_meta(dataset):
     conn = get_db_conn()
+
     try:
         row = conn.execute(
-            "SELECT fetched_at FROM data_meta WHERE dataset=?", (dataset,)
+            "SELECT fetched_at FROM data_meta WHERE dataset=?",
+            (dataset,),
         ).fetchone()
+
         return row[0] if row and row[0] else "-"
+
     finally:
         conn.close()
 
 def save_dataframe_to_db(df, table_name, dataset_name):
     if df is None or df.empty:
         return "-"
+
     out = df.copy()
-    for c in out.columns:
-        if pd.api.types.is_datetime64_any_dtype(out[c]):
-            out[c] = pd.to_datetime(out[c], errors="coerce").dt.strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
+
+    for column in out.columns:
+        if pd.api.types.is_datetime64_any_dtype(out[column]):
+            out[column] = pd.to_datetime(
+                out[column],
+                errors="coerce",
+            ).dt.strftime("%Y-%m-%d %H:%M:%S")
+
     fetched_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     conn = get_db_conn()
+
     try:
-        out.to_sql(table_name, conn, if_exists="replace", index=False)
+        out.to_sql(
+            table_name,
+            conn,
+            if_exists="replace",
+            index=False,
+        )
+
         conn.commit()
+
     finally:
         conn.close()
+
     set_dataset_meta(dataset_name, fetched_at)
+
+    log(
+        f"[DB] Saved / table={table_name} / rows={len(out):,}"
+    )
+
     return fetched_at
 
 def load_dataframe_from_db(table_name):
     if not db_table_exists(table_name):
         return pd.DataFrame()
+
     conn = get_db_conn()
+
     try:
-        return pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
+        return pd.read_sql_query(
+            f"SELECT * FROM {table_name}",
+            conn,
+        )
+
     finally:
         conn.close()
 
-# =========================================================
-# 3. Selenium Crawler Logic
-# =========================================================
+def atomic_write_text(path, content):
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+
+    temp_path.write_text(content, encoding="utf-8")
+    temp_path.replace(path)
+
+# =============================================================================
+# 3. Selenium Driver
+# =============================================================================
+
 def make_driver(headless=True):
     options = Options()
+
     if headless:
         options.add_argument("--headless=new")
         options.add_argument("--window-size=1600,1000")
+    else:
+        options.add_argument("--start-maximized")
+
     options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-popup-blocking")
+    options.add_argument("--disable-notifications")
+
     return webdriver.Chrome(options=options)
+
+# =============================================================================
+# 4. Ship & Bunker / VLSFO Crawler
+# =============================================================================
 
 def try_click_all_for_vlsfo(driver):
     return driver.execute_script("""
-        if (typeof Highcharts === 'undefined' || !Highcharts.charts) return {ok:false};
+        if (typeof Highcharts === 'undefined' || !Highcharts.charts) {
+            return {ok:false};
+        }
+
         for (let i = 0; i < Highcharts.charts.length; i++) {
             const chart = Highcharts.charts[i];
-            if (!chart || !chart.series || chart.series.length === 0) continue;
-            const hasVLSFO = chart.series.some(s => s && s.name && s.name.includes('VLSFO'));
+
+            if (!chart || !chart.series || chart.series.length === 0) {
+                continue;
+            }
+
+            const hasVLSFO = chart.series.some(
+                series => series && series.name && series.name.includes('VLSFO')
+            );
+
             if (!hasVLSFO) continue;
-            if (!chart.rangeSelector || !chart.rangeSelector.buttons || chart.rangeSelector.buttons.length === 0) return {ok:false};
-            const lastIndex = chart.rangeSelector.buttons.length - 1;
+
+            if (
+                !chart.rangeSelector ||
+                !chart.rangeSelector.buttons ||
+                chart.rangeSelector.buttons.length === 0
+            ) {
+                return {ok:false};
+            }
+
             try {
+                const lastIndex = chart.rangeSelector.buttons.length - 1;
                 chart.rangeSelector.clickButton(lastIndex, true);
-                return {ok:true, chartIndex:i};
-            } catch(e) { return {ok:false}; }
+
+                return {
+                    ok: true,
+                    chartIndex: i
+                };
+
+            } catch(e) {
+                return {ok:false};
+            }
         }
+
         return {ok:false};
     """)
 
 def extract_vlsfo_full_data(driver):
     return driver.execute_script("""
-        if (typeof Highcharts === 'undefined' || !Highcharts.charts) return [];
+        if (typeof Highcharts === 'undefined' || !Highcharts.charts) {
+            return [];
+        }
+
         function normalizePoint(pt) {
-            if (Array.isArray(pt) && pt.length >= 2) return { x: pt[0], y: pt[1] };
-            if (pt && typeof pt === 'object' && pt.x !== undefined && pt.y !== undefined) return { x: pt.x, y: pt.y };
+            if (Array.isArray(pt) && pt.length >= 2) {
+                return { x: pt[0], y: pt[1] };
+            }
+
+            if (
+                pt &&
+                typeof pt === 'object' &&
+                pt.x !== undefined &&
+                pt.y !== undefined
+            ) {
+                return { x: pt.x, y: pt.y };
+            }
+
             return null;
         }
+
         let results = [];
+
         Highcharts.charts.forEach((chart, chartIndex) => {
-            if (!chart || !chart.series || chart.series.length === 0) return;
+            if (!chart || !chart.series || chart.series.length === 0) {
+                return;
+            }
+
             chart.series.forEach((series, seriesIndex) => {
-                if (!series || !series.name || !series.name.includes('VLSFO')) return;
-                let rawPoints = [];
-                let sourceType = 'none';
-                if (series.options && Array.isArray(series.options.data) && series.options.data.length > 0) {
-                    rawPoints = series.options.data;
-                    sourceType = 'series.options.data';
-                } else if (series.userOptions && Array.isArray(series.userOptions.data) && series.userOptions.data.length > 0) {
-                    rawPoints = series.userOptions.data;
-                    sourceType = 'series.userOptions.data';
-                } else if (Array.isArray(series.data) && series.data.length > 0) {
-                    rawPoints = series.data;
-                    sourceType = 'series.data';
+                if (
+                    !series ||
+                    !series.name ||
+                    !series.name.includes('VLSFO')
+                ) {
+                    return;
                 }
-                const points = rawPoints.map(normalizePoint).filter(p => p && p.x !== undefined && p.y !== undefined && p.y !== null);
+
+                let rawPoints = [];
+                let sourceType = "none";
+
+                if (
+                    series.options &&
+                    Array.isArray(series.options.data) &&
+                    series.options.data.length > 0
+                ) {
+                    rawPoints = series.options.data;
+                    sourceType = "series.options.data";
+
+                } else if (
+                    series.userOptions &&
+                    Array.isArray(series.userOptions.data) &&
+                    series.userOptions.data.length > 0
+                ) {
+                    rawPoints = series.userOptions.data;
+                    sourceType = "series.userOptions.data";
+
+                } else if (
+                    Array.isArray(series.data) &&
+                    series.data.length > 0
+                ) {
+                    rawPoints = series.data;
+                    sourceType = "series.data";
+                }
+
+                const points = rawPoints
+                    .map(normalizePoint)
+                    .filter(
+                        point =>
+                            point &&
+                            point.x !== undefined &&
+                            point.y !== undefined &&
+                            point.y !== null
+                    );
+
                 results.push({
                     chartIndex: chartIndex,
                     seriesIndex: seriesIndex,
@@ -220,1074 +438,2050 @@ def extract_vlsfo_full_data(driver):
                 });
             });
         });
+
         return results;
     """)
 
-def clean_forecast_number(value):
-    s = str(value).strip()
-    if not s or s.lower() == "nan" or s == "-":
-        return None
-    s = s.replace(",", "")
-    s = re.sub(r"[^0-9.+-]", "", s)
-    if not s or s in ["+", "-", "."]:
-        return None
-    try:
-        return float(s)
-    except Exception:
-        return None
-
-def forecast_period_to_date(period):
-    s = str(period or "").strip()
-    m = re.search(r"(20\d{2})\s*Q([1-4])", s, flags=re.I)
-    if not m:
-        return pd.NaT
-    year = int(m.group(1))
-    q = int(m.group(2))
-    month_day = {1: (3, 31), 2: (6, 30), 3: (9, 30), 4: (12, 31)}[q]
-    return pd.Timestamp(year=year, month=month_day[0], day=month_day[1])
-
-def normalize_forecast_table(raw_df):
-    if raw_df is None or raw_df.empty:
-        return pd.DataFrame()
-    df = raw_df.copy()
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [
-            " ".join([str(x) for x in c if str(x) != "nan"]).strip()
-            for c in df.columns
-        ]
-    else:
-        df.columns = [str(c).strip() for c in df.columns]
-    df = df.dropna(how="all").dropna(axis=1, how="all")
-    if df.empty:
-        return pd.DataFrame()
-    col_text = " ".join(map(str, df.columns)).upper()
-    first_row_text = (
-        " ".join(map(str, df.iloc[0].tolist())).upper() if len(df) else ""
-    )
-    if not any(c in col_text for c in FORECAST_PRODUCT_COLUMNS) and any(
-        c in first_row_text for c in FORECAST_PRODUCT_COLUMNS
-    ):
-        df.columns = [str(x).strip() for x in df.iloc[0].tolist()]
-        df = df.iloc[1:].reset_index(drop=True)
-        df = df.dropna(how="all").dropna(axis=1, how="all")
-    seen = {}
-    unique_cols = []
-    for c in df.columns:
-        base = str(c).strip() or "COL"
-        n = seen.get(base, 0)
-        unique_cols.append(base if n == 0 else f"{base}_{n}")
-        seen[base] = n + 1
-    df.columns = unique_cols
-    product_positions = {}
-    for idx, c in enumerate(df.columns):
-        u = str(c).strip().upper()
-        for prod in FORECAST_PRODUCT_COLUMNS:
-            if u == prod or prod in u.split():
-                product_positions[prod] = idx
-    if not product_positions:
-        for col_idx in range(df.shape[1]):
-            sample_text = " ".join(
-                df.iloc[:3, col_idx].astype(str).tolist()
-            ).upper()
-            for prod in FORECAST_PRODUCT_COLUMNS:
-                if prod in sample_text:
-                    product_positions[prod] = col_idx
-    if not product_positions:
-        return pd.DataFrame()
-    first_product_pos = min(product_positions.values())
-    period_pos = max(0, first_product_pos - 1)
-    for col_idx in range(df.shape[1]):
-        if col_idx in product_positions.values():
-            continue
-        sample = df.iloc[:, col_idx].astype(str)
-        if sample.str.contains(
-            r"20\d{2}|\d{2}\s*Q[1-4]|Q[1-4]|Full Year",
-            case=False,
-            regex=True,
-            na=False,
-        ).any():
-            period_pos = col_idx
-            break
-    out = pd.DataFrame()
-    out["Period"] = df.iloc[:, period_pos].astype(str).str.strip()
-    for prod in FORECAST_PRODUCT_COLUMNS:
-        pos = product_positions.get(prod)
-        if pos is None or pos >= df.shape[1]:
-            out[prod] = None
-        else:
-            out[prod] = df.iloc[:, pos].apply(clean_forecast_number)
-    out = out[
-        out["Period"]
-        .astype(str)
-        .str.contains(r"20\d{2}|Q[1-4]|Full Year", case=False, regex=True, na=False)
-    ]
-    out = out.dropna(subset=FORECAST_PRODUCT_COLUMNS, how="all")
-    if out.empty:
-        return pd.DataFrame()
-    out["graph_date"] = out["Period"].apply(forecast_period_to_date)
-    out["source_url"] = ""
-    return out[
-        ["Period"] + FORECAST_PRODUCT_COLUMNS + ["graph_date", "source_url"]
-    ].reset_index(drop=True)
-
-def parse_bunker_forecast_from_html(html, port_name):
-    errors = []
-    try:
-        tables = pd.read_html(StringIO(html))
-        best = pd.DataFrame()
-        best_score = -1
-        for table in tables:
-            normalized = normalize_forecast_table(table)
-            if normalized.empty:
-                continue
-            text = (
-                " ".join(map(str, table.columns))
-                + " "
-                + " ".join(map(str, table.head(3).values.ravel()))
-            )
-            score = 0
-            for key in FORECAST_PRODUCT_COLUMNS:
-                if key in text.upper():
-                    score += 5
-            if (
-                normalized["Period"]
-                .astype(str)
-                .str.contains("Full Year", case=False, na=False)
-                .any()
-            ):
-                score += 3
-            if normalized["graph_date"].notna().any():
-                score += 3
-            if score > best_score:
-                best_score = score
-                best = normalized
-        if not best.empty:
-            best["port"] = port_name
-            return best
-    except Exception as e:
-        errors.append(f"pandas: {e}")
-    try:
-        soup = BeautifulSoup(html, "html.parser")
-        heading_patterns = [
-            rf"{re.escape(port_name)}\s+Bunker\s+Price\s+Forecast",
-            r"Bunker\s+Price\s+Forecast",
-        ]
-        heading = None
-        for pat in heading_patterns:
-            heading = soup.find(string=re.compile(pat, re.I))
-            if heading:
-                break
-        search_root = heading.parent if heading else soup
-        table = None
-        cur = search_root
-        for _ in range(10):
-            if cur is None:
-                break
-            table = cur.find_next("table")
-            if table:
-                break
-            cur = cur.parent
-        if table is None:
-            table = soup.find("table")
-        if table:
-            rows = []
-            for tr in table.find_all("tr"):
-                cells = [
-                    c.get_text(" ", strip=True)
-                    for c in tr.find_all(["th", "td"])
-                ]
-                if cells:
-                    rows.append(cells)
-            if rows:
-                max_len = max(len(r) for r in rows)
-                rows = [r + [""] * (max_len - len(r)) for r in rows]
-                raw = pd.DataFrame(rows)
-                normalized = normalize_forecast_table(raw)
-                if not normalized.empty:
-                    normalized["port"] = port_name
-                    return normalized
-    except Exception as e:
-        errors.append(f"bs4: {e}")
-    raise RuntimeError(
-        f"{port_name} Forecast Parse Error: " + " | ".join(errors)
-    )
-
-def collect_all_forecast_data(existing_driver=None):
-    owns_driver = existing_driver is None
-    driver = existing_driver or make_driver()
-    frames = []
-    errors = []
-    try:
-        for port_name, url in FORECAST_URLS.items():
-            try:
-                print(f"[INFO] Forecast 접속: {port_name}", flush=True)
-                driver.get(url)
-                time.sleep(4)
-                html = driver.page_source
-                forecast_df = parse_bunker_forecast_from_html(
-                    html, port_name=port_name
-                )
-                forecast_df["port"] = port_name
-                forecast_df["source_url"] = url
-                frames.append(forecast_df)
-            except Exception as e:
-                errors.append(f"{port_name}: {e}")
-    finally:
-        if owns_driver:
-            driver.quit()
-    if frames:
-        out = pd.concat(frames, ignore_index=True, sort=False)
-        save_dataframe_to_db(out, FORECAST_TABLE, FORECAST_TABLE)
-        return out, " | ".join(errors)
-    else:
-        raise RuntimeError("Forecast 수집 실패: " + " | ".join(errors))
-
-def load_or_collect_forecast_data(force_refresh=False):
-    if (not force_refresh) and FORECAST_CACHE["df"] is not None:
-        return (
-            FORECAST_CACHE["df"].copy(),
-            FORECAST_CACHE["fetched_at"],
-            FORECAST_CACHE.get("message", ""),
-        )
-    db_df, db_fetched_at = pd.DataFrame(), "-"
-    try:
-        db_df = load_dataframe_from_db(FORECAST_TABLE)
-        if not db_df.empty:
-            for c in FORECAST_PRODUCT_COLUMNS:
-                if c in db_df.columns:
-                    db_df[c] = pd.to_numeric(db_df[c], errors="coerce")
-            if "graph_date" in db_df.columns:
-                db_df["graph_date"] = pd.to_datetime(
-                    db_df["graph_date"], errors="coerce"
-                )
-            if "port" not in db_df.columns:
-                db_df["port"] = "Rotterdam"
-            db_fetched_at = get_dataset_meta(FORECAST_TABLE)
-    except Exception as e:
-        print(f"[WARN] DB Load Fail: {e}", flush=True)
-    if not force_refresh and not db_df.empty:
-        (
-            FORECAST_CACHE["df"],
-            FORECAST_CACHE["fetched_at"],
-            FORECAST_CACHE["message"],
-        ) = (db_df.copy(), db_fetched_at, "")
-        return db_df, db_fetched_at, ""
-    try:
-        df, msg = collect_all_forecast_data()
-        fetched_at = get_dataset_meta(FORECAST_TABLE)
-        if fetched_at == "-":
-            fetched_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        (
-            FORECAST_CACHE["df"],
-            FORECAST_CACHE["fetched_at"],
-            FORECAST_CACHE["message"],
-        ) = (df.copy(), fetched_at, (f"Error: {msg}" if msg else ""))
-        return df, fetched_at, (f"Error: {msg}" if msg else "")
-    except Exception as e:
-        if not db_df.empty:
-            (
-                FORECAST_CACHE["df"],
-                FORECAST_CACHE["fetched_at"],
-                FORECAST_CACHE["message"],
-            ) = (db_df.copy(), db_fetched_at, str(e))
-            return db_df, db_fetched_at, str(e)
-        empty = pd.DataFrame(
-            columns=["port", "Period"]
-            + FORECAST_PRODUCT_COLUMNS
-            + ["graph_date", "source_url"]
-        )
-        (
-            FORECAST_CACHE["df"],
-            FORECAST_CACHE["fetched_at"],
-            FORECAST_CACHE["message"],
-        ) = (empty.copy(), "-", str(e))
-        return empty, "-", str(e)
-
 def collect_all_data():
+    log("[VLSFO] Ship & Bunker crawl started")
+
     driver = make_driver()
     all_rows = []
+
     try:
         for url in URLS:
-            print(f"[INFO] VLSFO 접속: {url}", flush=True)
+            log(f"[VLSFO] Accessing: {url}")
+
             driver.get(url)
-            time.sleep(4)
+            time.sleep(5)
+
             try_click_all_for_vlsfo(driver)
             time.sleep(2)
+
             extracted = extract_vlsfo_full_data(driver)
+
             for item in extracted:
-                port = item["seriesName"].replace(" VLSFO", "").strip()
-                for p in item["data"]:
-                    if (
-                        p is None
-                        or p.get("x") is None
-                        or p.get("y") is None
-                    ):
+                port = item["seriesName"].replace(
+                    " VLSFO",
+                    "",
+                ).strip()
+
+                for point in item["data"]:
+                    x = point.get("x")
+                    y = point.get("y")
+
+                    if x is None or y is None:
                         continue
+
                     all_rows.append({
                         "port": port,
                         "series_name": item["seriesName"],
                         "source_type": item["sourceType"],
-                        "timestamp_ms": p["x"],
-                        "price": p["y"],
+                        "timestamp_ms": x,
+                        "price": y,
                         "source_url": url,
                     })
+
     finally:
-        driver.quit()
+        try:
+            driver.quit()
+        except Exception:
+            pass
+
     df = pd.DataFrame(all_rows)
+
     if df.empty:
-        return df
-    df["timestamp_ms"] = pd.to_numeric(df["timestamp_ms"], errors="coerce")
-    df["price"] = pd.to_numeric(df["price"], errors="coerce")
-    df = df.dropna(subset=["timestamp_ms", "price"])
-    df["date"] = pd.to_datetime(df["timestamp_ms"], unit="ms", errors="coerce")
+        raise RuntimeError("No VLSFO data collected.")
+
+    df["timestamp_ms"] = pd.to_numeric(
+        df["timestamp_ms"],
+        errors="coerce",
+    )
+
+    df["price"] = pd.to_numeric(
+        df["price"],
+        errors="coerce",
+    )
+
+    df = df.dropna(
+        subset=["timestamp_ms", "price"],
+    )
+
+    df["date"] = pd.to_datetime(
+        df["timestamp_ms"],
+        unit="ms",
+        errors="coerce",
+    )
+
     df = df.dropna(subset=["date"])
+
     df["date_str"] = df["date"].dt.strftime("%Y-%m-%d")
+
     df = (
-        df.drop_duplicates(subset=["port", "date_str", "price"])
+        df.drop_duplicates(
+            subset=["port", "date_str", "price"],
+        )
         .sort_values(["port", "date"])
         .reset_index(drop=True)
     )
-    save_dataframe_to_db(df, PRODUCT_TABLE, PRODUCT_TABLE)
+
+    save_dataframe_to_db(
+        df,
+        PRODUCT_TABLE,
+        PRODUCT_TABLE,
+    )
+
     return df
 
 def load_or_collect_data(force_refresh=False):
-    if (not force_refresh) and DATA_CACHE["df"] is not None:
-        return DATA_CACHE["df"].copy(), DATA_CACHE["fetched_at"]
-    db_df, db_fetched_at = pd.DataFrame(), "-"
+    if not force_refresh and DATA_CACHE["df"] is not None:
+        return (
+            DATA_CACHE["df"].copy(),
+            DATA_CACHE["fetched_at"],
+        )
+
+    db_df = pd.DataFrame()
+    db_fetched_at = "-"
+
     try:
         db_df = load_dataframe_from_db(PRODUCT_TABLE)
+
         if not db_df.empty:
-            db_df["date"] = pd.to_datetime(db_df["date"], errors="coerce")
-            db_df = db_df.dropna(subset=["date"])
-            if "price" in db_df.columns:
-                db_df["price"] = pd.to_numeric(db_df["price"], errors="coerce")
-            if "timestamp_ms" in db_df.columns:
-                db_df["timestamp_ms"] = pd.to_numeric(
-                    db_df["timestamp_ms"], errors="coerce"
-                )
+            db_df["date"] = pd.to_datetime(
+                db_df["date"],
+                errors="coerce",
+            )
+
+            db_df["price"] = pd.to_numeric(
+                db_df["price"],
+                errors="coerce",
+            )
+
+            db_df = db_df.dropna(subset=["date", "price"])
+
             db_fetched_at = get_dataset_meta(PRODUCT_TABLE)
-    except Exception as e:
-        print(f"[WARN] DB Load Fail: {e}", flush=True)
+
+    except Exception as error:
+        log(f"[VLSFO] DB Load Warning: {error}")
+
     if not force_refresh and not db_df.empty:
-        DATA_CACHE["df"], DATA_CACHE["fetched_at"] = db_df.copy(), db_fetched_at
+        DATA_CACHE["df"] = db_df.copy()
+        DATA_CACHE["fetched_at"] = db_fetched_at
+
         return db_df, db_fetched_at
+
     try:
         fresh_df = collect_all_data()
-        if fresh_df.empty:
-            raise RuntimeError("No VLSFO data collected.")
+
         fetched_at = get_dataset_meta(PRODUCT_TABLE)
-        if fetched_at == "-":
-            fetched_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        DATA_CACHE["df"], DATA_CACHE["fetched_at"] = fresh_df.copy(), fetched_at
+
+        DATA_CACHE["df"] = fresh_df.copy()
+        DATA_CACHE["fetched_at"] = fetched_at
+
         return fresh_df, fetched_at
-    except Exception as e:
+
+    except Exception as error:
         if not db_df.empty:
-            DATA_CACHE["df"], DATA_CACHE["fetched_at"] = (
-                db_df.copy(),
-                db_fetched_at,
+            log(
+                f"[VLSFO] Crawl failed. Using cached DB data: {error}"
             )
+
+            DATA_CACHE["df"] = db_df.copy()
+            DATA_CACHE["fetched_at"] = db_fetched_at
+
             return db_df, db_fetched_at
-        raise e
 
-# =========================================================
-# 4. Charting & Dashboard Building
-# =========================================================
-def filter_df(df, ports=None, start_date=None, end_date=None):
-    if df.empty:
-        return df.copy()
-    out = df.copy()
-    if ports:
-        out = out[out["port"].isin(ports)]
-    if start_date:
-        out = out[out["date"] >= pd.to_datetime(start_date)]
-    if end_date:
-        out = out[out["date"] <= pd.to_datetime(end_date)]
-    return out.sort_values(["port", "date"]).reset_index(drop=True)
+        raise error
 
-def add_features(df, ma_mode="quarterly"):
-    if df.empty:
-        return df.copy()
-    out = df.copy().sort_values(["port", "date"])
-    window_map = {"quarterly": 90, "semiannual": 180, "annual": 365}
-    if ma_mode in window_map:
-        out["ma"] = out.groupby("port")["price"].transform(
-            lambda s: s.rolling(window_map[ma_mode], min_periods=1).mean()
-        )
+# =============================================================================
+# 5. Bunker Forecast Crawler
+# =============================================================================
+
+def clean_forecast_number(value):
+    text = str(value).strip()
+
+    if not text or text.lower() == "nan" or text == "-":
+        return None
+
+    text = text.replace(",", "")
+    text = re.sub(r"[^0-9.+-]", "", text)
+
+    if not text or text in ["+", "-", "."]:
+        return None
+
+    try:
+        return float(text)
+    except Exception:
+        return None
+
+def forecast_period_to_date(period):
+    text = str(period or "").strip()
+
+    match = re.search(
+        r"(20\d{2})\s*Q([1-4])",
+        text,
+        flags=re.I,
+    )
+
+    if not match:
+        return pd.NaT
+
+    year = int(match.group(1))
+    quarter = int(match.group(2))
+
+    month_day = {
+        1: (3, 31),
+        2: (6, 30),
+        3: (9, 30),
+        4: (12, 31),
+    }[quarter]
+
+    return pd.Timestamp(
+        year=year,
+        month=month_day[0],
+        day=month_day[1],
+    )
+
+def normalize_forecast_table(raw_df):
+    if raw_df is None or raw_df.empty:
+        return pd.DataFrame()
+
+    df = raw_df.copy()
+
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [
+            " ".join(
+                [
+                    str(item)
+                    for item in column
+                    if str(item) != "nan"
+                ]
+            ).strip()
+            for column in df.columns
+        ]
     else:
-        out["ma"] = pd.NA
-    out["daily_change"] = out.groupby("port")["price"].diff()
-    return out
+        df.columns = [
+            str(column).strip()
+            for column in df.columns
+        ]
 
-def add_forecast_to_chart_df(
-    df, forecast_df, selected_ports=None, start_date=None, end_date=None
-):
+    df = df.dropna(how="all").dropna(axis=1, how="all")
+
+    if df.empty:
+        return pd.DataFrame()
+
+    column_text = " ".join(
+        map(str, df.columns)
+    ).upper()
+
+    first_row_text = (
+        " ".join(map(str, df.iloc[0].tolist())).upper()
+        if len(df)
+        else ""
+    )
+
     if (
-        forecast_df is None
-        or forecast_df.empty
-        or "VLSFO" not in forecast_df.columns
-    ):
-        return df
-    fc = forecast_df.copy()
-    if "port" not in fc.columns:
-        fc["port"] = "Rotterdam"
-    fc["graph_date"] = pd.to_datetime(fc["graph_date"], errors="coerce")
-    fc = fc.dropna(subset=["graph_date", "VLSFO", "port"])
-    if selected_ports:
-        fc = fc[fc["port"].isin(selected_ports)]
-    if start_date:
-        fc = fc[fc["graph_date"] >= pd.to_datetime(start_date)]
-    if end_date:
-        fc = fc[fc["graph_date"] <= pd.to_datetime(end_date)]
-    if fc.empty:
-        return df
-    rows = pd.DataFrame({
-        "port": fc["port"].astype(str),
-        "series_name": fc["port"].astype(str) + " VLSFO Forecast",
-        "source_type": "forecast",
-        "timestamp_ms": (fc["graph_date"].astype("int64") // 10**6),
-        "price": fc["VLSFO"].astype(float),
-        "source_url": fc.get("source_url", ""),
-        "date": fc["graph_date"],
-        "date_str": fc["graph_date"].dt.strftime("%Y-%m-%d"),
-        "is_forecast": True,
-    })
-    base = df.copy()
-    if "is_forecast" not in base.columns:
-        base["is_forecast"] = False
-    combined = pd.concat([base, rows], ignore_index=True, sort=False)
-    return (
-        combined.drop_duplicates(
-            subset=["port", "date_str", "price"], keep="first"
+        not any(
+            product in column_text
+            for product in FORECAST_PRODUCT_COLUMNS
         )
-        .sort_values(["port", "date"])
+        and any(
+            product in first_row_text
+            for product in FORECAST_PRODUCT_COLUMNS
+        )
+    ):
+        df.columns = [
+            str(value).strip()
+            for value in df.iloc[0].tolist()
+        ]
+
+        df = df.iloc[1:].reset_index(drop=True)
+
+    seen = {}
+    unique_columns = []
+
+    for column in df.columns:
+        base = str(column).strip() or "COL"
+        count = seen.get(base, 0)
+
+        unique_columns.append(
+            base if count == 0 else f"{base}_{count}"
+        )
+
+        seen[base] = count + 1
+
+    df.columns = unique_columns
+
+    product_positions = {}
+
+    for index, column in enumerate(df.columns):
+        upper = str(column).strip().upper()
+
+        for product in FORECAST_PRODUCT_COLUMNS:
+            if upper == product or product in upper.split():
+                product_positions[product] = index
+
+    if not product_positions:
+        return pd.DataFrame()
+
+    first_product_position = min(
+        product_positions.values()
+    )
+
+    period_position = max(
+        0,
+        first_product_position - 1,
+    )
+
+    for column_index in range(df.shape[1]):
+        if column_index in product_positions.values():
+            continue
+
+        sample = df.iloc[:, column_index].astype(str)
+
+        if sample.str.contains(
+            r"20\d{2}|Q[1-4]|Full Year",
+            case=False,
+            regex=True,
+            na=False,
+        ).any():
+            period_position = column_index
+            break
+
+    out = pd.DataFrame()
+
+    out["Period"] = (
+        df.iloc[:, period_position]
+        .astype(str)
+        .str.strip()
+    )
+
+    for product in FORECAST_PRODUCT_COLUMNS:
+        position = product_positions.get(product)
+
+        if position is None:
+            out[product] = None
+        else:
+            out[product] = df.iloc[:, position].apply(
+                clean_forecast_number
+            )
+
+    out = out[
+        out["Period"].str.contains(
+            r"20\d{2}|Q[1-4]|Full Year",
+            case=False,
+            regex=True,
+            na=False,
+        )
+    ]
+
+    out = out.dropna(
+        subset=FORECAST_PRODUCT_COLUMNS,
+        how="all",
+    )
+
+    if out.empty:
+        return pd.DataFrame()
+
+    out["graph_date"] = out["Period"].apply(
+        forecast_period_to_date
+    )
+
+    out["source_url"] = ""
+
+    return out[
+        ["Period"]
+        + FORECAST_PRODUCT_COLUMNS
+        + ["graph_date", "source_url"]
+    ].reset_index(drop=True)
+
+def parse_bunker_forecast_from_html(html, port_name):
+    try:
+        tables = pd.read_html(StringIO(html))
+
+        best_df = pd.DataFrame()
+        best_score = -1
+
+        for table in tables:
+            normalized = normalize_forecast_table(table)
+
+            if normalized.empty:
+                continue
+
+            text = (
+                " ".join(map(str, table.columns))
+                + " "
+                + " ".join(
+                    map(
+                        str,
+                        table.head(3).values.ravel(),
+                    )
+                )
+            ).upper()
+
+            score = sum(
+                5
+                for product in FORECAST_PRODUCT_COLUMNS
+                if product in text
+            )
+
+            if normalized["graph_date"].notna().any():
+                score += 3
+
+            if score > best_score:
+                best_score = score
+                best_df = normalized
+
+        if not best_df.empty:
+            best_df["port"] = port_name
+            return best_df
+
+    except Exception as error:
+        log(
+            f"[FORECAST] pandas parse warning "
+            f"/ {port_name} / {error}"
+        )
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    table = soup.find("table")
+
+    if table is None:
+        raise RuntimeError(
+            f"{port_name}: Bunker forecast table not found."
+        )
+
+    rows = []
+
+    for tr in table.find_all("tr"):
+        cells = [
+            cell.get_text(" ", strip=True)
+            for cell in tr.find_all(["th", "td"])
+        ]
+
+        if cells:
+            rows.append(cells)
+
+    if not rows:
+        raise RuntimeError(
+            f"{port_name}: Bunker forecast rows not found."
+        )
+
+    max_length = max(len(row) for row in rows)
+
+    rows = [
+        row + [""] * (max_length - len(row))
+        for row in rows
+    ]
+
+    raw_df = pd.DataFrame(rows)
+
+    normalized = normalize_forecast_table(raw_df)
+
+    if normalized.empty:
+        raise RuntimeError(
+            f"{port_name}: Unable to normalize forecast table."
+        )
+
+    normalized["port"] = port_name
+
+    return normalized
+
+def collect_all_forecast_data():
+    log("[FORECAST] Ship & Bunker forecast crawl started")
+
+    driver = make_driver()
+    frames = []
+    errors = []
+
+    try:
+        for port_name, url in FORECAST_URLS.items():
+            try:
+                log(f"[FORECAST] Accessing: {port_name}")
+
+                driver.get(url)
+                time.sleep(5)
+
+                forecast_df = parse_bunker_forecast_from_html(
+                    driver.page_source,
+                    port_name,
+                )
+
+                forecast_df["port"] = port_name
+                forecast_df["source_url"] = url
+
+                frames.append(forecast_df)
+
+            except Exception as error:
+                errors.append(
+                    f"{port_name}: {error}"
+                )
+
+    finally:
+        try:
+            driver.quit()
+        except Exception:
+            pass
+
+    if not frames:
+        raise RuntimeError(
+            "All bunker forecast crawling failed: "
+            + " | ".join(errors)
+        )
+
+    out = pd.concat(
+        frames,
+        ignore_index=True,
+        sort=False,
+    )
+
+    save_dataframe_to_db(
+        out,
+        FORECAST_TABLE,
+        FORECAST_TABLE,
+    )
+
+    return out, " | ".join(errors)
+
+def load_or_collect_forecast_data(force_refresh=False):
+    if (
+        not force_refresh
+        and FORECAST_CACHE["df"] is not None
+    ):
+        return (
+            FORECAST_CACHE["df"].copy(),
+            FORECAST_CACHE["fetched_at"],
+            FORECAST_CACHE["message"],
+        )
+
+    db_df = pd.DataFrame()
+    db_fetched_at = "-"
+
+    try:
+        db_df = load_dataframe_from_db(FORECAST_TABLE)
+
+        if not db_df.empty:
+            for column in FORECAST_PRODUCT_COLUMNS:
+                if column in db_df.columns:
+                    db_df[column] = pd.to_numeric(
+                        db_df[column],
+                        errors="coerce",
+                    )
+
+            db_df["graph_date"] = pd.to_datetime(
+                db_df["graph_date"],
+                errors="coerce",
+            )
+
+            db_fetched_at = get_dataset_meta(
+                FORECAST_TABLE
+            )
+
+    except Exception as error:
+        log(f"[FORECAST] DB Load Warning: {error}")
+
+    if not force_refresh and not db_df.empty:
+        FORECAST_CACHE["df"] = db_df.copy()
+        FORECAST_CACHE["fetched_at"] = db_fetched_at
+        FORECAST_CACHE["message"] = ""
+
+        return db_df, db_fetched_at, ""
+
+    try:
+        fresh_df, message = collect_all_forecast_data()
+
+        fetched_at = get_dataset_meta(FORECAST_TABLE)
+
+        FORECAST_CACHE["df"] = fresh_df.copy()
+        FORECAST_CACHE["fetched_at"] = fetched_at
+        FORECAST_CACHE["message"] = message
+
+        return fresh_df, fetched_at, message
+
+    except Exception as error:
+        if not db_df.empty:
+            warning = f"Using previous forecast data: {error}"
+
+            FORECAST_CACHE["df"] = db_df.copy()
+            FORECAST_CACHE["fetched_at"] = db_fetched_at
+            FORECAST_CACHE["message"] = warning
+
+            return db_df, db_fetched_at, warning
+
+        empty = pd.DataFrame()
+
+        return empty, "-", str(error)
+
+# =============================================================================
+# 6. Opinet / Crude Oil Crawler
+# =============================================================================
+
+def oil_normalize_date(value):
+    text = str(value).strip()
+
+    if not text or text.lower() == "nan":
+        return None
+
+    match = re.search(
+        r"(\d{2,4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일",
+        text,
+    )
+
+    if match:
+        year, month, day = match.groups()
+
+        year = int(year)
+
+        if year < 100:
+            year += 2000 if year < 70 else 1900
+
+        try:
+            return datetime(
+                year,
+                int(month),
+                int(day),
+            ).strftime("%Y-%m-%d")
+        except Exception:
+            return None
+
+    cleaned = re.sub(r"[^0-9./-]", "", text)
+
+    for fmt in [
+        "%Y-%m-%d",
+        "%Y.%m.%d",
+        "%Y/%m/%d",
+        "%y-%m-%d",
+        "%y.%m.%d",
+        "%y/%m/%d",
+        "%Y%m%d",
+        "%y%m%d",
+    ]:
+        try:
+            return datetime.strptime(
+                cleaned,
+                fmt,
+            ).strftime("%Y-%m-%d")
+        except Exception:
+            pass
+
+    parsed = pd.to_datetime(
+        cleaned,
+        errors="coerce",
+    )
+
+    if pd.isna(parsed):
+        return None
+
+    return parsed.strftime("%Y-%m-%d")
+
+def oil_clean_num(value):
+    text = str(value).strip()
+
+    if not text or text.lower() == "nan":
+        return None
+
+    text = text.replace(",", "")
+    text = re.sub(r"[^0-9.+-]", "", text)
+
+    if not text or text in ["+", "-", "."]:
+        return None
+
+    try:
+        return float(text)
+    except Exception:
+        return None
+
+def oil_set_select(driver, name, value):
+    element = WebDriverWait(
+        driver,
+        20,
+    ).until(
+        EC.presence_of_element_located(
+            (By.NAME, name)
+        )
+    )
+
+    Select(element).select_by_value(str(value))
+
+def oil_set_checkbox(driver, value):
+    xpaths = [
+        f"//input[@type='checkbox' and @value='{value}']",
+        f"//input[@value='{value}']",
+    ]
+
+    for xpath in xpaths:
+        elements = driver.find_elements(
+            By.XPATH,
+            xpath,
+        )
+
+        for element in elements:
+            try:
+                if not element.is_selected():
+                    driver.execute_script(
+                        "arguments[0].click();",
+                        element,
+                    )
+
+                return True
+
+            except Exception:
+                pass
+
+    raise RuntimeError(
+        f"Oil checkbox value {value} not found."
+    )
+
+def oil_parse_html(html):
+    soup = BeautifulSoup(html, "html.parser")
+
+    tbody = (
+        soup.find("tbody", {"id": "tbody2"})
+        or soup.find("tbody", {"id": "tbody1"})
+    )
+
+    if tbody is None:
+        raise RuntimeError(
+            "Opinet oil result tbody was not found."
+        )
+
+    rows = []
+
+    for tr in tbody.find_all("tr"):
+        cells = [
+            cell.get_text(" ", strip=True)
+            for cell in tr.find_all(["th", "td"])
+        ]
+
+        if len(cells) >= 4:
+            rows.append(cells[:4])
+
+    if not rows:
+        raise RuntimeError(
+            "Opinet oil result rows were not found."
+        )
+
+    df = pd.DataFrame(
+        rows,
+        columns=[
+            "DATE",
+            "Dubai",
+            "Brent",
+            "WTI",
+        ],
+    )
+
+    df["DATE"] = df["DATE"].apply(
+        oil_normalize_date
+    )
+
+    for oil_type in OIL_ALL_TYPES:
+        df[oil_type] = df[oil_type].apply(
+            oil_clean_num
+        )
+
+    df = df.dropna(subset=["DATE"])
+
+    df = df.dropna(
+        subset=OIL_ALL_TYPES,
+        how="all",
+    )
+
+    df = (
+        df.drop_duplicates(subset=["DATE"])
+        .sort_values("DATE")
         .reset_index(drop=True)
     )
 
-def port_color(port):
-    return {
-        "Rotterdam": TAC_BLUE,
-        "Fujairah": TAC_GREEN,
-        "Singapore": TAC_PURPLE,
-    }.get(port, TAC_ORANGE)
+    if df.empty:
+        raise RuntimeError(
+            "Opinet oil parsing result is empty."
+        )
 
-def apply_style(fig, height=460):
-    fig.update_layout(
-        template="plotly_white",
-        height=height,
-        margin=dict(l=20, r=20, t=20, b=20),
-        font=dict(
-            family="Pretendard, -apple-system, sans-serif",
-            color=TAC_TEXT,
-            size=12,
-        ),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-            bgcolor="rgba(255,255,255,0.85)",
-        ),
-        xaxis=dict(showgrid=True, gridcolor="#f1f5f9"),
-        yaxis=dict(showgrid=True, gridcolor="#f1f5f9"),
+    return df
+
+def oil_collect_data(start_date=None, end_date=None):
+    start_date = pd.to_datetime(
+        start_date or OIL_DEFAULT_START
     )
-    return fig
 
-def split_past_future_for_plot(sub, date_col="date", value_col="price"):
-    if sub is None or sub.empty:
-        return sub, sub
-    work = sub.copy().sort_values(date_col)
-    work[date_col] = pd.to_datetime(work[date_col], errors="coerce")
-    work = work.dropna(subset=[date_col])
-    today = pd.Timestamp.today().normalize()
-    past = work[work[date_col] <= today].copy()
-    future = work[work[date_col] > today].copy()
-    if not past.empty and not future.empty:
-        future = pd.concat([past.tail(1), future], ignore_index=True)
-    return past, future
-
-def add_solid_future_dashed_trace(
-    fig,
-    sub,
-    x_col,
-    y_col,
-    name,
-    color,
-    width=2.6,
-    mode="lines+markers",
-    marker_size=5,
-    showlegend=True,
-    hovertemplate=None,
-):
-    past, future = split_past_future_for_plot(sub, date_col=x_col, value_col=y_col)
-    if not past.empty:
-        fig.add_trace(
-            go.Scatter(
-                x=past[x_col],
-                y=past[y_col],
-                mode=mode,
-                name=name,
-                line=dict(color=color, width=width),
-                marker=dict(size=marker_size) if "markers" in mode else None,
-                hovertemplate=hovertemplate,
-                showlegend=showlegend,
-            )
-        )
-    if not future.empty:
-        fig.add_trace(
-            go.Scatter(
-                x=future[x_col],
-                y=future[y_col],
-                mode=mode,
-                name=f"{name} Forecast",
-                line=dict(color=color, width=width, dash="dot"),
-                marker=(
-                    dict(size=marker_size, symbol="circle-open")
-                    if "markers" in mode
-                    else None
-                ),
-                hovertemplate=hovertemplate,
-                showlegend=showlegend,
-            )
-        )
-
-def build_line_chart(df, ma_mode="quarterly"):
-    if df.empty:
-        return '<div class="empty">No Data</div>'
-    fig = go.Figure()
-    for port in sorted(df["port"].unique()):
-        sub = df[df["port"] == port].sort_values("date")
-        color = port_color(port)
-        add_solid_future_dashed_trace(
-            fig, sub, "date", "price", f"{port} Price", color
-        )
-        if ma_mode != "off" and "ma" in sub.columns:
-            ma_sub = sub.dropna(subset=["ma"]).copy()
-            add_solid_future_dashed_trace(
-                fig,
-                ma_sub,
-                "date",
-                "ma",
-                f"{port} {ma_mode} MA",
-                color,
-                width=1.5,
-                mode="lines",
-                marker_size=0,
-            )
-    today_str = pd.Timestamp.today().normalize().strftime("%Y-%m-%d")
-    fig.add_vline(x=today_str, line_dash="dash", line_color="#64748b")
-    fig.update_layout(
-        xaxis_title="Date",
-        yaxis_title="USD/MT",
-        xaxis=dict(rangeslider=dict(visible=True), type="date"),
+    end_date = pd.to_datetime(
+        end_date
+        or datetime.today().strftime("%Y-%m-%d")
     )
-    apply_style(fig, height=500)
-    return fig.to_html(full_html=False, include_plotlyjs="cdn")
 
-def build_latest_bar_chart(df):
-    if df.empty:
-        return '<div class="empty">No Data</div>'
-    latest_df = (
-        df[df["date"] == df["date"].max()]
-        .copy()
-        .sort_values("price", ascending=False)
-    )
-    fig = go.Figure(
-        go.Bar(
-            x=latest_df["port"],
-            y=latest_df["price"],
-            text=[f"{v:.1f}" for v in latest_df["price"]],
-            textposition="outside",
-            marker_color=[port_color(p) for p in latest_df["port"]],
-            showlegend=False,
+    if start_date > end_date:
+        raise ValueError(
+            "Oil start date cannot be after end date."
         )
-    )
-    fig.update_layout(xaxis_title="Port", yaxis_title="USD/MT")
-    apply_style(fig, height=400)
-    return fig.to_html(full_html=False, include_plotlyjs=False)
 
-def build_spread_chart(df):
-    if df.empty:
-        return '<div class="empty">No Data</div>'
-    pivot_df = df.pivot_table(
-        index="date", columns="port", values="price", aggfunc="mean"
-    ).reset_index()
-    fig = go.Figure()
-    if "Rotterdam" in pivot_df.columns and "Singapore" in pivot_df.columns:
-        fig.add_trace(
-            go.Scatter(
-                x=pivot_df["date"],
-                y=pivot_df["Rotterdam"] - pivot_df["Singapore"],
-                mode="lines",
-                name="RTM - SIN",
-                line=dict(color=TAC_BLUE, width=2.5),
-            )
+    log("[OIL] Opinet crawl started")
+
+    driver = make_driver()
+
+    try:
+        driver.get(OIL_SOURCE_URL)
+
+        WebDriverWait(driver, 30).until(
+            lambda current_driver:
+                current_driver.execute_script(
+                    "return document.readyState"
+                ) == "complete"
         )
-    if "Fujairah" in pivot_df.columns and "Singapore" in pivot_df.columns:
-        fig.add_trace(
-            go.Scatter(
-                x=pivot_df["date"],
-                y=pivot_df["Fujairah"] - pivot_df["Singapore"],
-                mode="lines",
-                name="FJR - SIN",
-                line=dict(color=TAC_RED, width=2.5),
-            )
+
+        WebDriverWait(driver, 20).until(
+            lambda current_driver:
+                len(
+                    current_driver.find_elements(
+                        By.NAME,
+                        "TERM",
+                    )
+                ) > 0
         )
-    fig.add_hline(y=0, line_dash="dash", line_color="#94a3b8")
-    fig.update_layout(xaxis_title="Date", yaxis_title="Spread (USD/MT)")
-    apply_style(fig, height=400)
-    return fig.to_html(full_html=False, include_plotlyjs=False)
 
-def build_kpis(df):
-    if df.empty:
-        return {
-            "latest_date": "-",
-            "avg_price": "-",
-            "row_count": "0",
-            "port_values": {},
-        }
-    latest_date = df["date"].max()
-    latest_df = df[df["date"] == latest_date].copy()
-    port_values = {
-        p: f"{sub['price'].iloc[0]:.1f}"
-        for p in sorted(df["port"].dropna().unique())
-        if not (sub := latest_df[latest_df["port"] == p]).empty
-    }
-    return {
-        "latest_date": latest_date.strftime("%Y-%m-%d"),
-        "avg_price": f"{df['price'].mean():.1f}",
-        "row_count": f"{len(df):,}",
-        "port_values": port_values,
-    }
+        radios = driver.find_elements(
+            By.NAME,
+            "TERM",
+        )
 
-def compute_period_change_kpis(df):
-    if df.empty:
-        return []
-    result = []
-    period_defs = [("QoQ", "QE"), ("HoH", "2QE"), ("YoY", "YE")]
-    for port in ["Fujairah", "Rotterdam", "Singapore"]:
-        sub = df[df["port"] == port].copy().sort_values("date")
-        item = {"port": port, "metrics": []}
-        if sub.empty:
-            for label, _ in period_defs:
-                item["metrics"].append({
-                    "label": label,
-                    "value": "N/A",
-                    "class_name": "neutral",
-                })
-            result.append(item)
-            continue
-        for label, freq in period_defs:
-            temp = (
-                sub.set_index("date")
-                .resample(freq)["price"]
-                .mean()
-                .dropna()
-                .reset_index()
-            )
-            if len(temp) < 2:
-                item["metrics"].append({
-                    "label": label,
-                    "value": "N/A",
-                    "class_name": "neutral",
-                })
-                continue
-            curr, prev = temp.iloc[-1]["price"], temp.iloc[-2]["price"]
-            change_pct = (curr - prev) / prev * 100
-            cls = (
-                "up"
-                if change_pct > 0
-                else "down"
-                if change_pct < 0
-                else "neutral"
-            )
-            item["metrics"].append({
-                "label": label,
-                "value": f"{change_pct:+.2f}%",
-                "class_name": cls,
-            })
-        result.append(item)
-    return result
+        daily_found = False
 
-def build_forecast_table_html(forecast_df, fetched_at="-", message=""):
-    if forecast_df is None or forecast_df.empty:
-        return '<div class="empty">No Forecast Data</div>'
-    blocks = []
-    for port_name in ALL_PORTS:
-        sub = forecast_df[forecast_df["port"] == port_name].copy()
-        if sub.empty:
-            continue
-        rows = []
-        for _, r in sub.iterrows():
-            period = str(r.get("Period", ""))
-            cells = [
-                (
-                    "-"
-                    if pd.isna(r.get(c))
-                    else f"{float(r.get(c)):,.0f}"
+        for radio in radios:
+            if radio.get_attribute("value") == "D":
+                driver.execute_script(
+                    "arguments[0].click();",
+                    radio,
                 )
-                for c in FORECAST_PRODUCT_COLUMNS
-            ]
-            rows.append(
-                f"<tr><th style='text-align:left; padding:8px;'>{period}</th>"
-                + "".join([f"<td style='padding:8px;'>{c}</td>" for c in cells])
-                + "</tr>"
-            )
-        blocks.append(f"""
-        <div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; background: white; margin-bottom: 12px;">
-          <div style="background: #1e293b; color: white; padding: 8px 12px; font-weight: 700; font-size: 14px;">{port_name} Bunker Price Forecast</div>
-          <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: center;">
-            <thead style="background: #f8fafc; color: #64748b;"><tr style='border-bottom: 1px solid #e2e8f0;'><th>Period</th><th>VLSFO</th><th>MGO</th><th>LSMGO</th><th>HSFO</th></tr></thead>
-            <tbody>{''.join(rows)}</tbody>
-          </table>
-        </div>""")
-    return "".join(blocks)
 
-# =========================================================
-# 5. Web Engine (Flask)
-# =========================================================
-HTML = """
-<!doctype html>
+                daily_found = True
+                break
+
+        if not daily_found:
+            raise RuntimeError(
+                "Daily oil price option was not found."
+            )
+
+        oil_set_select(
+            driver,
+            "STA_Y",
+            start_date.strftime("%Y"),
+        )
+
+        oil_set_select(
+            driver,
+            "STA_M",
+            start_date.strftime("%m"),
+        )
+
+        oil_set_select(
+            driver,
+            "STA_D",
+            start_date.strftime("%d"),
+        )
+
+        oil_set_select(
+            driver,
+            "END_Y",
+            end_date.strftime("%Y"),
+        )
+
+        oil_set_select(
+            driver,
+            "END_M",
+            end_date.strftime("%m"),
+        )
+
+        oil_set_select(
+            driver,
+            "END_D",
+            end_date.strftime("%d"),
+        )
+
+        # Dubai / Brent / WTI
+        for value in ["001", "002", "003"]:
+            oil_set_checkbox(driver, value)
+
+        search_button = WebDriverWait(
+            driver,
+            20,
+        ).until(
+            EC.element_to_be_clickable(
+                (By.ID, "glopcoilSelect")
+            )
+        )
+
+        driver.execute_script(
+            "arguments[0].click();",
+            search_button,
+        )
+
+        WebDriverWait(driver, 30).until(
+            lambda current_driver:
+                "Dubai" in current_driver.page_source
+                or "두바이" in current_driver.page_source
+        )
+
+        time.sleep(1)
+
+        df = oil_parse_html(driver.page_source)
+
+    finally:
+        try:
+            driver.quit()
+        except Exception:
+            pass
+
+    save_dataframe_to_db(
+        df,
+        OIL_TABLE,
+        OIL_TABLE,
+    )
+
+    return df
+
+def oil_load_or_collect_data(force_refresh=False):
+    if not force_refresh and OIL_CACHE["df"] is not None:
+        return (
+            OIL_CACHE["df"].copy(),
+            OIL_CACHE["fetched_at"],
+        )
+
+    db_df = pd.DataFrame()
+    db_fetched_at = "-"
+
+    try:
+        db_df = load_dataframe_from_db(OIL_TABLE)
+
+        if not db_df.empty:
+            db_df["DATE"] = pd.to_datetime(
+                db_df["DATE"],
+                errors="coerce",
+            )
+
+            for oil_type in OIL_ALL_TYPES:
+                db_df[oil_type] = pd.to_numeric(
+                    db_df[oil_type],
+                    errors="coerce",
+                )
+
+            db_df = db_df.dropna(subset=["DATE"])
+
+            db_fetched_at = get_dataset_meta(OIL_TABLE)
+
+    except Exception as error:
+        log(f"[OIL] DB Load Warning: {error}")
+
+    if not force_refresh and not db_df.empty:
+        OIL_CACHE["df"] = db_df.copy()
+        OIL_CACHE["fetched_at"] = db_fetched_at
+
+        return db_df, db_fetched_at
+
+    try:
+        fresh_df = oil_collect_data()
+
+        fetched_at = get_dataset_meta(OIL_TABLE)
+
+        OIL_CACHE["df"] = fresh_df.copy()
+        OIL_CACHE["fetched_at"] = fetched_at
+
+        return fresh_df, fetched_at
+
+    except Exception as error:
+        if not db_df.empty:
+            log(
+                f"[OIL] Crawl failed. Using cached data: {error}"
+            )
+
+            OIL_CACHE["df"] = db_df.copy()
+            OIL_CACHE["fetched_at"] = db_fetched_at
+
+            return db_df, db_fetched_at
+
+        raise error
+
+def oil_to_long(df):
+    if df is None or df.empty:
+        return pd.DataFrame(
+            columns=[
+                "date",
+                "oil_type",
+                "price",
+            ]
+        )
+
+    work = df.copy()
+
+    work["DATE"] = pd.to_datetime(
+        work["DATE"],
+        errors="coerce",
+    )
+
+    work = work.dropna(subset=["DATE"])
+
+    long_df = work.melt(
+        id_vars=["DATE"],
+        value_vars=OIL_ALL_TYPES,
+        var_name="oil_type",
+        value_name="price",
+    )
+
+    long_df["price"] = pd.to_numeric(
+        long_df["price"],
+        errors="coerce",
+    )
+
+    long_df = long_df.dropna(subset=["price"])
+
+    long_df = long_df.rename(
+        columns={"DATE": "date"}
+    )
+
+    return (
+        long_df.sort_values(["oil_type", "date"])
+        .reset_index(drop=True)
+    )
+
+# =============================================================================
+# 7. Data Export Helpers
+# =============================================================================
+
+def export_static_csv_files(product_df, forecast_df):
+    if product_df is not None and not product_df.empty:
+        out = product_df.copy()
+
+        out["date"] = pd.to_datetime(
+            out["date"],
+            errors="coerce",
+        ).dt.strftime("%Y-%m-%d")
+
+        out.to_csv(
+            PRODUCT_CSV_PATH,
+            index=False,
+            encoding="utf-8-sig",
+        )
+
+        log(f"[EXPORT] {PRODUCT_CSV_PATH.name}")
+
+    if forecast_df is not None and not forecast_df.empty:
+        out = forecast_df.copy()
+
+        if "graph_date" in out.columns:
+            out["graph_date"] = pd.to_datetime(
+                out["graph_date"],
+                errors="coerce",
+            ).dt.strftime("%Y-%m-%d")
+
+        out.to_csv(
+            FORECAST_CSV_PATH,
+            index=False,
+            encoding="utf-8-sig",
+        )
+
+        log(f"[EXPORT] {FORECAST_CSV_PATH.name}")
+
+def export_oil_csv(oil_long_df):
+    if oil_long_df is None or oil_long_df.empty:
+        return
+
+    OIL_DIR.mkdir(parents=True, exist_ok=True)
+
+    out = oil_long_df.copy()
+
+    out["date"] = pd.to_datetime(
+        out["date"],
+        errors="coerce",
+    ).dt.strftime("%Y-%m-%d")
+
+    out.to_csv(
+        OIL_CSV_PATH,
+        index=False,
+        encoding="utf-8-sig",
+    )
+
+    log(f"[EXPORT] OilPrice/{OIL_CSV_PATH.name}")
+
+def dataframe_to_records(df, date_column, rename_map=None):
+    if df is None or df.empty:
+        return []
+
+    out = df.copy()
+
+    out[date_column] = pd.to_datetime(
+        out[date_column],
+        errors="coerce",
+    ).dt.strftime("%Y-%m-%d")
+
+    out = out.where(pd.notna(out), None)
+
+    if rename_map:
+        out = out.rename(columns=rename_map)
+
+    records = []
+
+    for row in out.to_dict(orient="records"):
+        clean_row = {}
+
+        for key, value in row.items():
+            if isinstance(value, (pd.Timestamp, dt.datetime)):
+                clean_row[key] = value.strftime("%Y-%m-%d")
+            elif isinstance(value, float):
+                clean_row[key] = round(value, 6)
+            else:
+                clean_row[key] = value
+
+        records.append(clean_row)
+
+    return records
+
+# =============================================================================
+# 8. Bloomberg Terminal Static HTML
+# =============================================================================
+
+TERMINAL_CSS = """
+:root {
+  --bg: #02060b;
+  --panel: #07111c;
+  --panel2: #0b1825;
+  --panel3: #0e2131;
+  --line: #23394d;
+  --text: #dce9f5;
+  --muted: #8aa0b5;
+  --orange: #ff8a00;
+  --blue: #39a8ff;
+  --green: #2bd682;
+  --red: #ff5c5c;
+  --purple: #be7bff;
+}
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Roboto Mono", Consolas, "Noto Sans KR", monospace;
+  font-size: 12px;
+}
+button, input { font: inherit; }
+a { color: inherit; text-decoration: none; }
+
+.topbar {
+  min-height: 54px;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  border-bottom: 1px solid var(--line);
+  background: #050a11;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.brand-mark {
+  color: var(--orange);
+  font-size: 18px;
+  font-weight: 900;
+}
+.brand-title {
+  font-size: 13px;
+  color: white;
+  letter-spacing: .8px;
+  font-weight: 700;
+}
+.nav-link {
+  padding: 7px 11px;
+  border: 1px solid #34526e;
+  color: var(--blue);
+  font-size: 11px;
+}
+.nav-link:hover {
+  color: #fff;
+  background: #12344f;
+}
+
+.terminal {
+  max-width: 1720px;
+  margin: 0 auto;
+  padding: 18px 20px 32px;
+}
+.status {
+  padding: 9px 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  font-size: 10px;
+}
+.workspace {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: 245px minmax(0, 1fr);
+  gap: 14px;
+}
+.panel {
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+.panel-header {
+  min-height: 39px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  background: var(--panel2);
+  border-bottom: 1px solid var(--line);
+}
+.panel-title {
+  color: var(--orange);
+  font-size: 10px;
+  letter-spacing: .8px;
+  font-weight: 700;
+}
+.filter-section {
+  padding: 13px;
+  border-bottom: 1px solid #172a3a;
+}
+.label {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: .65px;
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+.button-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 5px;
+}
+.all-button { grid-column: span 2; }
+.btn {
+  min-height: 31px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  background: #07101a;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+}
+.btn:hover {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+.btn.active {
+  border-color: var(--orange);
+  background: var(--orange);
+  color: #0a0a0a;
+}
+.series-list {
+  display: grid;
+  gap: 6px;
+}
+.series-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #1d3041;
+  background: #06101a;
+  color: #d6e2ec;
+  cursor: pointer;
+}
+.series-item input { accent-color: var(--orange); }
+
+.heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+h1 {
+  color: #fff;
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: .2px;
+}
+.subtitle {
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 6px;
+}
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 9px;
+  margin-bottom: 12px;
+}
+.kpi {
+  min-height: 94px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+.kpi-label {
+  display: block;
+  min-height: 25px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.3;
+}
+.kpi-value {
+  display: block;
+  margin-top: 10px;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+}
+.kpi-sub {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 9px;
+}
+.positive { color: var(--green); }
+.negative { color: var(--red); }
+#chart { width: 100%; min-height: 510px; }
+.empty {
+  padding: 45px 15px;
+  color: var(--muted);
+  text-align: center;
+}
+.table-wrap {
+  overflow-x: auto;
+  padding: 12px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+th, td {
+  padding: 9px 10px;
+  text-align: right;
+  border-bottom: 1px solid #1c3041;
+}
+th {
+  color: var(--muted);
+  background: #0a1723;
+  font-size: 10px;
+}
+td:first-child, th:first-child { text-align: left; }
+@media (max-width: 1100px) {
+  .workspace { grid-template-columns: 1fr; }
+  .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 650px) {
+  .terminal { padding: 12px; }
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .status { display: block; line-height: 1.8; }
+}
+"""
+
+def generate_product_static_html(product_df, forecast_df, fetched_at):
+    product_records = dataframe_to_records(
+        product_df,
+        "date",
+        rename_map={
+            "date": "DATE",
+            "port": "PORT",
+            "price": "PRICE",
+        },
+    )
+
+    forecast_records = dataframe_to_records(
+        forecast_df,
+        "graph_date",
+        rename_map={
+            "graph_date": "GRAPH_DATE",
+            "port": "PORT",
+        },
+    )
+
+    product_json = json.dumps(
+        product_records,
+        ensure_ascii=False,
+    )
+
+    forecast_json = json.dumps(
+        forecast_records,
+        ensure_ascii=False,
+    )
+
+    html = f"""<!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ship & Bunker VLSFO Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-<style>
-:root { --bg: #f8fafc; --surface: #ffffff; --surface-2: #f1f5f9; --border: #e2e8f0; --text: #0f172a; --text-muted: #64748b; --primary: #2563eb; --pos: #dc2626; --neg: #2563eb; --radius: 12px; }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Pretendard', sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; padding: 24px; max-width: 1440px; margin: 0 auto; }
-.top-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
-.back-link { color: var(--text-muted); text-decoration: none; font-size: 13px; font-weight: 600; padding: 6px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
-.header { margin-bottom: 24px; }
-.header h1 { font-size: 26px; font-weight: 800; }
-.meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 20px; }
-.card-title { font-size: 16px; font-weight: 700; margin-bottom: 14px; }
-.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
-.kpi-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
-.kpi-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }
-.kpi-value { font-size: 22px; font-weight: 800; font-family: 'JetBrains Mono', monospace; }
-.port-kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.port-kpi-card { border: 1px solid var(--border); border-radius: 8px; padding: 14px; background: white; }
-.port-kpi-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
-.port-kpi-metric { text-align: center; padding: 8px; border-radius: 6px; border: 1px solid var(--border); font-size: 12px; }
-.port-kpi-metric.up { background: #fef2f2; border-color: #fecaca; color: #dc2626; font-weight: 700; }
-.port-kpi-metric.down { background: #eff6ff; border-color: #bfdbfe; color: #2563eb; font-weight: 700; }
-.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.controls { background: #f1f5f9; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
-.controls form { display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-end; }
-.controls label { display: block; font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 4px; }
-.controls select, .controls input { padding: 6px; border-radius: 4px; border: 1px solid #cbd5e1; }
-.btn-link { text-decoration: none; font-size: 13px; padding: 6px 12px; border-radius: 4px; color: white; display: inline-block; }
-.btn-green { background: #27ae60; }
-.btn-dark { background: #1f3447; }
-@media (max-width: 900px) { .row2, .port-kpi-grid { grid-template-columns: 1fr; } }
-</style>
+<title>MI Terminal | Bunker Price</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>{TERMINAL_CSS}</style>
 </head>
+
 <body>
-  <div class="top-nav">
-    <a href="{{ product_href }}" class="back-link">← Back to Dashboard</a>
-    <span class="meta">Market Intelligence / <strong>02 Sea - Bunker Price</strong></span>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">MI&lt;GO&gt;</span>
+    <span class="brand-title">BUNKER PRICE MONITOR</span>
   </div>
-  <div class="header">
-    <h1>Ship & Bunker VLSFO Dashboard</h1>
-    <div class="meta">Source: Ship & Bunker | Fetched at: {{ fetched_at }}</div>
-  </div>
+  <a class="nav-link" href="./OilPrice/index.html">CRUDE OIL →</a>
+</header>
 
-  {% if not static_mode %}
-  <div class="controls">
-    <form method="get">
-      <div><label>Port</label><select name="ports" multiple size="4">
-        {% for p in all_ports %}<option value="{{ p }}" {% if p in selected_ports %}selected{% endif %}>{{ p }}</option>{% endfor %}
-      </select></div>
-      <div><label>MA Mode</label><select name="ma_mode"><option value="off" {% if ma_mode == 'off' %}selected{% endif %}>Off</option><option value="quarterly" {% if ma_mode == 'quarterly' %}selected{% endif %}>Quarterly</option><option value="semiannual" {% if ma_mode == 'semiannual' %}selected{% endif %}>Semi-Annual</option><option value="annual" {% if ma_mode == 'annual' %}selected{% endif %}>Annual</option></select></div>
-      <div><label>Start</label><input type="date" name="start_date" value="{{ start_date }}"></div>
-      <div><label>End</label><input type="date" name="end_date" value="{{ end_date }}"></div>
-      <div><button type="submit" style="padding: 7px 15px; background: #1e293b; color: white; border: none; border-radius: 4px; cursor: pointer;">Apply</button></div>
-      <div><a class="btn-link btn-green" href="{{ download_url }}">CSV</a></div>
-      <div><a class="btn-link btn-dark" href="{{ refresh_url }}">Refresh</a></div>
-    </form>
-  </div>
-  {% else %}
-  <div class="card" style="display: flex; justify-content: space-between; align-items: center;">
-    <div>
-      <div class="card-title" style="margin-bottom: 4px;">Static Dashboard Mode (GitHub Pages)</div>
-      <p class="meta">데이터는 주기적으로 크롤링되어 최신 상태로 유지됩니다.</p>
-    </div>
-    <a class="btn-link btn-green" href="{{ download_url }}" download>📥 Download CSV</a>
-  </div>
-  {% endif %}
+<main class="terminal">
+  <section class="status">
+    <span>SYSTEM / SHIP &amp; BUNKER DATA ONLINE</span>
+    <span>LAST REFRESH: {fetched_at}</span>
+  </section>
 
-  <div class="card">
-    <div class="card-title">Market Snapshot</div>
-    <div class="kpi-grid">
-      <div class="kpi-card"><div class="kpi-label">Latest Date</div><div class="kpi-value">{{ kpis.latest_date }}</div></div>
-      <div class="kpi-card"><div class="kpi-label">Avg Price</div><div class="kpi-value">${{ kpis.avg_price }}</div></div>
-      <div class="kpi-card"><div class="kpi-label">Rotterdam</div><div class="kpi-value">${{ kpis.port_values.get('Rotterdam', '-') }}</div></div>
-      <div class="kpi-card"><div class="kpi-label">Fujairah</div><div class="kpi-value">${{ kpis.port_values.get('Fujairah', '-') }}</div></div>
-      <div class="kpi-card"><div class="kpi-label">Singapore</div><div class="kpi-value">${{ kpis.port_values.get('Singapore', '-') }}</div></div>
-    </div>
-  </div>
+  <div class="workspace">
+    <aside class="panel">
+      <div class="panel-header">
+        <span class="panel-title">FUNCTIONS / FILTERS</span>
+      </div>
 
-  <div class="card">
-    <div class="card-title">Period Change (QoQ/HoH/YoY)</div>
-    <div class="port-kpi-grid">
-      {% for port_item in period_change_kpis %}
-      <div class="port-kpi-card">
-        <div style="font-weight: 700;">{{ port_item.port }}</div>
-        <div class="port-kpi-metrics">
-          {% for metric in port_item.metrics %}
-          <div class="port-kpi-metric {{ metric.class_name }}">
-            <div style="font-size: 10px;">{{ metric.label }}</div>
-            <div>{{ metric.value }}</div>
-          </div>
-          {% endfor %}
+      <section class="filter-section">
+        <span class="label">TIME RANGE</span>
+        <div class="button-grid">
+          <button class="btn" data-period="1Y" onclick="setPreset('1Y')">1Y</button>
+          <button class="btn" data-period="3Y" onclick="setPreset('3Y')">3Y</button>
+          <button class="btn" data-period="5Y" onclick="setPreset('5Y')">5Y</button>
+          <button class="btn" data-period="YTD" onclick="setPreset('YTD')">YTD</button>
+          <button class="btn all-button active" data-period="ALL" onclick="setPreset('ALL')">ALL HISTORY</button>
+        </div>
+      </section>
+
+      <section class="filter-section">
+        <span class="label">SELECT PORTS</span>
+        <div class="series-list">
+          <label class="series-item"><input type="checkbox" value="Rotterdam" checked onchange="render()"> Rotterdam</label>
+          <label class="series-item"><input type="checkbox" value="Fujairah" checked onchange="render()"> Fujairah</label>
+          <label class="series-item"><input type="checkbox" value="Singapore" checked onchange="render()"> Singapore</label>
+        </div>
+      </section>
+
+      <section class="filter-section">
+        <span class="label">MOVING AVERAGE</span>
+        <div class="button-grid">
+          <button class="btn active" data-ma="OFF" onclick="setMA('OFF')">OFF</button>
+          <button class="btn" data-ma="90" onclick="setMA('90')">90D</button>
+          <button class="btn" data-ma="180" onclick="setMA('180')">180D</button>
+          <button class="btn" data-ma="365" onclick="setMA('365')">365D</button>
+        </div>
+      </section>
+
+      <section class="filter-section">
+        <button class="btn" style="width:100%;border-color:#34526e;color:#39a8ff;" onclick="downloadCSV()">EXPORT FILTERED CSV</button>
+      </section>
+    </aside>
+
+    <section>
+      <div class="heading">
+        <div>
+          <h1>VLSFO BUNKER PRICE</h1>
+          <div class="subtitle">Rotterdam · Fujairah · Singapore / USD per Metric Ton</div>
         </div>
       </div>
-      {% endfor %}
-    </div>
-  </div>
 
-  <div class="card">
-    <div class="card-title">VLSFO Price Trend</div>
-    {{ line_chart|safe }}
-  </div>
+      <section class="kpi-grid">
+        <div class="kpi">
+          <span class="kpi-label">LATEST<br>SELECTED AVG</span>
+          <span class="kpi-value" id="latestValue">-</span>
+          <span class="kpi-sub" id="latestDate">-</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">PERIOD<br>AVERAGE</span>
+          <span class="kpi-value" id="averageValue">-</span>
+          <span class="kpi-sub">USD / MT</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">PERIOD<br>HIGH / LOW</span>
+          <span class="kpi-value" id="highLow">-</span>
+          <span class="kpi-sub">HIGH / LOW</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">CHANGE<br>FIRST → LAST</span>
+          <span class="kpi-value" id="changeValue">-</span>
+          <span class="kpi-sub" id="changeRate">-</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">OBSERVATIONS<br>/ PORTS</span>
+          <span class="kpi-value" id="recordCount">-</span>
+          <span class="kpi-sub" id="portCount">-</span>
+        </div>
+      </section>
 
-  <div class="card">
-    <div class="card-title">Bunker Price Forecast</div>
-    {{ forecast_table_html|safe }}
-  </div>
+      <section class="panel">
+        <div class="panel-header">
+          <span class="panel-title">VLSFO PRICE HISTORY / RANGE SLIDER ENABLED</span>
+          <span class="panel-title">FORECAST = DOTTED LINE</span>
+        </div>
+        <div id="chart"></div>
+      </section>
 
-  <div class="row2">
-    <div class="card"><div class="card-title">Latest Price Comparison</div>{{ bar_chart|safe }}</div>
-    <div class="card"><div class="card-title">Port Spread Trend</div>{{ spread_chart|safe }}</div>
+      <section class="panel" style="margin-top:14px;">
+        <div class="panel-header">
+          <span class="panel-title">BUNKER PRICE FORECAST / USD PER MT</span>
+        </div>
+        <div class="table-wrap" id="forecastTable"></div>
+      </section>
+    </section>
   </div>
+</main>
+
+<script>
+const PRODUCT_DATA = {product_json};
+const FORECAST_DATA = {forecast_json};
+
+const COLORS = {{
+  Rotterdam: "#39a8ff",
+  Fujairah: "#2bd682",
+  Singapore: "#be7bff"
+}};
+
+let currentRange = null;
+let currentPreset = "ALL";
+let currentMA = "OFF";
+
+function selectedPorts() {{
+  return Array.from(document.querySelectorAll(".series-list input:checked"))
+    .map(x => x.value);
+}}
+
+function formatNumber(value, decimals=1) {{
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
+  return Number(value).toLocaleString("en-US", {{
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals
+  }});
+}}
+
+function bounds() {{
+  const data = [...PRODUCT_DATA].sort((a,b) => a.DATE.localeCompare(b.DATE));
+  return {{
+    min: data[0]?.DATE || null,
+    max: data[data.length - 1]?.DATE || null
+  }};
+}}
+
+function setPreset(preset) {{
+  const b = bounds();
+  if (!b.max) return;
+
+  currentPreset = preset;
+
+  if (preset === "ALL") {{
+    currentRange = null;
+  }} else if (preset === "YTD") {{
+    currentRange = {{ start: b.max.slice(0,4) + "-01-01", end: b.max }};
+  }} else {{
+    const date = new Date(b.max + "T00:00:00");
+    date.setFullYear(date.getFullYear() - Number(preset.replace("Y","")));
+    currentRange = {{ start: date.toISOString().slice(0,10), end: b.max }};
+  }}
+
+  document.querySelectorAll("[data-period]").forEach(btn => {{
+    btn.classList.toggle("active", btn.dataset.period === preset);
+  }});
+
+  render();
+}}
+
+function setMA(mode) {{
+  currentMA = mode;
+
+  document.querySelectorAll("[data-ma]").forEach(btn => {{
+    btn.classList.toggle("active", btn.dataset.ma === mode);
+  }});
+
+  render();
+}}
+
+function filteredData() {{
+  const ports = selectedPorts();
+
+  return PRODUCT_DATA.filter(row => {{
+    if (!ports.includes(row.PORT)) return false;
+    if (!currentRange) return true;
+    return row.DATE >= currentRange.start && row.DATE <= currentRange.end;
+  }});
+}}
+
+function dailyAverage(rows) {{
+  const grouped = {{}};
+
+  rows.forEach(row => {{
+    if (!grouped[row.DATE]) grouped[row.DATE] = [];
+    grouped[row.DATE].push(Number(row.PRICE));
+  }});
+
+  return Object.keys(grouped).sort().map(date => ({{
+    date,
+    value: grouped[date].reduce((a,b) => a+b, 0) / grouped[date].length
+  }}));
+}}
+
+function updateKpis(rows) {{
+  document.getElementById("recordCount").textContent = rows.length.toLocaleString("en-US");
+  document.getElementById("portCount").textContent = selectedPorts().length + " PORTS SELECTED";
+
+  if (!rows.length) {{
+    ["latestValue","averageValue","highLow","changeValue"].forEach(id => {{
+      document.getElementById(id).textContent = "-";
+    }});
+    document.getElementById("latestDate").textContent = "NO DATA";
+    document.getElementById("changeRate").textContent = "-";
+    return;
+  }}
+
+  const avgByDay = dailyAverage(rows);
+  const first = avgByDay[0];
+  const latest = avgByDay[avgByDay.length - 1];
+  const values = rows.map(row => Number(row.PRICE));
+
+  const avg = values.reduce((a,b) => a+b, 0) / values.length;
+  const high = Math.max(...values);
+  const low = Math.min(...values);
+  const change = latest.value - first.value;
+  const rate = first.value ? change / first.value * 100 : 0;
+
+  document.getElementById("latestValue").textContent = formatNumber(latest.value);
+  document.getElementById("latestDate").textContent = latest.date + " AVG";
+  document.getElementById("averageValue").textContent = formatNumber(avg);
+  document.getElementById("highLow").textContent =
+    formatNumber(high,0) + " / " + formatNumber(low,0);
+
+  const el = document.getElementById("changeValue");
+  el.textContent = (change > 0 ? "+" : "") + formatNumber(change);
+  el.className = "kpi-value " + (change > 0 ? "positive" : change < 0 ? "negative" : "");
+
+  document.getElementById("changeRate").textContent =
+    (rate > 0 ? "+" : "") + formatNumber(rate,2) + "% / " +
+    first.date + " → " + latest.date;
+}}
+
+function movingAverage(values, windowSize) {{
+  return values.map((item, index) => {{
+    const start = Math.max(0, index - windowSize + 1);
+    const range = values.slice(start, index + 1);
+    return range.reduce((sum, row) => sum + row.y, 0) / range.length;
+  }});
+}}
+
+function renderChart(rows) {{
+  const chart = document.getElementById("chart");
+
+  if (!rows.length) {{
+    Plotly.purge(chart);
+    chart.innerHTML = '<div class="empty">NO DATA FOR SELECTED CONDITIONS</div>';
+    return;
+  }}
+
+  const groups = {{}};
+
+  rows.forEach(row => {{
+    if (!groups[row.PORT]) groups[row.PORT] = [];
+    groups[row.PORT].push(row);
+  }});
+
+  const traces = [];
+
+  Object.entries(groups).forEach(([port, data]) => {{
+    data.sort((a,b) => a.DATE.localeCompare(b.DATE));
+
+    const series = data.map(row => ({{
+      x: row.DATE,
+      y: Number(row.PRICE)
+    }}));
+
+    traces.push({{
+      x: series.map(x => x.x),
+      y: series.map(x => x.y),
+      type: "scatter",
+      mode: "lines",
+      name: port,
+      line: {{ color: COLORS[port], width: 2.2 }},
+      hovertemplate: "<b>" + port + "</b><br>DATE: %{{x}}<br>PRICE: $%{{y:,.1f}}/mt<extra></extra>"
+    }});
+
+    if (currentMA !== "OFF") {{
+      const ma = movingAverage(series, Number(currentMA));
+
+      traces.push({{
+        x: series.map(x => x.x),
+        y: ma,
+        type: "scatter",
+        mode: "lines",
+        name: port + " " + currentMA + "D MA",
+        line: {{ color: COLORS[port], width: 1.1, dash: "dot" }},
+        hoverinfo: "skip"
+      }});
+    }}
+  }});
+
+  const b = bounds();
+  const chartRange = currentRange
+    ? [currentRange.start, currentRange.end]
+    : [b.min, b.max];
+
+  const layout = {{
+    margin: {{ l:72, r:26, t:22, b:68 }},
+    paper_bgcolor: "#07111c",
+    plot_bgcolor: "#07111c",
+    font: {{ family: '"Roboto Mono", Consolas, monospace', color:"#c9d6e2", size:11 }},
+    hovermode: "x unified",
+    legend: {{ orientation:"h", x:0, y:1.12 }},
+    xaxis: {{
+      type: "date",
+      range: chartRange,
+      gridcolor:"#1f3040",
+      linecolor:"#405568",
+      rangeslider: {{ visible:true, bgcolor:"#050c14", bordercolor:"#405568", thickness:.09 }}
+    }},
+    yaxis: {{
+      title:"USD / MT",
+      gridcolor:"#1f3040",
+      linecolor:"#405568"
+    }}
+  }};
+
+  Plotly.newPlot(chart, traces, layout, {{
+    responsive:true,
+    displaylogo:false,
+    modeBarButtonsToRemove:["select2d","lasso2d"]
+  }});
+
+  chart.on("plotly_relayout", event => {{
+    const start = event["xaxis.range[0]"];
+    const end = event["xaxis.range[1]"];
+
+    if (start && end) {{
+      currentRange = {{
+        start: String(start).slice(0,10),
+        end: String(end).slice(0,10)
+      }};
+      currentPreset = "CUSTOM";
+
+      document.querySelectorAll("[data-period]").forEach(btn => {{
+        btn.classList.remove("active");
+      }});
+
+      render();
+    }}
+  }});
+}}
+
+function renderForecast() {{
+  const selected = selectedPorts();
+
+  const rows = FORECAST_DATA.filter(row => selected.includes(row.PORT));
+
+  if (!rows.length) {{
+    document.getElementById("forecastTable").innerHTML =
+      '<div class="empty">NO FORECAST DATA AVAILABLE</div>';
+    return;
+  }}
+
+  let html = "<table><thead><tr><th>PORT / PERIOD</th><th>VLSFO</th><th>MGO</th><th>LSMGO</th><th>HSFO</th></tr></thead><tbody>";
+
+  rows.forEach(row => {{
+    html += "<tr>" +
+      "<td>" + row.PORT + " / " + row.Period + "</td>" +
+      "<td>" + formatNumber(row.VLSFO,0) + "</td>" +
+      "<td>" + formatNumber(row.MGO,0) + "</td>" +
+      "<td>" + formatNumber(row.LSMGO,0) + "</td>" +
+      "<td>" + formatNumber(row.HSFO,0) + "</td>" +
+      "</tr>";
+  }});
+
+  html += "</tbody></table>";
+  document.getElementById("forecastTable").innerHTML = html;
+}}
+
+function render() {{
+  const rows = filteredData();
+  updateKpis(rows);
+  renderChart(rows);
+  renderForecast();
+}}
+
+function downloadCSV() {{
+  const rows = filteredData();
+
+  if (!rows.length) {{
+    alert("다운로드할 데이터가 없습니다.");
+    return;
+  }}
+
+  const content = [
+    "DATE,PORT,PRICE",
+    ...rows.map(row => row.DATE + "," + row.PORT + "," + row.PRICE)
+  ].join("\\n");
+
+  const blob = new Blob(["\\uFEFF" + content], {{
+    type: "text/csv;charset=utf-8;"
+  }});
+
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = "shipandbunker_vlsfo_filtered.csv";
+
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+
+  URL.revokeObjectURL(url);
+}}
+
+document.addEventListener("DOMContentLoaded", render);
+</script>
 </body>
 </html>
 """
 
-# =========================================================
-# 6. Dashboard Rendering Logic
-# =========================================================
-def render_product_dashboard(force_refresh=False, static_mode=False):
-    message = ""
-    try:
-        df, fetched_at = load_or_collect_data(force_refresh=force_refresh)
-    except Exception as e:
-        df, fetched_at = pd.DataFrame(), "-"
-        message = f"VLSFO Load Error: {e}"
-
-    try:
-        (
-            forecast_df,
-            forecast_fetched_at,
-            forecast_message,
-        ) = load_or_collect_forecast_data(force_refresh=force_refresh)
-    except Exception as e:
-        forecast_df, forecast_fetched_at, forecast_message = (
-            pd.DataFrame(),
-            "-",
-            str(e),
-        )
-
-    selected_ports = ALL_PORTS.copy()
-    ma_mode = "quarterly"
-    start_date, end_date = "", ""
-
-    if not static_mode and request:
-        req_ports = request.args.getlist("ports")
-        if req_ports:
-            selected_ports = req_ports
-        ma_mode = request.args.get("ma_mode", "quarterly")
-        start_date = request.args.get("start_date", "")
-        end_date = request.args.get("end_date", "")
-
-    filtered_df = filter_df(
-        df, ports=selected_ports, start_date=start_date, end_date=end_date
-    )
-    filtered_df = add_features(filtered_df, ma_mode=ma_mode)
-    chart_df = add_forecast_to_chart_df(
-        filtered_df,
-        forecast_df,
-        selected_ports=selected_ports,
-        start_date=start_date,
-        end_date=end_date,
+    atomic_write_text(
+        BASE_DIR / "index.html",
+        html,
     )
 
-    kpis = build_kpis(filtered_df)
-    line_chart = build_line_chart(chart_df, ma_mode=ma_mode)
-    bar_chart = build_latest_bar_chart(filtered_df)
-    spread_chart = build_spread_chart(filtered_df)
-    period_change_kpis = compute_period_change_kpis(filtered_df)
-    forecast_table_html = build_forecast_table_html(
-        forecast_df, fetched_at=forecast_fetched_at, message=forecast_message
-    )
+    log("[HTML] Product dashboard generated: index.html")
 
-    if static_mode:
-        download_url = "./shipandbunker_vlsfo.csv"
-        refresh_url = "#"
-        product_href = STATIC_PRODUCT_HREF
-        oil_href = STATIC_OIL_HREF
-    else:
-        ports_q = "".join(
-            f"&ports={urllib.parse.quote(p)}" for p in selected_ports
-        )
-        date_q = f"&start_date={urllib.parse.quote(start_date)}&end_date={urllib.parse.quote(end_date)}"
-        download_url = f"/download_csv?ma_mode={ma_mode}{ports_q}{date_q}"
-        refresh_url = f"/?ma_mode={ma_mode}{ports_q}{date_q}&refresh=1"
-        product_href, oil_href = "/product", "/oil"
-
-    return render_template_string(
-        HTML,
-        fetched_at=fetched_at,
-        all_ports=ALL_PORTS,
-        selected_ports=selected_ports,
-        ma_mode=ma_mode,
-        start_date=start_date,
-        end_date=end_date,
-        kpis=kpis,
-        line_chart=line_chart,
-        bar_chart=bar_chart,
-        spread_chart=spread_chart,
-        period_change_kpis=period_change_kpis,
-        forecast_table_html=forecast_table_html,
-        download_url=download_url,
-        refresh_url=refresh_url,
-        static_mode=static_mode,
-        product_href=product_href,
-        oil_href=oil_href,
-        message=message,
-    )
-
-@app.route("/")
-@app.route("/product")
-def index():
-    force_refresh = request.args.get("refresh", "0") == "1"
-    return render_product_dashboard(
-        force_refresh=force_refresh, static_mode=False
-    )
-
-@app.route("/download_csv")
-def download_csv():
-    df, _ = load_or_collect_data(force_refresh=False)
-    csv_data = df.to_csv(index=False, encoding="utf-8-sig")
-    return Response(
-        csv_data,
-        mimetype="text/csv; charset=utf-8",
-        headers={
-            "Content-Disposition": (
-                "attachment; filename=shipandbunker_vlsfo.csv"
-            )
+def generate_oil_static_html(oil_long_df, fetched_at):
+    oil_records = dataframe_to_records(
+        oil_long_df,
+        "date",
+        rename_map={
+            "date": "DATE",
+            "oil_type": "OIL_TYPE",
+            "price": "PRICE",
         },
     )
 
-# =========================================================
-# 7. CLI / Cron Execution
-# =========================================================
-def export_static_csv_files(df, forecast_df):
-    if df is not None and not df.empty:
-        export_df = df.copy()
-        if "date" in export_df.columns:
-            export_df["date"] = pd.to_datetime(
-                export_df["date"], errors="coerce"
-            ).dt.strftime("%Y-%m-%d")
-        export_df.to_csv(
-            BASE_DIR / "shipandbunker_vlsfo.csv",
-            index=False,
-            encoding="utf-8-sig",
-        )
-
-    if forecast_df is not None and not forecast_df.empty:
-        export_fc = forecast_df.copy()
-        if "graph_date" in export_fc.columns:
-            export_fc["graph_date"] = pd.to_datetime(
-                export_fc["graph_date"], errors="coerce"
-            ).dt.strftime("%Y-%m-%d")
-        export_fc.to_csv(
-            BASE_DIR / "bunker_forecast.csv",
-            index=False,
-            encoding="utf-8-sig",
-        )
-
-def run_cron_job():
-    print("[INFO] Starting Cron Job...", flush=True)
-    df, _ = load_or_collect_data(force_refresh=True)
-    forecast_df, _, _ = load_or_collect_forecast_data(force_refresh=True)
-    export_static_csv_files(df, forecast_df)
-    with app.app_context():
-        html_content = render_product_dashboard(
-            force_refresh=False, static_mode=True
-        )
-    (BASE_DIR / "index.html").write_text(html_content, encoding="utf-8")
-    print(
-        "[INFO] Cron Job Finished. index.html and CSV files generated.",
-        flush=True,
+    oil_json = json.dumps(
+        oil_records,
+        ensure_ascii=False,
     )
 
-def find_available_port(host="127.0.0.1", preferred=5003):
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        s.bind((host, preferred))
-        port = preferred
-    except Exception:
-        s.bind((host, 0))
-        port = s.getsockname()[1]
-    finally:
-        s.close()
-    return port
+    html = f"""<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MI Terminal | Crude Oil Price</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>{TERMINAL_CSS}</style>
+</head>
 
-def wait_and_open_browser(url, port, timeout=20):
-    start = time.time()
-    while time.time() - start < timeout:
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=1):
-                webbrowser.open_new(url)
-                return
-        except Exception:
-            time.sleep(0.4)
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">MI&lt;GO&gt;</span>
+    <span class="brand-title">CRUDE OIL MONITOR</span>
+  </div>
+  <a class="nav-link" href="../index.html">← BUNKER PRICE</a>
+</header>
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Bunker Price Dashboard")
-    parser.add_argument(
-        "--crawl-only",
-        action="store_true",
-        help="크롤링 및 DB 저장/정적 파일 빌드만 수행하고 종료",
-    )
-    parser.add_argument("--port", type=int, default=5003, help="Flask 포트")
-    parser.add_argument("--host", type=str, default="127.0.0.1", help="Flask 호스트")
-    parser.add_argument(
-        "--no-open", action="store_true", help="브라우저 자동 열기 방지"
-    )
-    args, unknown = parser.parse_known_args()
+<main class="terminal">
+  <section class="status">
+    <span>SYSTEM / OPINET DATA ONLINE</span>
+    <span>LAST REFRESH: {fetched_at}</span>
+  </section>
 
-    # 1) GitHub Actions 환경이거나 --crawl-only 옵션인 경우
-    if os.environ.get("GITHUB_ACTIONS") == "true" or args.crawl_only:
-        try:
-            run_cron_job()
-            sys.exit(0)
-        except Exception as e:
-            print(f"[Bunker] Static build error: {e}", flush=True)
-            sys.exit(1)
+  <div class="workspace">
+    <aside class="panel">
+      <div class="panel-header">
+        <span class="panel-title">FUNCTIONS / FILTERS</span>
+      </div>
 
-    # 2) 로컬 PC 실행 시 초기 데이터 확인/수집
-    try:
-        print("[Bunker] Initializing data...", flush=True)
-        load_or_collect_data(force_refresh=False)
-        load_or_collect_forecast_data(force_refresh=False)
-    except Exception as e:
-        print(f"[Bunker] Init error: {e}", flush=True)
+      <section class="filter-section">
+        <span class="label">TIME RANGE</span>
+        <div class="button-grid">
+          <button class="btn" data-period="1Y" onclick="setPreset('1Y')">1Y</button>
+          <button class="btn" data-period="3Y" onclick="setPreset('3Y')">3Y</button>
+          <button class="btn" data-period="5Y" onclick="setPreset('5Y')">5Y</button>
+          <button class="btn" data-period="YTD" onclick="setPreset('YTD')">YTD</button>
+          <button class="btn all-button active" data-period="ALL" onclick="setPreset('ALL')">ALL HISTORY</button>
+        </div>
+      </section>
 
-    port = find_available_port(args.host, args.port)
-    local_url = f"http://{args.host}:{port}"
-    print(f"[INFO] Flask 서버 시작: {local_url}", flush=True)
+      <section class="filter-section">
+        <span class="label">SELECT SERIES</span>
+        <div class="series-list">
+          <label class="series-item"><input type="checkbox" value="Dubai" checked onchange="render()"> Dubai</label>
+          <label class="series-item"><input type="checkbox" value="Brent" checked onchange="render()"> Brent</label>
+          <label class="series-item"><input type="checkbox" value="WTI" checked onchange="render()"> WTI</label>
+        </div>
+      </section>
 
-    if not args.no_open:
-        threading.Thread(
-            target=wait_and_open_browser,
-            args=(local_url, port),
-            daemon=True,
-        ).start()
+      <section class="filter-section">
+        <button class="btn" style="width:100%;border-color:#34526e;color:#39a8ff;" onclick="downloadCSV()">EXPORT FILTERED CSV</button>
+      </section>
+    </aside>
 
-    app.run(host=args.host, port=port, debug=False, use_reloader=False)
+    <section>
+      <div class="heading">
+        <div>
+          <h1>INTERNATIONAL CRUDE OIL PRICE</h1>
+          <div class="subtitle">Dubai · Brent · WTI / USD per Barrel</div>
+        </div>
+      </div>
+
+      <section class="kpi-grid">
+        <div class="kpi">
+          <span class="kpi-label">LATEST<br>SELECTED AVG</span>
+          <span class="kpi-value" id="latestValue">-</span>
+          <span class="kpi-sub" id="latestDate">-</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">PERIOD<br>AVERAGE</span>
+          <span class="kpi-value" id="averageValue">-</span>
+          <span class="kpi-sub">USD / BBL</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">PERIOD<br>HIGH / LOW</span>
+          <span class="kpi-value" id="highLow">-</span>
+          <span class="kpi-sub">HIGH / LOW</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">CHANGE<br>FIRST → LAST</span>
+          <span class="kpi-value" id="changeValue">-</span>
+          <span class="kpi-sub" id="changeRate">-</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">OBSERVATIONS<br>/ SERIES</span>
+          <span class="kpi-value" id="recordCount">-</span>
+          <span class="kpi-sub" id="seriesCount">-</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <span class="panel-title">CRUDE OIL PRICE HISTORY / RANGE SLIDER ENABLED</span>
+          <span class="panel-title">USD PER BARREL</span>
+        </div>
+        <div id="chart"></div>
+      </section>
+    </section>
+  </div>
+</main>
+
+<script>
+const OIL_DATA = {oil_json};
+
+const COLORS = {{
+  Dubai: "#ff8a00",
+  Brent: "#39a8ff",
+  WTI: "#2bd682"
+}};
+
+let currentRange = null;
+let currentPreset = "ALL";
+
+function selectedTypes() {{
+  return Array.from(document.querySelectorAll(".series-list input:checked"))
+    .map(x => x.value);
+}}
+
+function formatNumber(value, decimals=2) {{
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
+  return Number(value).toLocaleString("en-US", {{
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals
+  }});
+}}
+
+function bounds() {{
+  const data = [...OIL_DATA].sort((a,b) => a.DATE.localeCompare(b.DATE));
+  return {{
+    min: data[0]?.DATE || null,
+    max: data[data.length - 1]?.DATE || null
+  }};
+}}
+
+function setPreset(preset) {{
+  const b = bounds();
+  if (!b.max) return;
+
+  currentPreset = preset;
+
+  if (preset === "ALL") {{
+    currentRange = null;
+  }} else if (preset === "YTD") {{
+    currentRange = {{ start: b.max.slice(0,4) + "-01-01", end: b.max }};
+  }} else {{
+    const date = new Date(b.max + "T00:00:00");
+    date.setFullYear(date.getFullYear() - Number(preset.replace("Y","")));
+    currentRange = {{ start: date.toISOString().slice(0,10), end: b.max }};
+  }}
+
+  document.querySelectorAll("[data-period]").forEach(btn => {{
+    btn.classList.toggle("active", btn.dataset.period === preset);
+  }});
+
+  render();
+}}
+
+function filteredData() {{
+  const types = selectedTypes();
+
+  return OIL_DATA.filter(row => {{
+    if (!types.includes(row.OIL_TYPE)) return false;
+    if (!currentRange) return true;
+    return row.DATE >= currentRange.start && row.DATE <= currentRange.end;
+  }});
+}}
+
+function dailyAverage(rows) {{
+  const grouped = {{}};
+
+  rows.forEach(row => {{
+    if (!grouped[row.DATE]) grouped[row.DATE] = [];
+    grouped[row.DATE].push(Number(row.PRICE));
+  }});
+
+  return Object.keys(grouped).sort().map(date => ({{
+    date,
+    value: grouped[date].reduce((a,b) => a+b, 0) / grouped[date].length
+  }}));
+}}
+
+function updateKpis(rows) {{
+  document.getElementById("recordCount").textContent = rows.length.toLocaleString("en-US");
+  document.getElementById("seriesCount").textContent = selectedTypes().length + " SERIES SELECTED";
+
+  if (!rows.length) {{
+    ["latestValue","averageValue","highLow","changeValue"].forEach(id => {{
+      document.getElementById(id).textContent = "-";
+    }});
+    document.getElementById("latestDate").textContent = "NO DATA";
+    document.getElementById("changeRate").textContent = "-";
+    return;
+  }}
+
+  const avgByDay = dailyAverage(rows);
+  const first = avgByDay[0];
+  const latest = avgByDay[avgByDay.length - 1];
+  const values = rows.map(row => Number(row.PRICE));
+
+  const avg = values.reduce((a,b) => a+b, 0) / values.length;
+  const high = Math.max(...values);
+  const low = Math.min(...values);
+  const change = latest.value - first.value;
+  const rate = first.value ? change / first.value * 100 : 0;
+
+  document.getElementById("latestValue").textContent = formatNumber(latest.value);
+  document.getElementById("latestDate").textContent = latest.date + " AVG";
+  document.getElementById("averageValue").textContent = formatNumber(avg);
+  document.getElementById("highLow").textContent =
+    formatNumber(high,0) + " / " + formatNumber(low,0);
+
+  const el = document.getElementById("changeValue");
+  el.textContent = (change > 0 ? "+" : "")
