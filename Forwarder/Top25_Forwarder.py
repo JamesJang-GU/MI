@@ -167,22 +167,137 @@ def save_today_data(df):
 
 # 5. Dashboard Generation
 def build_static_dashboard():
-    log("[BUILD] HTML 대시보드 생성 중...")
-    html_content = """
-    
-    
-    Forwarder Dashboard
-    
-Forwarder Dashboard
+    import sqlite3
+import pandas as pd
+from datetime import datetime
 
-Generated successfully.
+def build_static_dashboard(data_list, reference_date):
+    """
+    Bloomberg Terminal 스타일의 정적 HTML 대시보드를 생성합니다.
+    
+    Args:
+        data_list (list): dict 형태의 데이터 리스트 
+                         [{'rank': 1, 'provider': 'DHL', 'revenue': '85.2B', 'ocean': '4.2M', 'air': '1.1M', 'delta': '+2.1%'}, ...]
+        reference_date (str): 데이터 기준 날짜 (예: '2026-10-20')
+    """
+    
+    # 1. HTML 구조 및 Bloomberg Terminal CSS 정의
+    html_template = f"""
+    
+    
+    
+        
+        
+        FORWARDER MARKET INTELLIGENCE
+        
+        
+    
+    
+        
 
+            
+FORWARDER MARKET INTELLIGENCE
+
+            
+DATA REF: {reference_date}
+
+        
+
+
+        
+
+            
+
+                25
+                Total Providers
+            
+
+            
+
+                TOP 1
+                Market Leader
+            
+
+            
+
+                --
+                Market Share Avg
+            
+
+        
+
+
+        
+
+            
+                    {{rows}}
+                
+
+                
+                    
+                        Rank
+                        	Provider
+                        	Revenue (USD)
+                        	Ocean (TEU)
+                        	Air (Tons)
+                        	Delta (Δ)
+                    
+
+                
+                
+            
+
+        
+
+    
     
     """
-    with open(STATIC_HTML_PATH, "w", encoding="utf-8") as f:
-        f.write(html_content)
-    log("[BUILD] 완료")
 
+    # 2. 데이터 로우(Row) 생성 루프
+    rows_html = ""
+    for item in data_list:
+        # Delta 색상 결정 로직
+        delta_val = item.get('delta', '0%')
+        if '+' in delta_val:
+            delta_class = "delta-up"
+        elif '-' in delta_val:
+            delta_class = "delta-down"
+        else:
+            delta_class = ""
+
+        rows_html += f"""
+        
+            {item['rank']:02d}
+            {item['provider']}
+            {item['revenue']}
+            {item['ocean']}
+            {item['air']}
+            {delta_val}
+        
+        """
+
+    # 3. 최종 HTML 완성
+    final_html = html_template.format(
+        reference_date=reference_date,
+        rows=rows_html
+    )
+    
+    return final_html
+
+# --- 사용 예시 ---
+if __name__ == "__main__":
+    # 크롤러로부터 가져온 데이터라고 가정
+    sample_data = [
+        {'rank': 1, 'provider': 'DHL GLOBAL FORWARDING', 'revenue': '85.2B', 'ocean': '4.2M', 'air': '1.1M', 'delta': '+2.1%'},
+        {'rank': 2, 'provider': 'KUEHNE + NAGEL', 'revenue': '72.5B', 'ocean': '3.8M', 'air': '0.9M', 'delta': '-0.5%'},
+        {'rank': 3, 'provider': 'DB SCHENKER', 'revenue': '65.1B', 'ocean': '3.1M', 'air': '0.8M', 'delta': '+1.2%'},
+    ]
+    
+    html_output = build_static_dashboard(sample_data, "2026-10-20")
+    
+    with open("forwarder_dashboard.html", "w", encoding="utf-8") as f:
+        f.write(html_output)
+    print("Dashboard generated: forwarder_dashboard.html")
 # 6. Main Execution
 def main():
     parser = argparse.ArgumentParser(description="A&A Top 25 Dashboard Runner")
