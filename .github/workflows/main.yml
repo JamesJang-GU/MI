@@ -55,16 +55,7 @@ jobs:
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-
-          pip install \
-            pandas \
-            flask \
-            selenium \
-            webdriver-manager \
-            beautifulsoup4 \
-            lxml \
-            html5lib \
-            plotly
+          pip install pandas flask selenium webdriver-manager
 
       # =====================================================
       # 5. Shipping Index 크롤링 및 정적 파일 생성
@@ -110,10 +101,6 @@ jobs:
           test -f "Alphaliner/alphaliner_data.json"
           test -f "Alphaliner/index.html"
 
-          echo "===== Alphaliner index.html first 10 lines ====="
-          head -n 10 "Alphaliner/index.html"
-
-          echo "===== Check old Template Missing text ====="
           if grep -qF "Alphaliner Dashboard Template (alphaliner.html) Missing" "Alphaliner/index.html"; then
             echo "ERROR: Old Template Missing content still exists in Alphaliner/index.html"
             exit 1
@@ -122,57 +109,38 @@ jobs:
           echo "Alphaliner index.html verification passed."
 
       # =====================================================
-      # 8-1. Bunker Price / Crude Oil 크롤링 및 정적 파일 생성
-      # --crawl-only:
-      # VLSFO + Forecast + Dubai/Brent/WTI 데이터를 수집하고
-      # Bunker Price/index.html 및 OilPrice/index.html 생성
+      # 8-1. Bunker Price 크롤링 및 정적 파일 생성
+      # 실제 실행 경로: BunkerPrice/Bunker Price.py
       # =====================================================
-      - name: Crawl Bunker Price and Crude Oil dashboards
+      - name: Crawl Bunker Price and generate static dashboard
         env:
           CHROME_BINARY: ${{ steps.setup-chrome.outputs.chrome-path }}
         run: |
-          python "Bunker Price/energy_market_dashboard.py" --crawl-only
+          python "BunkerPrice/Bunker Price.py"
 
       # =====================================================
-      # 8-2. Bunker Price / Crude Oil 생성 결과 확인
+      # 8-2. Bunker Price 생성 결과 확인
       # =====================================================
-      - name: Verify Bunker Price and Crude Oil generated files
+      - name: Verify Bunker Price generated files
         run: |
-          echo "===== Bunker Price files ====="
-          ls -alh "Bunker Price"
+          echo "===== BunkerPrice files ====="
+          ls -alh "BunkerPrice"
 
-          echo "===== OilPrice files ====="
-          ls -alh "Bunker Price/OilPrice"
+          test -f "BunkerPrice/energy_market_data.db"
+          test -f "BunkerPrice/shipandbunker_vlsfo.csv"
+          test -f "BunkerPrice/bunker_forecast.csv"
+          test -f "BunkerPrice/index.html"
 
-          # Bunker Price 생성 파일
-          test -f "Bunker Price/energy_market_data.db"
-          test -f "Bunker Price/shipandbunker_vlsfo.csv"
-          test -f "Bunker Price/bunker_forecast.csv"
-          test -f "Bunker Price/index.html"
-
-          # Crude Oil 생성 파일
-          test -f "Bunker Price/OilPrice/opinet_oil_prices.csv"
-          test -f "Bunker Price/OilPrice/index.html"
-
-          echo "===== Verify Bunker Price dashboard title ====="
-          grep -qF "VLSFO BUNKER PRICE" "Bunker Price/index.html"
-
-          echo "===== Verify Crude Oil dashboard title ====="
-          grep -qF "INTERNATIONAL CRUDE OIL PRICE" "Bunker Price/OilPrice/index.html"
-
-          echo "Bunker Price and Crude Oil verification passed."
+          echo "Bunker Price verification passed."
 
       # =====================================================
       # 8-3. 메인 포털 대시보드(루트 index.html) 생성
-      # Bunker Price 파일 생성 후 실행
       # =====================================================
       - name: Generate Main Portal Dashboard
         run: |
           echo "===== Generating Portal Dashboard (index.html) ====="
-
           python dashboard_generator.py
 
-          # 루트 index.html 정상 생성 검증
           test -f "index.html"
 
       # =====================================================
@@ -183,42 +151,27 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # -------------------------------------------------
           # Shipping Index 생성 파일
-          # -------------------------------------------------
           git add "Shipping Index/index_history.db"
           git add "Shipping Index/shipping_index_data.json"
           git add "Shipping Index/index.html"
 
-          # -------------------------------------------------
           # Alphaliner 생성 파일
-          # -------------------------------------------------
           git add "Alphaliner/alphaliner_data.db"
           git add "Alphaliner/alphaliner_data.json"
           git add "Alphaliner/index.html"
           git add "Alphaliner/alphaliner_crawl.log"
 
-          # -------------------------------------------------
-          # Bunker Price / VLSFO 생성 파일
-          # -------------------------------------------------
-          git add "Bunker Price/energy_market_data.db"
-          git add "Bunker Price/shipandbunker_vlsfo.csv"
-          git add "Bunker Price/bunker_forecast.csv"
-          git add "Bunker Price/index.html"
+          # Bunker Price 생성 파일
+          git add "BunkerPrice/energy_market_data.db"
+          git add "BunkerPrice/shipandbunker_vlsfo.csv"
+          git add "BunkerPrice/bunker_forecast.csv"
+          git add "BunkerPrice/index.html"
 
-          # -------------------------------------------------
-          # Crude Oil / Opinet 생성 파일
-          # -------------------------------------------------
-          git add "Bunker Price/OilPrice/opinet_oil_prices.csv"
-          git add "Bunker Price/OilPrice/index.html"
-
-          # -------------------------------------------------
           # 메인 포털 생성 파일
-          # -------------------------------------------------
           git add "index.html"
           git add "dashboard_summary.json"
 
-          # 변경사항이 있는 경우에만 Commit / Push
           if git diff --cached --quiet; then
             echo "No dashboard changes to commit."
           else
