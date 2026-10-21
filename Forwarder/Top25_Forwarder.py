@@ -24,7 +24,7 @@ def setup_environment():
     for import_name, pip_name in required.items():
         if importlib.util.find_spec(import_name) is not None:
             continue
-        print(f"[SETUP] \\\'{pip_name}\\\' 패키지가 없어 설치를 시도합니다...", flush=True)
+        print(f"[SETUP] {pip_name} 패키지가 없어 설치를 시도합니다...", flush=True)
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "install", pip_name])
         except Exception:
@@ -90,7 +90,7 @@ def calculate_percentage_change(current, previous):
 
 def format_delta_text(val):
     if val is None: return "N/A"
-    # SyntaxError 방지를 위해 f-string 내부에 백슬래시(\)를 쓰지 않고 외부에서 처리
+    # SyntaxError 방지: f-string 내부에서 조건문을 쓰지 않고 밖에서 계산된 값을 받음
     prefix = "+" if val > 0 else ""
     return f"{prefix}{val:.1f}%"
 
@@ -147,12 +147,12 @@ def save_today_data(df):
         df["created_at"] = now
         conn.execute("DELETE FROM forwarders WHERE date = ?", (df["date"].iloc[0],))
         df.to_sql("forwarders", conn, if_exists="append", index=False)
-        conn.execute("INSERT INTO run_log (run_at, status, message, row_count) VALUES (?, \\\'SUCCESS\\\', \\\'OK\\\', ?)", (now, len(df)))
+        conn.execute("INSERT INTO run_log (run_at, status, message, row_count) VALUES (?, 'SUCCESS', 'OK', ?)", (now, len(df)))
         conn.commit()
         hist = pd.read_sql_query("SELECT * FROM forwarders ORDER BY date DESC, rank ASC", conn)
         hist.to_csv(STATIC_CSV_PATH, index=False, encoding="utf-8-sig")
     except Exception as e:
-        conn.execute("INSERT INTO run_log (run_at, status, message, row_count) VALUES (?, \\\'ERROR\\\', ?, 0)", (now, str(e)))
+        conn.execute("INSERT INTO run_log (run_at, status, message, row_count) VALUES (?, 'ERROR', ?, 0)", (now, str(e)))
         conn.commit()
         raise
     finally: conn.close()
@@ -195,16 +195,24 @@ def build_static_dashboard():
     rows_html = ""
     for item in data:
         d_val = item["revenue_delta"]
-        d_cls = "delta-up" if d_val and d_val > 0 else ("delta-down" if d_val and d_val < 0 else "delta-neutral")
-        # [FIXED] SyntaxError 방지를 위해 f-string 내부 백슬래시 제거
+        # 색상 클래스 결정
+        if d_val is not None and d_val > 0:
+            d_cls = "delta-up"
+        elif d_val is not None and d_val < 0:
+            d_cls = "delta-down"
+        else:
+            d_cls = "delta-neutral"
+            
+        # [FIXED] f-string 내부 백슬래시 제거: 미리 계산된 d_text 사용
         d_text = format_delta_text(d_val)
+        
         rows_html += f"""
             <tr>
-                <td class="rank">{item[\'rank\']:02d}</td>
-                <td><div class="provider">{html.escape(item[\'provider\'])}</div><div class="hq">{html.escape(item[\'hq\'])}</div></td>
-                <td class="number">{format_compact_number(item[\'revenue\'])}</td>
-                <td class="number">{format_compact_number(item[\'teu\'])}</td>
-                <td class="number">{format_compact_number(item[\'air_tons\'])}</td>
+                <td class="rank">{item['rank']:02d}</td>
+                <td><div class="provider">{html.escape(item['provider'])}</div><div class="hq">{html.escape(item['hq'])}</div></td>
+                <td class="number">{format_compact_number(item['revenue'])}</td>
+                <td class="number">{format_compact_number(item['teu'])}</td>
+                <td class="number">{format_compact_number(item['air_tons'])}</td>
                 <td class="number {d_cls}">{d_text}</td>
             </tr>
         """
@@ -245,21 +253,32 @@ def build_static_dashboard():
         .delta-up {{ color: var(--green); }}
         .delta-down {{ color: var(--red); }}
         .delta-neutral {{ color: var(--muted); }}
-        .footer {{ margin-top: 16px; color: var(--muted); font-size: 11px; }}
     </style>
 </head>
 <body>
-    <main class="page">
-        <header class="terminal-header">
-            <div><h1>FORWARDER MONITOR</h1></div>
+    <div class="page">
+        <div class="terminal-header">
+            <h1>A&A Top 25 Global Freight Forwarders</h1>
             <div class="reference">DATA AS OF: {ref_date} | {comp_txt}</div>
-        </header>
+        </div>
         
         <div class="kpi-strip">
-            <div class="kpi"><span class="stat"{len(data)}</span><span class="label">Total Providers</span></div>
-            <div class="kpi"><span class="stat"{format_compact_number(total_rev)}</span><span class="label">Total Revenue</span></div>
-            <div class="kpi"><span class="stat"{format_compact_number(total_teu)}</span><span class="label">Total Ocean TEU</span></div>
-            <div class="kpi"><span class="stat"{format_compact_number(total_air)}</span><span class="label">Total Air Tons</span></div>
+            <div class="kpi">
+                <span class="stat"{len(data)}</span>
+                <span class="label">Total Providers</span>
+            </div>
+            <div class="kpi">
+                <span class="stat"{format_compact_number(total_rev)}</span>
+                <span class="label">Total Revenue</span>
+            </div>
+            <div class="kpi">
+                <span class="stat"{format_compact_number(total_teu)}</span>
+                <span class="label">Total Ocean TEU</span>
+            </div>
+            <div class="kpi">
+                <span class="stat"{format_compact_number(total_air)}</span>
+                <span class="label">Total Air Tons</span>
+            </div>
         </div>
 
         <div class="table-wrap">
@@ -267,11 +286,11 @@ def build_static_dashboard():
                 <thead>
                     <tr>
                         <th>Rank</th>
-                        <th>Provider</th>
+                        <th>Provider / HQ</th>
                         <th>Revenue</th>
                         <th>Ocean TEU</th>
                         <th>Air Tons</th>
-                        <th>Rev Delta</th>
+                        <th>Rev. Delta</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -279,31 +298,28 @@ def build_static_dashboard():
                 </tbody>
             </table>
         </div>
-        
-        <footer class="footer">
-            Source: 3PL Logistics A&A Top 25 List | Generated by MI Crawler
-        </footer>
-    </main>
+    </div>
 </body>
 </html>"""
-
+    
     with open(STATIC_HTML_PATH, "w", encoding="utf-8") as f:
         f.write(html_template)
-    log(f"[SUCCESS] Dashboard generated at {STATIC_HTML_PATH}")
+    log(f"[SUCCESS] Dashboard generated: {STATIC_HTML_PATH}")
 
-def main():
+# =====================================================
+# 5. Main Execution
+# =====================================================
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["crawl", "dashboard"], default="crawl")
     args = parser.parse_args()
 
     if args.mode == "crawl":
-        log("[START] Crawling mode initiated.")
-        url = DEFAULT_URL
-        df = fetch_top_25_data(url)
+        log("Starting crawl mode...")
+        df = fetch_top_25_data(DEFAULT_URL)
         save_today_data(df)
+        log("Crawl completed successfully.")
     elif args.mode == "dashboard":
-        log("[START] Dashboard generation mode initiated.")
+        log("Starting dashboard generation mode...")
         build_static_dashboard()
-
-if __name__ == "__main__":
-    main()
+        log("Dashboard generation completed successfully.")
