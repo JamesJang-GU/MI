@@ -683,88 +683,152 @@ def parse_source_date(label: str) -> Optional[str]:
 
     return None
 
-def build_dataset(rows: List[List[Any]]) -> Dict[str, Any]:
-    """Convert Infogram chart table into labels, dates and route series."""
-    if not rows or len(rows) < 2:
-        raise RuntimeError("The selected TAC chart dataset is empty.")
+def build_snapshot_bundle(
+    dataset: Dict[str, Any],
+    data_index: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Build a single date-level snapshot bundle.
 
-    header = rows[0]
-    body = rows[1:]
+    If data_index is omitted, use the latest valid observation.
+    If data_index is supplied, build a historical snapshot for that position.
+    """
+    labels = dataset["labels"]
+    source_dates = dataset["source_dates"]
+    series = dataset["series"]
 
-    if len(header) < 2:
-        raise RuntimeError(f"Unexpected chart header format: {header}")
+    if data_index is None:
+        data_index = get_latest_data_position(dataset)
 
-    labels: List[str] = []
-    source_dates: List[Optional[str]] = []
-    valid_body_rows: List[List[Any]] = []
+    if data_index < 0 or data_index >= len(labels):
+        raise RuntimeError(f"Invalid TAC data position: {data_index}")
 
-    for row in body:
-        if not row:
+    source_label = labels[data_index]
+    parsed_date = source_dates[data_index]
+
+    if parsed_date is None:
+        raise RuntimeError(
+            "The source label could not be converted to a date. "
+            f"Label: '{source_label}'"
+        )
+
+    detail_rows: List[Dict[str, Any]] = []
+    current_values: List[float] = []
+    change_values: List[float] = []
+
+    for item in series:
+        route_name = item["name"]
+        values = item["values"]
+
+        current_value = (
+            values[data_index]
+            if data_index < len(values)
+            else None
+        )
+
+        # 해당 날짜에 노선 값이 없으면 해당 노선은 저장하지 않음
+        if current_value is None:
             continue
 
-        label = normalize_text(row[0])
+        previous_value = get_previous_valid_value(values, data_index)
 
-        if not label:
-            continue
+        weekly_change: Optional[float] = None
+        if previous_value not in (None, 0):
+            weekly_change = (
+                (current_value - previous_value) / previous_value
+            ) * 100
+            change_values.append(weekly_change)
 
-        labels.append(label)
-        source_dates.append(parse_source_date(label))
-        valid_body_rows.append(row)
+        origin, destination = split_route(route_name)
 
-    if not labels:
-        raise RuntimeError("No date labels were found in TAC chart dataset.")
-
-    series: List[Dict[str, Any]] = []
-
-    for column_index in range(1, len(header)):
-        route_name = normalize_route_name(str(header[column_index]))
-        values: List[Optional[float]] = []
-        valid_value_count = 0
-
-        for row in valid_body_rows:
-            raw_value = row[column_index] if column_index < len(row) else None
-            numeric_value = safe_float(raw_value)
-
-            if numeric_value is not None:
-                valid_value_count += 1
-
-            values.append(numeric_value)
-
-        if valid_value_count == 0:
-            continue
-
-        series.append(
+        detail_rows.append(
             {
-                "name": route_name,
-                "values": values,
+                "route_code": route_name,
+                "origin": origin,
+                "destination": destination,
+                "index_value": current_value,
+                "weekly_change": weekly_change,
+                "monthly_change": None,
+                "ytd_change": None,
             }
         )
 
-    if not series:
-        raise RuntimeError("No numeric TAC route series were extracted.")
+        current_values.append(current_value)
 
-    log_info(
-        "[PARSE] Dataset created: "
-        f"labels={len(labels)}, routes={len(series)}, "
-        f"route_names={[item['name'] for item in series]}"
+    if not detail_rows:
+        raise RuntimeError(
+            f"No route-level TAC values exist for '{source_label}'."
+        )
+
+    overall_index = sum(current_values) / len(current_values)
+
+    average_change = (
+        sum(change_values) / len(change_values)
+        if change_values
+        else None
     )
 
     return {
-        "labels": labels,
-        "source_dates": source_dates,
-        "series": series,
+        "data_date": parsed_date,
+        "source_label": source_label,
+        "overall_index": overall_index,
+        "weekly_change": average_change,
+        "details": detail_rows,
     }
 
-def get_previous_valid_value(
-    values: List[Optional[float]],
-    from_index: int,
-) -> Optional[float]:
-    """Find the preceding non-null route value."""
-    for index in range(from_index - 1, -1, -1):
-        if index < len(values) and values[index] is not None:
-            return values[index]
+def build_all_snapshot_bundles(
+    dataset: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """
+    Convert every valid Infogram date row into an independently storable
+    TAC historical snapshot.
+    """
+    labels = dataset.get("labels", [])
+    source_dates = dataset.get("source_dates", [])
 
-    return None
+    bundles: List[Dict[str, Any]] = []
+
+    for index, _label in enumerate(labels):
+        parsed_date = (
+            source_dates[index]
+            if index < len(source_dates)
+            else None
+        )
+
+        # 날짜로 해석되지 않는 보조 행, 빈 행 등은 제외
+        if parsed_date is None:
+            continue
+
+        try:
+            bundle = build_snapshot_bundle(
+                dataset=dataset,
+                data_index=index,
+            )
+            bundles.append(bundle)
+
+        except RuntimeError as exc:
+            log_warning(
+                f"[PARSE] Historical TAC row skipped: "
+                f"index={index}, label='{_label}', reason={exc}"
+            )
+
+    if not bundles:
+        raise RuntimeError(
+            "No valid historical TAC snapshots were created "
+            "from the Infogram dataset."
+        )
+
+    bundles.sort(key=lambda row: row["data_date"])
+
+    log_info(
+        "[PARSE] Historical snapshot bundles created: "
+        f"count={len(bundles)}, "
+        f"first={bundles[0]['data_date']}, "
+        f"last={bundles[-1]['data_date']}"
+    )
+
+    return bundles
+
 
 def make_snapshot_hash(
     data_date: str,
@@ -1941,23 +2005,27 @@ def run_tac_sync() -> Dict[str, Any]:
         embed_html = fetch_infogram_html()
         infographic_data = extract_infographic_data(embed_html)
         chart_rows = extract_best_chart_rows(infographic_data)
-
         dataset = build_dataset(chart_rows)
 
-        # 핵심 변경:
-        # 최신 1개 시점이 아닌 Infogram 전체 시계열을 날짜별로 분해한다.
+        # 기존: 최신 1건만 생성
+        # 변경: Infogram의 모든 유효 날짜를 스냅샷으로 생성
         bundles = build_all_snapshot_bundles(dataset)
 
-        if not bundles:
-            raise RuntimeError(
-                "No valid historical TAC snapshot bundles could be created."
-            )
+        new_count = 0
+        duplicate_count = 0
+        latest_snapshot_id: Optional[int] = None
 
-        sync_result = save_all_snapshots(bundles)
+        for bundle in bundles:
+            snapshot_id, is_new = save_snapshot(bundle)
 
-        latest_bundle = sync_result["latest_bundle"]
-        latest_snapshot_id = sync_result["latest_snapshot_id"]
+            if is_new:
+                new_count += 1
+            else:
+                duplicate_count += 1
 
+            latest_snapshot_id = snapshot_id
+
+        latest_bundle = bundles[-1]
         finished_at = get_now_string()
 
         save_crawl_audit(
@@ -1966,39 +2034,32 @@ def run_tac_sync() -> Dict[str, Any]:
             status="SUCCESS",
             message=(
                 "HISTORICAL_SYNC "
-                f"(new={sync_result['new_count']}, "
-                f"updated={sync_result['updated_count']}, "
-                f"unchanged={sync_result['unchanged_count']}, "
-                f"processed={len(bundles)})"
+                f"new={new_count}, "
+                f"duplicate={duplicate_count}, "
+                f"total={len(bundles)}"
             ),
             snapshot_id=latest_snapshot_id,
-            route_count=(
-                len(latest_bundle["details"])
-                if latest_bundle
-                else 0
-            ),
-            data_date=(
-                latest_bundle["data_date"]
-                if latest_bundle
-                else None
-            ),
+            route_count=len(latest_bundle["details"]),
+            data_date=latest_bundle["data_date"],
         )
 
         log_info(
-            "[SUCCESS] TAC historical extraction completed: "
-            f"latest_date={latest_bundle['data_date'] if latest_bundle else '--'}, "
-            f"periods={len(bundles)}, "
-            f"new={sync_result['new_count']}, "
-            f"updated={sync_result['updated_count']}, "
-            f"unchanged={sync_result['unchanged_count']}"
+            "[SUCCESS] TAC historical sync completed: "
+            f"new={new_count}, "
+            f"duplicate={duplicate_count}, "
+            f"total={len(bundles)}, "
+            f"latest_date={latest_bundle['data_date']}"
         )
 
         return {
             "ok": True,
             "snapshot_id": latest_snapshot_id,
+            "is_new": new_count > 0,
+            "new_count": new_count,
+            "duplicate_count": duplicate_count,
             "dataset": dataset,
             "bundle": latest_bundle,
-            "sync_result": sync_result,
+            "bundles": bundles,
         }
 
     except Exception as exc:
@@ -2014,12 +2075,15 @@ def run_tac_sync() -> Dict[str, Any]:
                 message=str(exc),
             )
         except Exception as audit_exc:
-            logger.error(f"[ERROR] Failed to save crawl audit: {audit_exc}")
+            logger.error(
+                f"[ERROR] Failed to save crawl audit: {audit_exc}"
+            )
 
         return {
             "ok": False,
             "error": str(exc),
         }
+
 
 # =============================================================================
 # 11. Entry point
