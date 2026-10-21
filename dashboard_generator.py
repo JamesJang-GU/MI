@@ -878,24 +878,20 @@ def find_tac_route_table(cursor):
             ],
         )
 
-corridor_col = find_first_column(
-    columns,
-    [
-        # 현재 TAC_Index.db의 공식 노선 식별 컬럼
-        "route_code",
-
-        # 타 DB 구조 호환용 후보
-        "corridor",
-        "corridor_name",
-        "route",
-        "route_name",
-        "lane",
-        "lane_name",
-        "market",
-        "market_name",
-    ],
-)
-
+        corridor_col = find_first_column(
+            columns,
+            [
+                "route_code",
+                "corridor",
+                "corridor_name",
+                "route",
+                "route_name",
+                "lane",
+                "lane_name",
+                "market",
+                "market_name",
+            ],
+        )
 
         origin_col = find_first_column(
             columns,
@@ -921,9 +917,6 @@ corridor_col = find_first_column(
             ],
         )
 
-        # 중요:
-        # period/month를 data_date보다 우선한다.
-        # TAC 차트의 Sep-16 ~ Sep-26 같은 historical period를 사용하기 위함.
         date_col = find_first_column(
             columns,
             [
