@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-21 08:28:21",
+  "generated_at": "2026-10-21 08:36:24",
   "shipping": {
     "title": "Shipping Index (SCFI / BDI)",
     "path": "Shipping Index/index.html",
@@ -67,11 +67,11 @@
     "category": "Air",
     "latest_date": "2026-09-01",
     "frankfurt_north_america_rate": "$2.40 USD/kg",
-    "frankfurt_north_america_mom_html": "<span class=\"delta-neutral\">-</span>",
+    "frankfurt_north_america_mom_html": "<span class=\"delta-up\">+0.02 (+0.84%) ↗</span>",
     "hong_kong_europe_rate": "$4.80 USD/kg",
-    "hong_kong_europe_mom_html": "<span class=\"delta-neutral\">-</span>",
+    "hong_kong_europe_mom_html": "<span class=\"delta-up\">+0.22 (+4.80%) ↗</span>",
     "hong_kong_north_america_rate": "$7.02 USD/kg",
-    "hong_kong_north_america_mom_html": "<span class=\"delta-neutral\">-</span>",
+    "hong_kong_north_america_mom_html": "<span class=\"delta-up\">+0.04 (+0.57%) ↗</span>",
     "status": "Active"
   },
   "macro": {

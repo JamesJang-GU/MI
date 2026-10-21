@@ -3,323 +3,443 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TAC Index | Baltic Exchange Airfreight Rate Index</title>
+  <title>TAC INDEX // BALTIC AIRFREIGHT TERMINAL</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --navy: #0f172a;
-      --navy-2: #1e293b;
-      --blue: #0ea5e9;
-      --blue-dark: #0369a1;
-      --bg: #f1f5f9;
-      --card: #ffffff;
-      --line: #e2e8f0;
-      --text: #0f172a;
-      --muted: #64748b;
-      --green: #059669;
-      --red: #dc2626;
-      --amber: #d97706;
+      --bg-root: #0a0b0e;
+      --bg-panel: #12141a;
+      --bg-panel-alt: #171a22;
+      --border-subtle: #1e222d;
+      --border-strong: #2a303f;
+      --text-main: #f0f3f6;
+      --text-muted: #737c8e;
+      --text-dim: #454d5d;
+
+      /* Bloomberg Core Palette */
+      --bb-amber: #ff9900;
+      --bb-amber-dim: #b36b00;
+      --bb-cyan: #00e5ff;
+      --bb-green: #00e676;
+      --bb-red: #ff334b;
+      --bb-purple: #bb86fc;
+      --bb-yellow: #ffd600;
     }
 
     * {
       box-sizing: border-box;
+      margin: 0;
+      padding: 0;
     }
 
     body {
-      margin: 0;
-      font-family: Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-      color: var(--text);
-      background: var(--bg);
-    }
-
-    .hero {
-      padding: 42px 24px;
-      color: #fff;
-      background: linear-gradient(135deg, #0f172a, #0c4a6e);
-    }
-
-    .hero-inner,
-    .container {
-      max-width: 1240px;
-      margin: 0 auto;
-    }
-
-    h1 {
-      margin: 0;
-      font-size: 30px;
-      letter-spacing: -0.4px;
-    }
-
-    .subtitle {
-      margin: 10px 0 0;
-      font-size: 15px;
-      line-height: 1.6;
-      color: #cbd5e1;
-    }
-
-    .container {
-      padding: 28px 24px 52px;
-    }
-
-    .meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px 18px;
-      margin: 0 0 22px;
-      color: var(--muted);
+      background-color: var(--bg-root);
+      color: var(--text-main);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       font-size: 13px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      padding-bottom: 40px;
     }
 
-    .meta a {
-      color: var(--blue-dark);
+    .mono {
+      font-family: 'JetBrains Mono', Consolas, Menlo, monospace;
+      letter-spacing: -0.2px;
+    }
+
+    /* Terminal Header Bar */
+    .terminal-header {
+      background-color: var(--bg-panel);
+      border-bottom: 2px solid var(--bb-amber);
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .terminal-cmd {
+      background: var(--bb-amber);
+      color: #000;
+      font-weight: 800;
+      font-size: 11px;
+      padding: 3px 6px;
+      border-radius: 2px;
+    }
+
+    .terminal-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: 0.5px;
+    }
+
+    .terminal-title span {
+      color: var(--bb-amber);
+      font-weight: 400;
+    }
+
+    .meta-ticker {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .meta-ticker a {
+      color: var(--bb-cyan);
       text-decoration: none;
     }
-
-    .status {
-      padding: 14px 16px;
-      border-radius: 9px;
-      margin-bottom: 20px;
-      font-size: 14px;
-      line-height: 1.5;
+    .meta-ticker a:hover {
+      text-decoration: underline;
     }
 
-    .status.success {
-      color: #065f46;
-      background: #d1fae5;
-      border: 1px solid #a7f3d0;
+    .status-dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--bb-green);
+      margin-right: 5px;
+      box-shadow: 0 0 8px var(--bb-green);
+    }
+    .status-dot.warn {
+      background: var(--bb-amber);
+      box-shadow: 0 0 8px var(--bb-amber);
     }
 
-    .status.warning {
-      color: #92400e;
-      background: #fef3c7;
-      border: 1px solid #fde68a;
+    /* Main Container */
+    .container {
+      max-width: 1400px;
+      margin: 18px auto 0;
+      padding: 0 16px;
     }
 
-    .kpis {
+    /* KPI Command Matrix */
+    .kpi-matrix {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
     }
 
-    .kpi,
-    .card {
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: var(--card);
-      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+    .kpi-box {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-left: 3px solid var(--bb-amber);
+      padding: 12px 14px;
+      border-radius: 2px;
+      position: relative;
     }
 
-    .kpi {
-      padding: 18px;
+    .kpi-box.cyan {
+      border-left-color: var(--bb-cyan);
+    }
+    .kpi-box.green {
+      border-left-color: var(--bb-green);
+    }
+    .kpi-box.purple {
+      border-left-color: var(--bb-purple);
     }
 
-    .kpi-label {
-      color: var(--muted);
-      font-size: 12px;
+    .kpi-tag {
+      font-size: 10px;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .kpi-val {
+      font-size: 24px;
+      font-weight: 700;
+      color: #ffffff;
+      line-height: 1.1;
+    }
+
+    .kpi-sub {
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    /* Panel Shell */
+    .panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: 2px;
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+
+    .panel-head {
+      background: var(--bg-panel-alt);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .panel-head h2 {
+      font-size: 13px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.3px;
+      letter-spacing: 0.5px;
+      color: var(--bb-amber);
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
-    .kpi-value {
-      margin-top: 9px;
-      font-size: 25px;
-      font-weight: 800;
-      letter-spacing: -0.3px;
+    .panel-desc {
+      font-size: 11px;
+      color: var(--text-muted);
     }
 
-    .kpi-note {
-      margin-top: 8px;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.4;
+    .panel-body {
+      padding: 14px;
     }
 
-    .card {
-      padding: 22px;
-      margin-bottom: 22px;
-    }
-
-    .card h2 {
-      margin: 0 0 8px;
-      font-size: 20px;
-    }
-
-    .description {
-      margin: 0 0 18px;
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.6;
-    }
-
-    .toolbar {
+    /* Filter Toolbar */
+    .filter-bar {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 6px;
+      margin-bottom: 14px;
       align-items: center;
-      margin-bottom: 18px;
     }
 
-    .route-button {
-      padding: 8px 12px;
-      color: #334155;
-      border: 1px solid #cbd5e1;
-      border-radius: 999px;
-      background: #fff;
-      font-size: 13px;
+    .filter-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-right: 4px;
+      font-weight: 600;
+    }
+
+    .term-btn {
+      background: #0f1117;
+      border: 1px solid var(--border-strong);
+      color: var(--text-muted);
+      padding: 4px 10px;
+      font-size: 11px;
+      border-radius: 2px;
       cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: 'JetBrains Mono', Consolas, monospace;
     }
 
-    .route-button.active {
+    .term-btn:hover {
+      border-color: var(--bb-amber);
       color: #fff;
-      border-color: var(--blue-dark);
-      background: var(--blue-dark);
     }
 
-    .chart-area {
+    .term-btn.active {
+      background: rgba(255, 153, 0, 0.15);
+      border-color: var(--bb-amber);
+      color: var(--bb-amber);
+      font-weight: 600;
+    }
+
+    /* Chart Container */
+    .chart-box {
+      height: 400px;
       position: relative;
-      height: 430px;
     }
 
-    .table-wrap {
+    /* Terminal Data Table */
+    .data-table-wrap {
       overflow-x: auto;
     }
 
-    table {
+    table.terminal-tbl {
       width: 100%;
-      min-width: 680px;
       border-collapse: collapse;
-      font-size: 14px;
-    }
-
-    th,
-    td {
-      padding: 12px 10px;
-      border-bottom: 1px solid var(--line);
+      font-size: 12px;
       text-align: left;
-      white-space: nowrap;
     }
 
-    th {
-      color: #475569;
-      background: #f8fafc;
-      font-size: 12px;
+    table.terminal-tbl th {
+      background: #0c0e13;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 10.5px;
+      letter-spacing: 0.4px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border-strong);
     }
 
-    .positive {
-      color: var(--green);
-      font-weight: 700;
+    table.terminal-tbl td {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border-subtle);
+      color: #e2e8f0;
     }
 
-    .negative {
-      color: var(--red);
-      font-weight: 700;
+    table.terminal-tbl tbody tr:hover {
+      background: rgba(255, 153, 0, 0.04);
     }
 
-    .muted {
-      color: var(--muted);
+    .text-right {
+      text-align: right;
     }
 
-    .footnote {
-      margin: 18px 0 0;
-      color: var(--muted);
-      font-size: 12px;
+    .badge-route {
+      display: inline-block;
+      padding: 2px 6px;
+      background: #1e222d;
+      border: 1px solid #2d3343;
+      border-radius: 2px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--bb-cyan);
+    }
+
+    .delta-up {
+      color: var(--bb-green);
+      font-weight: 600;
+    }
+
+    .delta-down {
+      color: var(--bb-red);
+      font-weight: 600;
+    }
+
+    .delta-flat {
+      color: var(--text-dim);
+    }
+
+    /* Footer & Disclaimer */
+    .terminal-footer {
+      margin-top: 18px;
+      padding: 12px;
+      background: rgba(23, 26, 34, 0.6);
+      border: 1px dashed var(--border-strong);
+      border-radius: 2px;
+      font-size: 11px;
+      color: var(--text-muted);
       line-height: 1.6;
     }
 
-    @media (max-width: 850px) {
-      .kpis {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
+    .terminal-footer strong {
+      color: var(--bb-amber);
+    }
 
-      .chart-area {
-        height: 350px;
+    /* Responsive */
+    @media (max-width: 900px) {
+      .kpi-matrix {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .meta-ticker {
+        display: none;
+      }
+      .chart-box {
+        height: 320px;
       }
     }
 
-    @media (max-width: 520px) {
-      .hero {
-        padding: 32px 18px;
-      }
-
-      .container {
-        padding: 20px 18px 42px;
-      }
-
-      .kpis {
+    @media (max-width: 560px) {
+      .kpi-matrix {
         grid-template-columns: 1fr;
       }
-
-      h1 {
-        font-size: 24px;
+      .terminal-header {
+        padding: 8px 12px;
       }
     }
   </style>
 </head>
 <body>
-  <section class="hero">
-    <div class="hero-inner">
-      <h1>TAC Index · Baltic Exchange Airfreight Rate Index</h1>
-      <p class="subtitle">
-        Air Cargo News에 게시된 Baltic Exchange Airfreight Rate Index의 주요 노선별 운임 추이
-      </p>
+  <!-- Terminal Top Navigation Bar -->
+  <header class="terminal-header">
+    <div class="brand-section">
+      <div class="terminal-cmd mono">AIR &lt;GO&gt;</div>
+      <div class="terminal-title">TAC INDEX <span>// BALTIC AIRFREIGHT</span></div>
     </div>
-  </section>
+    <div class="meta-ticker mono">
+      <span id="sync-dot-container"><span class="status-dot"></span>LIVE</span>
+      <span>SRC: <a href="https://www.aircargonews.net/data-hub/industry-data/baltic-exchange-airfreight-rate-index/" target="_blank" rel="noopener">AIR CARGO NEWS</a></span>
+      <span>UPDATED: <span id="build-timestamp" style="color: #fff;">2026-10-21 07:43:28</span></span>
+      <span>UNIT: <strong style="color: var(--bb-amber);">USD / kg</strong></span>
+    </div>
+  </header>
 
   <main class="container">
-    <div class="meta">
-      <span>Source: <a href="https://www.aircargonews.net/data-hub/industry-data/baltic-exchange-airfreight-rate-index/" target="_blank" rel="noopener">Air Cargo News</a></span>
-      <span>Last dashboard build: 2026-10-19 00:12:07</span>
-      <span>Unit: USD/kg</span>
-    </div>
+    <!-- Audit / Sync Meta Banner -->
+    <div id="sync-banner"></div>
 
-    <div id="sync-status"></div>
-    <section class="kpis" id="kpi-area"></section>
+    <!-- 4-Box Key Metrics Matrix -->
+    <section class="kpi-matrix mono" id="kpi-area"></section>
 
-    <section class="card">
-      <h2>Route Rate Trend</h2>
-      <p class="description">
-        노선을 선택하여 운임 시계열을 비교할 수 있습니다. 그래프의 값은 원천 데이터의 USD/kg 기준입니다.
-      </p>
-
-      <div class="toolbar" id="route-buttons"></div>
-      <div class="chart-area">
-        <canvas id="rate-chart"></canvas>
+    <!-- Interactive Route Rate Chart -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2><span>■</span> ROUTE RATE TIME-SERIES MONITOR</h2>
+        <span class="panel-desc mono">USD / KG INDEXED BENCHMARK</span>
+      </div>
+      <div class="panel-body">
+        <div class="filter-bar">
+          <span class="filter-label mono">SELECT ROUTE:</span>
+          <div id="route-buttons" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
+        </div>
+        <div class="chart-box">
+          <canvas id="rate-chart"></canvas>
+        </div>
       </div>
     </section>
 
-    <section class="card">
-      <h2>Latest Route Rates</h2>
-      <p class="description">
-        최신 원천 데이터 시점의 노선별 운임과 이전 가용 시점 대비 변동률입니다.
-      </p>
-
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Route</th>
-              <th>Origin</th>
-              <th>Destination</th>
-              <th>Latest Rate (USD/kg)</th>
-              <th>Change vs. Previous Period</th>
-              <th>Data Date</th>
-            </tr>
-          </thead>
-          <tbody id="detail-table-body"></tbody>
-        </table>
+    <!-- Latest Route Observation Detail Table -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2><span>■</span> SPOT RATE & PERIODIC DELTA BREAKDOWN</h2>
+        <span class="panel-desc mono">LATEST OBSERVED BENCHMARKS</span>
       </div>
-
-      <p class="footnote">
-        주의: 포털의 “Overall Index”는 최신 가용 노선 운임의 단순 평균이며, 공식 TAC 복합지수를 의미하지 않습니다.
-        “Weekly Change” 역시 각 노선의 이전 가용 관측치 대비 변동률 평균으로 계산한 참고 지표입니다.
-      </p>
+      <div class="panel-body" style="padding: 0;">
+        <div class="data-table-wrap">
+          <table class="terminal-tbl mono">
+            <thead>
+              <tr>
+                <th>ROUTE CODE</th>
+                <th>ORIGIN</th>
+                <th>DESTINATION</th>
+                <th class="text-right">LATEST SPOT (USD/KG)</th>
+                <th class="text-right">PERIOD CHANGE (%)</th>
+                <th class="text-right">OBSERVATION DATE</th>
+              </tr>
+            </thead>
+            <tbody id="detail-table-body"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
+
+    <!-- Terminal Operational Notes & Disclaimers -->
+    <footer class="terminal-footer mono">
+      <strong>[TERMINAL NOTE]</strong><br>
+      1. <strong>Overall Index</strong>는 원천 차트에서 식별된 주요 개별 노선 스팟 운임의 단순 산술 평균치이며 공식 TAC Composite Benchmark를 대변하지 않습니다.<br>
+      2. <strong>Change vs. Prev</strong>는 결측치를 제외한 직전 가용 관측치와의 노선별 변동률 평균을 산출한 지표입니다.<br>
+      3. 데이터 파이프라인은 Air Cargo News 공식 Infogram 임베드 소스로부터 실시간 동기화됩니다.
+    </footer>
   </main>
 
+  <!-- Embedded JSON Data Payload -->
   <script type="application/json" id="tac-data">
 {
-  "generated_at": "2026-10-19 00:12:07",
+  "generated_at": "2026-10-21 07:43:28",
   "source": {
     "name": "Baltic Exchange Airfreight Rate Index",
     "publisher": "Air Cargo News",
@@ -333,15 +453,975 @@
     "unit": "USD/kg"
   },
   "last_sync": {
-    "started_at": "2026-10-19 00:12:06",
-    "finished_at": "2026-10-19 00:12:07",
+    "started_at": "2026-10-21 07:43:26",
+    "finished_at": "2026-10-21 07:43:28",
     "status": "SUCCESS",
-    "message": "DUPLICATE_SNAPSHOT",
+    "message": "HISTORICAL_SYNC new=120, duplicate=1, total=121",
     "snapshot_id": 1,
     "route_count": 3,
     "data_date": "2026-09-01"
   },
   "history": [
+    {
+      "snapshot_id": 2,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2016-09-01",
+      "overall_index": 2.4166666666666665,
+      "weekly_change": null,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 3,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2016-10-01",
+      "overall_index": 2.723333333333333,
+      "weekly_change": 12.335592021693765,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 4,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2016-11-01",
+      "overall_index": 3.1999999999999997,
+      "weekly_change": 17.42110353436287,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 5,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2016-12-01",
+      "overall_index": 3.123333333333333,
+      "weekly_change": -0.6542615422661524,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 6,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2017-01-01",
+      "overall_index": 2.75,
+      "weekly_change": -12.13696375566879,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 7,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2017-02-01",
+      "overall_index": 2.436666666666667,
+      "weekly_change": -10.496720217746839,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 8,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2017-03-01",
+      "overall_index": 2.6999999999999997,
+      "weekly_change": 10.08826761571577,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 9,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2017-04-01",
+      "overall_index": 2.643333333333333,
+      "weekly_change": -1.1977611894241023,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 10,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2017-05-01",
+      "overall_index": 2.5566666666666666,
+      "weekly_change": -3.2906462694925502,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 11,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2017-06-01",
+      "overall_index": 2.5833333333333335,
+      "weekly_change": 0.7550650758588872,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 12,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2017-07-01",
+      "overall_index": 2.5500000000000003,
+      "weekly_change": -1.8336799086981765,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 13,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2017-08-01",
+      "overall_index": 2.5766666666666667,
+      "weekly_change": 2.120900538467579,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 14,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2017-09-01",
+      "overall_index": 2.8766666666666665,
+      "weekly_change": 10.824555079640291,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 15,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2017-10-01",
+      "overall_index": 3.013333333333333,
+      "weekly_change": 4.301391338428371,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 16,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2017-11-01",
+      "overall_index": 3.5100000000000002,
+      "weekly_change": 15.861714261667105,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 17,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2017-12-01",
+      "overall_index": 3.66,
+      "weekly_change": 4.856952057337098,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 18,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2018-01-01",
+      "overall_index": 3.0833333333333335,
+      "weekly_change": -13.66690668579957,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 19,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2018-02-01",
+      "overall_index": 3.0733333333333337,
+      "weekly_change": -0.2945266288970429,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 20,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2018-03-01",
+      "overall_index": 3.033333333333333,
+      "weekly_change": -1.580755173450795,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 21,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2018-04-01",
+      "overall_index": 3.016666666666667,
+      "weekly_change": -0.39848955213041926,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 22,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2018-05-01",
+      "overall_index": 3.0199999999999996,
+      "weekly_change": -0.33632498819083917,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 23,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2018-06-01",
+      "overall_index": 3.0,
+      "weekly_change": -0.39006113728205377,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 24,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2018-07-01",
+      "overall_index": 3.07,
+      "weekly_change": 2.3485880054466812,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 25,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2018-08-01",
+      "overall_index": 3.0733333333333337,
+      "weekly_change": -0.2831277543198447,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 26,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2018-09-01",
+      "overall_index": 3.223333333333333,
+      "weekly_change": 4.162761409849486,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 27,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2018-10-01",
+      "overall_index": 3.4633333333333334,
+      "weekly_change": 6.5317642832003,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 28,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2018-11-01",
+      "overall_index": 3.733333333333333,
+      "weekly_change": 6.445496224379724,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 29,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2018-12-01",
+      "overall_index": 3.5833333333333335,
+      "weekly_change": -1.5066835100491367,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 30,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2019-01-01",
+      "overall_index": 2.92,
+      "weekly_change": -17.536960229567228,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 31,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2019-02-01",
+      "overall_index": 2.8366666666666664,
+      "weekly_change": -2.3625941351483615,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 32,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2019-03-01",
+      "overall_index": 2.8466666666666662,
+      "weekly_change": 1.1770244821092255,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 33,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2019-04-01",
+      "overall_index": 2.813333333333333,
+      "weekly_change": -2.0254014231233737,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 34,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2019-05-01",
+      "overall_index": 2.856666666666667,
+      "weekly_change": 1.3229325215626575,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 35,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2019-06-01",
+      "overall_index": 2.7466666666666666,
+      "weekly_change": -3.4778613912909093,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 36,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2019-07-01",
+      "overall_index": 2.7399999999999998,
+      "weekly_change": -0.22459764855481046,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 37,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2019-08-01",
+      "overall_index": 2.67,
+      "weekly_change": -2.03688235236649,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 38,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2019-09-01",
+      "overall_index": 2.643333333333333,
+      "weekly_change": -2.0296258771436113,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 39,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2019-10-01",
+      "overall_index": 2.7100000000000004,
+      "weekly_change": 1.9700855022693515,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 40,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2019-11-01",
+      "overall_index": 2.9499999999999997,
+      "weekly_change": 7.261778776135902,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 41,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2019-12-01",
+      "overall_index": 2.8433333333333333,
+      "weekly_change": -2.843990408024147,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 42,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2020-01-01",
+      "overall_index": 2.6266666666666665,
+      "weekly_change": -4.965223798096726,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 43,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2020-02-01",
+      "overall_index": 2.5166666666666666,
+      "weekly_change": -4.34220946077026,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 44,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2020-03-01",
+      "overall_index": 3.223333333333333,
+      "weekly_change": 29.228315135361612,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 45,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2020-04-01",
+      "overall_index": 4.816666666666666,
+      "weekly_change": 50.28845902081789,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 46,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2020-05-01",
+      "overall_index": 5.773333333333333,
+      "weekly_change": 17.329663396939342,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 47,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2020-06-01",
+      "overall_index": 4.753333333333334,
+      "weekly_change": -14.279325682285409,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 48,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2020-07-01",
+      "overall_index": 3.953333333333333,
+      "weekly_change": -16.3326692964544,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 49,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2020-08-01",
+      "overall_index": 4.243333333333333,
+      "weekly_change": 6.641241784934775,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 50,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2020-09-01",
+      "overall_index": 4.006666666666667,
+      "weekly_change": -5.016951492889555,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 51,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2020-10-01",
+      "overall_index": 4.113333333333333,
+      "weekly_change": 1.7709854165725722,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 52,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2020-11-01",
+      "overall_index": 5.6000000000000005,
+      "weekly_change": 37.33191688474688,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 53,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2020-12-01",
+      "overall_index": 6.03,
+      "weekly_change": 9.708014527473614,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 54,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2021-01-01",
+      "overall_index": 5.053333333333334,
+      "weekly_change": -16.233790498906775,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 55,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2021-02-01",
+      "overall_index": 5.079999999999999,
+      "weekly_change": 0.6282674773856488,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 56,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2021-03-01",
+      "overall_index": 4.66,
+      "weekly_change": -7.33479020101012,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 57,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2021-04-01",
+      "overall_index": 5.739999999999999,
+      "weekly_change": 20.46022493510579,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 58,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2021-05-01",
+      "overall_index": 5.946666666666666,
+      "weekly_change": 3.9923458386488018,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 59,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2021-06-01",
+      "overall_index": 5.433333333333334,
+      "weekly_change": -8.421779507814565,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 60,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2021-07-01",
+      "overall_index": 5.526666666666666,
+      "weekly_change": 2.1312657888151567,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 61,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2021-08-01",
+      "overall_index": 5.736666666666667,
+      "weekly_change": 2.1854508799910857,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 62,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2021-09-01",
+      "overall_index": 6.506666666666667,
+      "weekly_change": 13.295549723196428,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 63,
+      "captured_at": "2026-10-21 07:43:27",
+      "data_date": "2021-10-01",
+      "overall_index": 6.8566666666666665,
+      "weekly_change": 5.268600944464938,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 64,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2021-11-01",
+      "overall_index": 7.966666666666666,
+      "weekly_change": 15.722660325885682,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 65,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2021-12-01",
+      "overall_index": 8.643333333333333,
+      "weekly_change": 9.480585077044015,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 66,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2022-01-01",
+      "overall_index": 7.376666666666668,
+      "weekly_change": -14.33585076674835,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 67,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2022-02-01",
+      "overall_index": 6.886666666666667,
+      "weekly_change": -3.775202930777617,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 68,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2022-03-01",
+      "overall_index": 6.053333333333334,
+      "weekly_change": -11.111900892465156,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 69,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2022-04-01",
+      "overall_index": 6.993333333333333,
+      "weekly_change": 15.165589692680228,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 70,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2022-05-01",
+      "overall_index": 6.756666666666667,
+      "weekly_change": -4.918503411532274,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 71,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2022-06-01",
+      "overall_index": 6.353333333333334,
+      "weekly_change": -4.9912473476221555,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 72,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2022-07-01",
+      "overall_index": 6.216666666666666,
+      "weekly_change": -2.5774028089804797,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 73,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2022-08-01",
+      "overall_index": 6.206666666666667,
+      "weekly_change": 0.5061904262688703,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 74,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2022-09-01",
+      "overall_index": 5.966666666666666,
+      "weekly_change": -3.5501356234703274,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 75,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2022-10-01",
+      "overall_index": 5.406666666666666,
+      "weekly_change": -8.198808990229809,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 76,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2022-11-01",
+      "overall_index": 5.453333333333333,
+      "weekly_change": 2.79583332061436,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 77,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2022-12-01",
+      "overall_index": 5.46,
+      "weekly_change": 0.3209863561477741,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 78,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2023-01-01",
+      "overall_index": 4.8500000000000005,
+      "weekly_change": -12.18498290257365,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 79,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2023-02-01",
+      "overall_index": 4.293333333333333,
+      "weekly_change": -9.366204082295654,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 80,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2023-03-01",
+      "overall_index": 4.3,
+      "weekly_change": -0.541483890125431,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 81,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2023-04-01",
+      "overall_index": 4.09,
+      "weekly_change": -5.268829280033661,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 82,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2023-05-01",
+      "overall_index": 3.8366666666666664,
+      "weekly_change": -7.1084909242804,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 83,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2023-06-01",
+      "overall_index": 3.6666666666666665,
+      "weekly_change": -5.334868855269416,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 84,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2023-07-01",
+      "overall_index": 3.4800000000000004,
+      "weekly_change": -5.661853512608481,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 85,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2023-08-01",
+      "overall_index": 3.563333333333333,
+      "weekly_change": 2.352381516497898,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 86,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2023-09-01",
+      "overall_index": 3.59,
+      "weekly_change": 0.37408401198826974,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 87,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2023-10-01",
+      "overall_index": 3.9766666666666666,
+      "weekly_change": 9.317431398665992,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 88,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2023-11-01",
+      "overall_index": 4.256666666666667,
+      "weekly_change": 3.922577930106329,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 89,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2023-12-01",
+      "overall_index": 4.9366666666666665,
+      "weekly_change": 16.550421512574584,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 90,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2024-01-01",
+      "overall_index": 3.763333333333333,
+      "weekly_change": -22.21149273113009,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 91,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2024-02-01",
+      "overall_index": 3.6766666666666663,
+      "weekly_change": 1.0120112128816503,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 92,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2024-03-01",
+      "overall_index": 3.6799999999999997,
+      "weekly_change": 0.26134645732320455,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 93,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2024-04-01",
+      "overall_index": 3.9566666666666666,
+      "weekly_change": 3.5303055648488892,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 94,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2024-05-01",
+      "overall_index": 3.973333333333333,
+      "weekly_change": 1.6429418696229086,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 95,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2024-06-01",
+      "overall_index": 4.08,
+      "weekly_change": 1.6181360665989895,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 96,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2024-07-01",
+      "overall_index": 4.046666666666667,
+      "weekly_change": -0.785221106381632,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 97,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2024-08-01",
+      "overall_index": 4.1466666666666665,
+      "weekly_change": 3.137027324527322,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 98,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2024-09-01",
+      "overall_index": 4.213333333333334,
+      "weekly_change": 1.0294732229065222,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 99,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2024-10-01",
+      "overall_index": 4.13,
+      "weekly_change": -3.4865239879235035,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 100,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2024-11-01",
+      "overall_index": 4.526666666666666,
+      "weekly_change": 11.339937654106082,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 101,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2024-12-01",
+      "overall_index": 5.1033333333333335,
+      "weekly_change": 20.058665128470416,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 102,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2025-01-01",
+      "overall_index": 4.38,
+      "weekly_change": -12.99598479940066,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 103,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2025-02-01",
+      "overall_index": 4.216666666666667,
+      "weekly_change": -2.994274244274236,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 104,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2025-03-01",
+      "overall_index": 4.166666666666667,
+      "weekly_change": -1.3749585052011402,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 105,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2025-04-01",
+      "overall_index": 4.140000000000001,
+      "weekly_change": -2.0928828171240865,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 106,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2025-05-01",
+      "overall_index": 3.8666666666666667,
+      "weekly_change": -7.873480925235948,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 107,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2025-06-01",
+      "overall_index": 3.7900000000000005,
+      "weekly_change": -2.5397813635129407,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 108,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2025-07-01",
+      "overall_index": 3.8833333333333333,
+      "weekly_change": 3.1761755260301023,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 109,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2025-08-01",
+      "overall_index": 3.89,
+      "weekly_change": -0.27803985708836043,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 110,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2025-09-01",
+      "overall_index": 3.92,
+      "weekly_change": -0.4292324311217826,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 111,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2025-10-01",
+      "overall_index": 4.06,
+      "weekly_change": 1.7999302023366868,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 112,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2025-11-01",
+      "overall_index": 4.446666666666666,
+      "weekly_change": 10.546409596977194,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 113,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2025-12-01",
+      "overall_index": 4.873333333333334,
+      "weekly_change": 11.680186983099604,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 114,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2026-01-01",
+      "overall_index": 4.306666666666667,
+      "weekly_change": -7.931538365874894,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 115,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2026-02-01",
+      "overall_index": 4.183333333333334,
+      "weekly_change": -2.774983232729705,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 116,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2026-03-01",
+      "overall_index": 4.303333333333334,
+      "weekly_change": 3.7354884150940784,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 117,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2026-04-01",
+      "overall_index": 5.180000000000001,
+      "weekly_change": 17.20147108509034,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 118,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2026-05-01",
+      "overall_index": 5.2299999999999995,
+      "weekly_change": -0.7677216259849745,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 119,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2026-06-01",
+      "overall_index": 5.286666666666666,
+      "weekly_change": 1.16938598379453,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 120,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2026-07-01",
+      "overall_index": 4.75,
+      "weekly_change": -9.561491071385294,
+      "route_count": 3
+    },
+    {
+      "snapshot_id": 121,
+      "captured_at": "2026-10-21 07:43:28",
+      "data_date": "2026-08-01",
+      "overall_index": 4.646666666666667,
+      "weekly_change": -3.1410033460478775,
+      "route_count": 3
+    },
     {
       "snapshot_id": 1,
       "captured_at": "2026-10-18 08:53:53",
@@ -1030,20 +2110,20 @@
       var chart = null;
       var selectedRoutes = {};
 
-      var colors = [
-        "#0284c7",
-        "#dc2626",
-        "#059669",
-        "#d97706",
-        "#7c3aed",
-        "#0891b2"
+      // Bloomberg Terminal Vibrant Line Color Map
+      var terminalColors = [
+        "#00e5ff", // Cyan
+        "#ff9900", // Amber
+        "#00e676", // Green
+        "#ff334b", // Red
+        "#bb86fc", // Purple
+        "#ffd600"  // Yellow
       ];
 
       function formatNumber(value, digits) {
         if (value === null || value === undefined || Number.isNaN(Number(value))) {
-          return "-";
+          return "--";
         }
-
         return Number(value).toLocaleString("en-US", {
           minimumFractionDigits: digits,
           maximumFractionDigits: digits
@@ -1052,41 +2132,43 @@
 
       function formatPercent(value) {
         if (value === null || value === undefined || Number.isNaN(Number(value))) {
-          return "-";
+          return "--";
         }
-
-        var number = Number(value);
-        return (number >= 0 ? "+" : "") + number.toFixed(2) + "%";
+        var num = Number(value);
+        return (num >= 0 ? "+" : "") + num.toFixed(2) + "%";
       }
 
-      function getChangeClass(value) {
-        if (value === null || value === undefined) {
-          return "muted";
-        }
+      function getDeltaClass(value) {
+        if (value === null || value === undefined) return "delta-flat";
+        var num = Number(value);
+        if (num > 0) return "delta-up";
+        if (num < 0) return "delta-down";
+        return "delta-flat";
+      }
 
-        return Number(value) >= 0 ? "positive" : "negative";
+      function getDeltaArrow(value) {
+        if (value === null || value === undefined) return "";
+        var num = Number(value);
+        if (num > 0) return "▲ ";
+        if (num < 0) return "▼ ";
+        return "";
       }
 
       function renderStatus() {
         var lastSync = DATA.last_sync || {};
-        var target = document.getElementById("sync-status");
+        var target = document.getElementById("sync-banner");
+        var dot = document.querySelector(".status-dot");
 
-        if (!lastSync.status) {
-          target.innerHTML =
-            '<div class="status warning">수집 이력이 아직 없습니다.</div>';
-          return;
+        if (!lastSync.status || lastSync.status !== "SUCCESS") {
+          if (dot) dot.className = "status-dot warn";
+          if (target) {
+            target.innerHTML =
+              '<div style="background: rgba(255, 153, 0, 0.1); border: 1px solid var(--bb-amber); color: var(--bb-amber); padding: 8px 12px; margin-bottom: 14px; font-size: 11px;" class="mono">' +
+              '<strong>[WARN]</strong> Pipeline sync status: ' + (lastSync.status || "NO_AUDIT_LOG") +
+              ' | Message: ' + (lastSync.message || "Historical cache in use.") +
+              '</div>';
+          }
         }
-
-        var isSuccess = lastSync.status === "SUCCESS";
-        var message = lastSync.message || "-";
-        var finishedAt = lastSync.finished_at || "-";
-
-        target.innerHTML =
-          '<div class="status ' + (isSuccess ? "success" : "warning") + '">' +
-          '<strong>Last Sync Status: ' + (isSuccess ? "SUCCESS" : "WARNING") + '</strong>' +
-          '<br>Finished: ' + finishedAt +
-          '<br>Message: ' + message +
-          "</div>";
       }
 
       function renderKpis() {
@@ -1096,45 +2178,49 @@
 
         var cards = [
           {
-            label: "Latest Data Date",
-            value: latest ? latest.data_date : "-",
-            note: "원천 차트의 최신 관측 시점"
+            tag: "LATEST DATE",
+            val: latest ? latest.data_date : "--",
+            sub: "Latest Chart Period",
+            cls: "cyan"
           },
           {
-            label: "Overall Index",
-            value: latest ? formatNumber(latest.overall_index, 2) : "-",
-            note: "최신 노선 운임의 단순 평균"
+            tag: "OVERALL INDEX",
+            val: (latest ? "$" + formatNumber(latest.overall_index, 2) : "--") + " <span style='font-size:12px; color:var(--text-muted);'>USD/kg</span>",
+            sub: "Arithmetic Route Avg",
+            cls: "amber"
           },
           {
-            label: "Change vs. Previous",
-            value: latest ? formatPercent(latest.weekly_change) : "-",
-            note: "노선별 이전 가용 시점 대비 평균"
+            tag: "CHANGE VS PREV",
+            val: (latest && latest.weekly_change !== null)
+                 ? "<span class='" + getDeltaClass(latest.weekly_change) + "'>" + getDeltaArrow(latest.weekly_change) + formatPercent(latest.weekly_change) + "</span>"
+                 : "--",
+            sub: "Period-over-Period Delta",
+            cls: latest && latest.weekly_change >= 0 ? "green" : "purple"
           },
           {
-            label: "Route Count",
-            value: latest ? latest.route_count : latestDetails.length,
-            note: "최신 데이터가 있는 노선 수"
+            tag: "ACTIVE ROUTES",
+            val: (latest ? latest.route_count : latestDetails.length) + " <span style='font-size:12px; color:var(--text-muted);'>PAIRS</span>",
+            sub: "Tracked O-D Air Corridors",
+            cls: "cyan"
           }
         ];
 
-        document.getElementById("kpi-area").innerHTML = cards.map(function (card) {
+        document.getElementById("kpi-area").innerHTML = cards.map(function (c) {
           return (
-            '<article class="kpi">' +
-              '<div class="kpi-label">' + card.label + "</div>" +
-              '<div class="kpi-value">' + card.value + "</div>" +
-              '<div class="kpi-note">' + card.note + "</div>" +
-            "</article>"
+            '<div class="kpi-box ' + c.cls + '">' +
+              '<div class="kpi-tag"><span>' + c.tag + '</span></div>' +
+              '<div class="kpi-val">' + c.val + '</div>' +
+              '<div class="kpi-sub mono">' + c.sub + '</div>' +
+            '</div>'
           );
         }).join("");
       }
 
       function getRouteSeries() {
         var routeMap = {};
-
         (DATA.raw_dataset && DATA.raw_dataset.series || []).forEach(function (series) {
           routeMap[series.name] = series;
         });
-
         return routeMap;
       }
 
@@ -1144,7 +2230,7 @@
         var target = document.getElementById("route-buttons");
 
         if (!routes.length) {
-          target.innerHTML = '<span class="muted">No historical route series available.</span>';
+          target.innerHTML = '<span class="mono" style="color:var(--text-dim);">No series available</span>';
           return;
         }
 
@@ -1157,19 +2243,19 @@
         target.innerHTML = routes.map(function (route) {
           var active = selectedRoutes[route] ? " active" : "";
           return (
-            '<button class="route-button' + active + '" data-route="' + route + '">' +
+            '<button class="term-btn' + active + '" data-route="' + route + '">' +
             route +
-            "</button>"
+            '</button>'
           );
         }).join("");
 
-        target.querySelectorAll(".route-button").forEach(function (button) {
+        target.querySelectorAll(".term-btn").forEach(function (button) {
           button.addEventListener("click", function () {
             var route = button.getAttribute("data-route");
             selectedRoutes[route] = !selectedRoutes[route];
 
-            var activeCount = Object.keys(selectedRoutes).filter(function (key) {
-              return selectedRoutes[key];
+            var activeCount = Object.keys(selectedRoutes).filter(function (k) {
+              return selectedRoutes[k];
             }).length;
 
             if (activeCount === 0) {
@@ -1189,22 +2275,23 @@
           return selectedRoutes[route];
         });
 
-        if (typeof Chart === "undefined") {
-          return;
-        }
+        if (typeof Chart === "undefined") return;
 
         var datasets = routes.map(function (route, index) {
           var series = routeMap[route];
+          var col = terminalColors[index % terminalColors.length];
 
           return {
             label: route,
             data: series.values,
-            borderColor: colors[index % colors.length],
-            backgroundColor: colors[index % colors.length] + "22",
-            borderWidth: 2.5,
-            tension: 0.25,
-            pointRadius: 1.8,
+            borderColor: col,
+            backgroundColor: col + "15",
+            borderWidth: 2,
+            tension: 0.2,
+            pointRadius: 2,
             pointHoverRadius: 5,
+            pointBackgroundColor: col,
+            pointBorderColor: "#0a0b0e",
             spanGaps: true
           };
         });
@@ -1233,14 +2320,32 @@
             },
             plugins: {
               legend: {
-                position: "top"
+                position: "top",
+                align: "end",
+                labels: {
+                  boxWidth: 10,
+                  boxHeight: 10,
+                  color: "#a0aec0",
+                  font: {
+                    family: "'JetBrains Mono', Consolas, monospace",
+                    size: 11
+                  }
+                }
               },
               tooltip: {
+                backgroundColor: "#171a22",
+                titleColor: "#ff9900",
+                bodyColor: "#f0f3f6",
+                borderColor: "#2a303f",
+                borderWidth: 1,
+                padding: 10,
+                titleFont: { family: "'JetBrains Mono', monospace", size: 12 },
+                bodyFont: { family: "'JetBrains Mono', monospace", size: 11 },
                 callbacks: {
                   label: function (context) {
-                    var value = context.parsed.y;
-                    return context.dataset.label + ": " +
-                      (value === null ? "-" : Number(value).toFixed(2) + " USD/kg");
+                    var val = context.parsed.y;
+                    return " " + context.dataset.label + ": " +
+                      (val === null ? "--" : "$" + Number(val).toFixed(2) + " / kg");
                   }
                 }
               }
@@ -1248,21 +2353,32 @@
             scales: {
               x: {
                 ticks: {
-                  maxTicksLimit: 16
+                  color: "#64748b",
+                  font: { family: "'JetBrains Mono', monospace", size: 10.5 },
+                  maxTicksLimit: 14
                 },
                 grid: {
-                  display: false
+                  color: "#1e222d",
+                  drawBorder: false
                 }
               },
               y: {
                 title: {
                   display: true,
-                  text: "USD / kg"
+                  text: "USD / KG",
+                  color: "#737c8e",
+                  font: { family: "'JetBrains Mono', monospace", size: 10 }
                 },
                 ticks: {
-                  callback: function (value) {
-                    return Number(value).toFixed(2);
+                  color: "#64748b",
+                  font: { family: "'JetBrains Mono', monospace", size: 10.5 },
+                  callback: function (val) {
+                    return "$" + Number(val).toFixed(2);
                   }
+                },
+                grid: {
+                  color: "#1e222d",
+                  drawBorder: false
                 }
               }
             }
@@ -1276,21 +2392,22 @@
 
         if (!rows.length) {
           target.innerHTML =
-            '<tr><td colspan="6" class="muted">No latest route data available.</td></tr>';
+            '<tr><td colspan="6" style="text-align:center; color:var(--text-dim); padding:20px;">No latest route data available.</td></tr>';
           return;
         }
 
         target.innerHTML = rows.map(function (row) {
+          var deltaCls = getDeltaClass(row.weekly_change);
+          var arrow = getDeltaArrow(row.weekly_change);
+
           return (
             "<tr>" +
-              "<td>" + (row.route_code || "-") + "</td>" +
-              "<td>" + (row.origin || "-") + "</td>" +
-              "<td>" + (row.destination || "-") + "</td>" +
-              "<td>" + formatNumber(row.index_value, 2) + "</td>" +
-              '<td class="' + getChangeClass(row.weekly_change) + '">' +
-                formatPercent(row.weekly_change) +
-              "</td>" +
-              "<td>" + (row.data_date || "-") + "</td>" +
+              '<td><span class="badge-route">' + (row.route_code || "--") + "</span></td>" +
+              "<td>" + (row.origin || "--") + "</td>" +
+              "<td>" + (row.destination || "--") + "</td>" +
+              '<td class="text-right" style="font-weight:700; color:#fff;">$' + formatNumber(row.index_value, 2) + "</td>" +
+              '<td class="text-right ' + deltaCls + '">' + arrow + formatPercent(row.weekly_change) + "</td>" +
+              '<td class="text-right" style="color:var(--text-muted);">' + (row.data_date || "--") + "</td>" +
             "</tr>"
           );
         }).join("");

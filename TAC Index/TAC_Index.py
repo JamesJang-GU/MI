@@ -690,8 +690,110 @@ def build_snapshot_bundle(
     """
     Build a single date-level snapshot bundle.
 
+<<<<<<< Updated upstream
     If data_index is omitted, use the latest valid observation.
     If data_index is supplied, build a historical snapshot for that position.
+=======
+    header = rows[0]
+    body = rows[1:]
+
+    if len(header) < 2:
+        raise RuntimeError(f"Unexpected chart header format: {header}")
+
+    labels: List[str] = []
+    source_dates: List[Optional[str]] = []
+
+    for row in body:
+        if not row:
+            continue
+
+        label = normalize_text(row[0])
+        if not label:
+            continue
+
+        labels.append(label)
+        source_dates.append(parse_source_date(label))
+
+    if not labels:
+        raise RuntimeError("No date labels were found in the TAC chart dataset.")
+
+    series: List[Dict[str, Any]] = []
+
+    for column_index in range(1, len(header)):
+        route_name = normalize_route_name(str(header[column_index]))
+        values: List[Optional[float]] = []
+
+        valid_value_count = 0
+
+        for row in body:
+            if not row or not normalize_text(row[0]):
+                continue
+
+            raw_value = row[column_index] if column_index < len(row) else None
+            numeric_value = safe_float(raw_value)
+
+            if numeric_value is not None:
+                valid_value_count += 1
+
+            values.append(numeric_value)
+
+        if valid_value_count == 0:
+            continue
+
+        series.append(
+            {
+                "name": route_name,
+                "values": values,
+            }
+        )
+
+    if not series:
+        raise RuntimeError("No numeric TAC route series were extracted.")
+
+    log_info(
+        "[PARSE] Dataset created: "
+        f"labels={len(labels)}, routes={len(series)}, "
+        f"route_names={[series_item['name'] for series_item in series]}"
+    )
+
+    return {
+        "labels": labels,
+        "source_dates": source_dates,
+        "series": series,
+    }
+
+def get_latest_data_position(dataset: Dict[str, Any]) -> int:
+    labels = dataset.get("labels", [])
+    series = dataset.get("series", [])
+
+    for index in range(len(labels) - 1, -1, -1):
+        for item in series:
+            values = item.get("values", [])
+            if index < len(values) and values[index] is not None:
+                return index
+
+    raise RuntimeError("No valid latest data point was found.")
+
+def get_previous_valid_value(
+    values: List[Optional[float]],
+    from_index: int,
+) -> Optional[float]:
+    for index in range(from_index - 1, -1, -1):
+        if index < len(values) and values[index] is not None:
+            return values[index]
+
+    return None
+
+def build_snapshot_bundle(
+    dataset: Dict[str, Any],
+    data_index: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Build one date-level TAC snapshot from the parsed Infogram time series.
+
+    - data_index=None: build the latest valid source observation.
+    - data_index=int : build the historical observation at that position.
+>>>>>>> Stashed changes
     """
     labels = dataset["labels"]
     source_dates = dataset["source_dates"]
@@ -726,7 +828,11 @@ def build_snapshot_bundle(
             else None
         )
 
+<<<<<<< Updated upstream
         # 해당 날짜에 노선 값이 없으면 해당 노선은 저장하지 않음
+=======
+        # 해당 기준일에 값이 없는 노선은 저장 대상에서 제외한다.
+>>>>>>> Stashed changes
         if current_value is None:
             continue
 
@@ -780,23 +886,42 @@ def build_all_snapshot_bundles(
     dataset: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
     """
+<<<<<<< Updated upstream
     Convert every valid Infogram date row into an independently storable
     TAC historical snapshot.
+=======
+    Build a separate database snapshot bundle for every valid date row
+    available in the Infogram time-series dataset.
+>>>>>>> Stashed changes
     """
     labels = dataset.get("labels", [])
     source_dates = dataset.get("source_dates", [])
 
     bundles: List[Dict[str, Any]] = []
 
+<<<<<<< Updated upstream
     for index, _label in enumerate(labels):
+=======
+    for index, source_label in enumerate(labels):
+>>>>>>> Stashed changes
         parsed_date = (
             source_dates[index]
             if index < len(source_dates)
             else None
         )
 
+<<<<<<< Updated upstream
         # 날짜로 해석되지 않는 보조 행, 빈 행 등은 제외
         if parsed_date is None:
+=======
+        # 날짜로 인식되지 않는 빈 행 또는 보조 라벨은 제외한다.
+        if parsed_date is None:
+            log_warning(
+                "[PARSE] Historical TAC row skipped because its label "
+                f"cannot be parsed as a date: index={index}, "
+                f"label='{source_label}'"
+            )
+>>>>>>> Stashed changes
             continue
 
         try:
@@ -808,8 +933,13 @@ def build_all_snapshot_bundles(
 
         except RuntimeError as exc:
             log_warning(
+<<<<<<< Updated upstream
                 f"[PARSE] Historical TAC row skipped: "
                 f"index={index}, label='{_label}', reason={exc}"
+=======
+                "[PARSE] Historical TAC row skipped: "
+                f"index={index}, label='{source_label}', reason={exc}"
+>>>>>>> Stashed changes
             )
 
     if not bundles:
@@ -818,7 +948,11 @@ def build_all_snapshot_bundles(
             "from the Infogram dataset."
         )
 
+<<<<<<< Updated upstream
     bundles.sort(key=lambda row: row["data_date"])
+=======
+    bundles.sort(key=lambda bundle: bundle["data_date"])
+>>>>>>> Stashed changes
 
     log_info(
         "[PARSE] Historical snapshot bundles created: "
@@ -829,12 +963,16 @@ def build_all_snapshot_bundles(
 
     return bundles
 
+<<<<<<< Updated upstream
 
 def make_snapshot_hash(
     data_date: str,
     details: List[Dict[str, Any]],
 ) -> str:
     """Create a deterministic hash for source revision detection."""
+=======
+def make_snapshot_hash(bundle: Dict[str, Any]) -> str:
+>>>>>>> Stashed changes
     normalized_payload = {
         "data_date": data_date,
         "details": sorted(
@@ -2007,8 +2145,12 @@ def run_tac_sync() -> Dict[str, Any]:
         chart_rows = extract_best_chart_rows(infographic_data)
         dataset = build_dataset(chart_rows)
 
+<<<<<<< Updated upstream
         # 기존: 최신 1건만 생성
         # 변경: Infogram의 모든 유효 날짜를 스냅샷으로 생성
+=======
+        # Infogram이 제공하는 전체 시계열을 월별/기간별 스냅샷으로 적재한다.
+>>>>>>> Stashed changes
         bundles = build_all_snapshot_bundles(dataset)
 
         new_count = 0
@@ -2084,10 +2226,13 @@ def run_tac_sync() -> Dict[str, Any]:
             "error": str(exc),
         }
 
+<<<<<<< Updated upstream
 
 # =============================================================================
 # 11. Entry point
 # =============================================================================
+=======
+>>>>>>> Stashed changes
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="TAC Index / Baltic Exchange Airfreight Rate Index crawler"
