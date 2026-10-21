@@ -6,9 +6,10 @@ Market Intelligence Portal - Main Dashboard Generator
 
 연결 모듈:
 - Sea
-  - Shipping Index (SCFI / BDI) with WoW Delta & Arrow (↗ / ↘)
+  - Shipping Index (SCFI / BDI with WoW Delta ↗/↘)
   - Alphaliner TOP 100 (Total Ships, Total TEU, Top 10 M/S with units)
-  - Bunker Price (Ship & Bunker VLSFO)
+  - Bunker Price (Rotterdam, Fujairah, Singapore VLSFO with Delta ↗/↘)
+  - Crude Oil (Dubai, Brent, WTI with Delta ↗/↘)
   - Global Top 25 Forwarders
 - Air
   - TAC Air Freight Index
@@ -120,7 +121,6 @@ def format_compact_number(value, suffix=""):
         return "-"
 
     absolute_number = abs(number)
-
     if absolute_number >= 1_000_000_000:
         return f"{number / 1_000_000_000:,.2f}B{suffix}"
     if absolute_number >= 1_000_000:
@@ -131,7 +131,7 @@ def format_compact_number(value, suffix=""):
     return f"{number:,.0f}{suffix}"
 
 def format_price(value, suffix=" USD/MT"):
-    """벙커유 가격 표시 형식."""
+    """가격 표시 형식."""
     try:
         number = float(value)
     except (TypeError, ValueError):
@@ -156,45 +156,44 @@ def normalize_port_name(value):
     }
     return mapping.get(normalized, original_value)
 
-def calculate_delta_display(current_val, prev_val, decimals=1):
+def calculate_delta_display(current_value, previous_value, decimals=2, prefix=""):
     """
-    현재 값과 이전 값을 비교하여 증감 텍스트, 화살표(↗/↘), CSS 클래스를 반환한다.
-    반환: (display_html_str, raw_diff_str)
+    최신값과 직전값을 비교해 HTML 증감 표시를 반환한다.
+    반환 예: <span class="delta-up">+12.50 (+1.62%) ↗</span>
     """
-    if current_val is None or prev_val is None:
-        return '<span class="delta-neutral">-</span>', "-"
+    if current_value is None or previous_value is None:
+        return '<span class="delta-neutral">-</span>'
 
     try:
-        cur = float(current_val)
-        prv = float(prev_val)
-    except (ValueError, TypeError):
-        return '<span class="delta-neutral">-</span>', "-"
+        cur = float(current_value)
+        prv = float(previous_value)
+    except (TypeError, ValueError):
+        return '<span class="delta-neutral">-</span>'
 
     diff = cur - prv
     pct = (diff / prv * 100.0) if prv != 0 else 0.0
 
     if diff > 0:
-        arrow = "↗"
         cls = "delta-up"
-        sign = "+"
+        arrow = "↗"
+        diff_str = f"+{diff:,.{decimals}f}"
+        pct_str = f"+{pct:.2f}%"
     elif diff < 0:
-        arrow = "↘"
         cls = "delta-down"
-        sign = ""
+        arrow = "↘"
+        diff_str = f"{diff:,.{decimals}f}"
+        pct_str = f"{pct:.2f}%"
     else:
-        arrow = ""
         cls = "delta-neutral"
-        sign = ""
+        arrow = "→"
+        diff_str = f"{diff:,.{decimals}f}"
+        pct_str = "0.00%"
 
-    fmt = f"{{:{sign},.{decimals}f}}"
-    diff_str = fmt.format(diff)
-    pct_str = f"{sign}{pct:.1f}%"
-
-    html_str = f'<span class="{cls}">WoW {diff_str} ({pct_str}) {arrow}</span>'
-    return html_str, f"{diff_str} ({pct_str})"
+    prefix_str = f"{prefix} " if prefix else ""
+    return f'<span class="{cls}">{prefix_str}{diff_str} ({pct_str}) {arrow}</span>'
 
 # =============================================================================
-# 3. Shipping Index Summary (SCFI / BDI with WoW Delta & Arrow)
+# 3. Shipping Index Summary
 # =============================================================================
 
 def get_shipping_summary():
@@ -213,20 +212,15 @@ def get_shipping_summary():
     }
 
     db_path = DB_PATHS["shipping"]
-
     if not db_path.exists():
-        logger.warning(f"Shipping Index DB not found: {db_path}")
         return summary
 
     try:
         with sqlite3.connect(db_path, timeout=10) as conn:
             cursor = conn.cursor()
-
             if not table_exists(cursor, "index_raw"):
-                logger.warning("Shipping Index table not found: index_raw")
                 return summary
 
-            # SCFI 최신 2개 레코드 (Composite 기준)
             scfi_rows = cursor.execute(
                 """
                 SELECT dt, value
@@ -241,7 +235,6 @@ def get_shipping_summary():
                 """
             ).fetchall()
 
-            # BDI 최신 2개 레코드
             bdi_rows = cursor.execute(
                 """
                 SELECT dt, value
@@ -257,17 +250,15 @@ def get_shipping_summary():
             latest = scfi_rows[0]
             summary["scfi_date"] = str(latest[0] or "-")[:10]
             summary["scfi_latest"] = f"{float(latest[1]):,.1f}" if latest[1] is not None else "-"
-
             prev_val = scfi_rows[1][1] if len(scfi_rows) > 1 else None
-            summary["scfi_delta_html"], _ = calculate_delta_display(latest[1], prev_val, decimals=1)
+            summary["scfi_delta_html"] = calculate_delta_display(latest[1], prev_val, decimals=1, prefix="WoW")
 
         if bdi_rows:
             latest = bdi_rows[0]
             summary["bdi_date"] = str(latest[0] or "-")[:10]
             summary["bdi_latest"] = f"{float(latest[1]):,.0f}" if latest[1] is not None else "-"
-
             prev_val = bdi_rows[1][1] if len(bdi_rows) > 1 else None
-            summary["bdi_delta_html"], _ = calculate_delta_display(latest[1], prev_val, decimals=0)
+            summary["bdi_delta_html"] = calculate_delta_display(latest[1], prev_val, decimals=0, prefix="WoW")
 
         if scfi_rows or bdi_rows:
             summary["status"] = "Active"
@@ -278,7 +269,7 @@ def get_shipping_summary():
     return summary
 
 # =============================================================================
-# 4. Alphaliner Summary (Total Ships, Total TEU, Top 10 M/S with units)
+# 4. Alphaliner Summary
 # =============================================================================
 
 def get_alphaliner_summary():
@@ -296,26 +287,18 @@ def get_alphaliner_summary():
     }
 
     db_path = DB_PATHS["alphaliner"]
-
     if not db_path.exists():
-        logger.warning(f"Alphaliner DB not found: {db_path}")
         return summary
 
     try:
         with sqlite3.connect(db_path, timeout=10) as conn:
             cursor = conn.cursor()
-
             if not table_exists(cursor, "alphaliner_master") or not table_exists(cursor, "alphaliner_detail"):
-                logger.warning("Alphaliner tables missing.")
                 return summary
 
             master_row = cursor.execute(
                 """
-                SELECT
-                    snapshot_id,
-                    data_date,
-                    total_teu,
-                    total_ships
+                SELECT snapshot_id, data_date, total_teu, total_ships
                 FROM alphaliner_master
                 ORDER BY data_date DESC, snapshot_id DESC
                 LIMIT 1
@@ -326,12 +309,10 @@ def get_alphaliner_summary():
                 return summary
 
             snapshot_id, data_date, total_teu, total_ships = master_row
-
             summary["latest_date"] = str(data_date or "-")[:10]
             summary["total_teu"] = f"{int(total_teu):,} TEU" if total_teu is not None else "-"
             summary["total_ships"] = f"{int(total_ships):,} Ships" if total_ships is not None else "-"
 
-            # Top 10 선사 M/S 합계 계산
             top10_row = cursor.execute(
                 """
                 SELECT SUM(market_share)
@@ -345,7 +326,6 @@ def get_alphaliner_summary():
             if top10_row and top10_row[0] is not None:
                 summary["top10_share"] = f"{float(top10_row[0]):.2f}%"
 
-            # #01 Operator
             top_operator_row = cursor.execute(
                 """
                 SELECT operator_name, market_share
@@ -376,24 +356,23 @@ def get_alphaliner_summary():
 # =============================================================================
 
 def get_bunker_summary():
-    """Ship & Bunker VLSFO 최신 가격을 읽는다."""
+    """Ship & Bunker VLSFO 최신 가격 및 직전일 대비 증감을 읽는다."""
     summary = {
-        "title": "Bunker Price (VLSFO)",
+        "title": "Bunker Price",
         "path": "BunkerPrice/index.html",
         "category": "Sea",
         "latest_date": "-",
         "rotterdam": "-",
+        "rotterdam_delta_html": '<span class="delta-neutral">-</span>',
         "fujairah": "-",
+        "fujairah_delta_html": '<span class="delta-neutral">-</span>',
         "singapore": "-",
-        "market_average": "-",
-        "available_ports": 0,
+        "singapore_delta_html": '<span class="delta-neutral">-</span>',
         "status": "No Data",
     }
 
     db_path = DB_PATHS["bunker"]
-
     if not db_path.exists():
-        logger.warning(f"Bunker DB not found: {db_path}")
         return summary
 
     target_ports = ["Rotterdam", "Fujairah", "Singapore"]
@@ -401,9 +380,7 @@ def get_bunker_summary():
     try:
         with sqlite3.connect(db_path, timeout=10) as conn:
             cursor = conn.cursor()
-
             if not table_exists(cursor, "product_vlsfo"):
-                logger.warning(f"Bunker table not found: product_vlsfo (DB: {db_path})")
                 return summary
 
             columns = get_table_columns(cursor, "product_vlsfo")
@@ -413,56 +390,79 @@ def get_bunker_summary():
             timestamp_column = find_first_column(columns, ["timestamp_ms"])
 
             if not port_column or not price_column or not date_column:
-                logger.warning("Bunker schema mismatch.")
                 return summary
 
-            port_prices = {}
-            port_dates = {}
+            port_latest_dates = {}
+            port_latest_prices = {}
 
             for target_port in target_ports:
-                order_by_columns = [f"{quote_identifier(date_column)} DESC"]
+                order_by = [f"{quote_identifier(date_column)} DESC"]
                 if timestamp_column:
-                    order_by_columns.append(f"{quote_identifier(timestamp_column)} DESC")
+                    order_by.append(f"{quote_identifier(timestamp_column)} DESC")
 
-                row = cursor.execute(
+                rows = cursor.execute(
                     f"""
                     SELECT
-                        {quote_identifier(port_column)},
-                        {quote_identifier(price_column)},
-                        {quote_identifier(date_column)}
+                        {quote_identifier(date_column)} AS data_date,
+                        {quote_identifier(price_column)} AS price
                     FROM {quote_identifier("product_vlsfo")}
                     WHERE UPPER(TRIM({quote_identifier(port_column)})) = UPPER(TRIM(?))
-                    ORDER BY {", ".join(order_by_columns)}
-                    LIMIT 1
+                    ORDER BY {", ".join(order_by)}
                     """,
                     (target_port,),
-                ).fetchone()
+                ).fetchall()
 
-                if not row:
+                if not rows:
                     continue
 
-                actual_port, price, data_date = row
-                try:
-                    price_value = float(price)
-                except (TypeError, ValueError):
+                latest_date = None
+                latest_price = None
+                previous_date = None
+                previous_price = None
+
+                for data_date, price in rows:
+                    try:
+                        price = float(price)
+                    except (TypeError, ValueError):
+                        continue
+
+                    norm_date = str(data_date or "")[:10]
+                    if not norm_date:
+                        continue
+
+                    if latest_date is None:
+                        latest_date = norm_date
+                        latest_price = price
+                        continue
+
+                    if norm_date != latest_date:
+                        previous_date = norm_date
+                        previous_price = price
+                        break
+
+                if latest_price is None:
                     continue
 
-                normalized_port = normalize_port_name(actual_port)
-                if normalized_port in target_ports:
-                    port_prices[normalized_port] = price_value
-                    port_dates[normalized_port] = str(data_date or "-")[:10]
+                normalized_port = normalize_port_name(target_port)
+                port_latest_prices[normalized_port] = latest_price
+                port_latest_dates[normalized_port] = latest_date
 
-            summary["rotterdam"] = format_price(port_prices.get("Rotterdam"))
-            summary["fujairah"] = format_price(port_prices.get("Fujairah"))
-            summary["singapore"] = format_price(port_prices.get("Singapore"))
-            summary["available_ports"] = len(port_prices)
+                delta_html = calculate_delta_display(latest_price, previous_price, decimals=2)
 
-            if port_dates:
-                summary["latest_date"] = max(port_dates.values())
+                if normalized_port == "Rotterdam":
+                    summary["rotterdam"] = format_price(latest_price)
+                    summary["rotterdam_delta_html"] = delta_html
+                elif normalized_port == "Fujairah":
+                    summary["fujairah"] = format_price(latest_price)
+                    summary["fujairah_delta_html"] = delta_html
+                elif normalized_port == "Singapore":
+                    summary["singapore"] = format_price(latest_price)
+                    summary["singapore_delta_html"] = delta_html
 
-            if port_prices:
-                market_average = sum(port_prices.values()) / len(port_prices)
-                summary["market_average"] = format_price(market_average)
+            if port_latest_dates:
+                summary["latest_date"] = max(port_latest_dates.values())
+
+            if port_latest_prices:
                 summary["status"] = "Active"
 
     except Exception as error:
@@ -471,7 +471,111 @@ def get_bunker_summary():
     return summary
 
 # =============================================================================
-# 6. Forwarder Summary
+# 6. Crude Oil Summary
+# =============================================================================
+
+def get_oil_summary():
+    """Opinet 국제 원유 가격 최신값 및 직전일 대비 증감을 읽는다."""
+    summary = {
+        "title": "Crude Oil",
+        "path": "BunkerPrice/OilPrice/index.html",
+        "category": "Sea",
+        "latest_date": "-",
+        "dubai": "-",
+        "dubai_delta_html": '<span class="delta-neutral">-</span>',
+        "brent": "-",
+        "brent_delta_html": '<span class="delta-neutral">-</span>',
+        "wti": "-",
+        "wti_delta_html": '<span class="delta-neutral">-</span>',
+        "status": "No Data",
+    }
+
+    db_path = DB_PATHS["bunker"]
+    if not db_path.exists():
+        return summary
+
+    try:
+        with sqlite3.connect(db_path, timeout=10) as conn:
+            cursor = conn.cursor()
+            if not table_exists(cursor, "oil_prices"):
+                return summary
+
+            columns = get_table_columns(cursor, "oil_prices")
+            date_col = find_first_column(columns, ["date", "DATE"])
+            dubai_col = find_first_column(columns, ["dubai", "Dubai"])
+            brent_col = find_first_column(columns, ["brent", "Brent"])
+            wti_col = find_first_column(columns, ["wti", "WTI"])
+
+            if not all([date_col, dubai_col, brent_col, wti_col]):
+                return summary
+
+            rows = cursor.execute(
+                f"""
+                SELECT
+                    {quote_identifier(date_col)} AS data_date,
+                    {quote_identifier(dubai_col)} AS dubai,
+                    {quote_identifier(brent_col)} AS brent,
+                    {quote_identifier(wti_col)} AS wti
+                FROM {quote_identifier("oil_prices")}
+                ORDER BY {quote_identifier(date_col)} DESC
+                """
+            ).fetchall()
+
+        if not rows:
+            return summary
+
+        oil_mapping = {
+            "Dubai": {"index": 1, "value_key": "dubai", "delta_key": "dubai_delta_html"},
+            "Brent": {"index": 2, "value_key": "brent", "delta_key": "brent_delta_html"},
+            "WTI": {"index": 3, "value_key": "wti", "delta_key": "wti_delta_html"},
+        }
+
+        latest_dates = []
+
+        for oil_name, cfg in oil_mapping.items():
+            latest_date = None
+            latest_price = None
+            previous_date = None
+            previous_price = None
+
+            for row in rows:
+                data_date = str(row[0] or "")[:10]
+                raw_price = row[cfg["index"]]
+
+                try:
+                    price = float(raw_price)
+                except (TypeError, ValueError):
+                    continue
+
+                if not data_date:
+                    continue
+
+                if latest_date is None:
+                    latest_date = data_date
+                    latest_price = price
+                    latest_dates.append(data_date)
+                    continue
+
+                if data_date != latest_date:
+                    previous_date = data_date
+                    previous_price = price
+                    break
+
+            if latest_price is not None:
+                summary[cfg["value_key"]] = f"{latest_price:,.2f} USD/BBL"
+                summary[cfg["delta_key"]] = calculate_delta_display(latest_price, previous_price, decimals=2)
+
+        if latest_dates:
+            summary["latest_date"] = max(latest_dates)
+            summary["status"] = "Active"
+
+    except Exception as error:
+        logger.exception(f"Failed to read Oil DB: {error}")
+
+    return summary
+
+# =============================================================================
+# 7. Forwarder Summary
 # =============================================================================
 
 def get_forwarder_summary():
@@ -490,15 +594,12 @@ def get_forwarder_summary():
     }
 
     db_path = DB_PATHS["forwarder"]
-
     if not db_path.exists():
-        logger.warning(f"Forwarder DB not found: {db_path}")
         return summary
 
     try:
         with sqlite3.connect(db_path, timeout=10) as conn:
             cursor = conn.cursor()
-
             if not table_exists(cursor, "forwarders"):
                 return summary
 
@@ -535,7 +636,7 @@ def get_forwarder_summary():
     return summary
 
 # =============================================================================
-# 7. TAC Air Freight Summary
+# 8. TAC Air Freight Summary
 # =============================================================================
 
 def get_tac_summary():
@@ -552,14 +653,12 @@ def get_tac_summary():
     }
 
     db_path = DB_PATHS["tac"]
-
     if not db_path.exists():
         return summary
 
     try:
         with sqlite3.connect(db_path, timeout=10) as conn:
             cursor = conn.cursor()
-
             if not table_exists(cursor, "tac_master"):
                 return summary
 
@@ -586,7 +685,7 @@ def get_tac_summary():
     return summary
 
 # =============================================================================
-# 8. Macro Summary
+# 9. Macro Summary
 # =============================================================================
 
 def get_macro_summary():
@@ -601,14 +700,12 @@ def get_macro_summary():
     }
 
     db_path = DB_PATHS["macro"]
-
     if not db_path.exists():
         return summary
 
     try:
         with sqlite3.connect(db_path, timeout=10) as conn:
             cursor = conn.cursor()
-
             if not table_exists(cursor, "newyorkfed_gscpi"):
                 return summary
 
@@ -633,7 +730,7 @@ def get_macro_summary():
     return summary
 
 # =============================================================================
-# 9. HTML Template
+# 10. HTML Template
 # =============================================================================
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -745,9 +842,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       color: var(--text-dim);
     }
 
-    .grid-4 {
+    /* Sea 영역: 5개 카드 5열 배치 (와이드 화면) */
+    .grid-sea {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: 10px;
     }
 
@@ -761,7 +859,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      min-height: 205px;
+      min-height: 185px;
       padding: 10px 12px;
       border: 1px solid var(--border);
       border-top: 2px solid var(--border-light);
@@ -853,22 +951,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .kpi-val.amber { color: var(--amber-bright); }
     .small-value { font-size: 10px; }
 
-    /* Delta & Arrow Styles */
-    .delta-sub {
-      margin-top: 4px;
-      font-family: var(--mono);
-      font-size: 9.5px;
-      font-weight: 700;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .delta-up { color: #00e676; }
-    .delta-down { color: #ff5252; }
-    .delta-neutral { color: var(--text-dim); }
-
-    .bunker-section-label {
-      margin: 8px 0 5px;
+    /* 3열 카드 전용 (Bunker / Crude Oil) */
+    .section-sublabel {
+      margin: 4px 0 6px;
       color: var(--amber);
       font-family: var(--mono);
       font-size: 8.5px;
@@ -876,14 +961,30 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       letter-spacing: 0.5px;
     }
 
-    .bunker-grid {
+    .grid-triple {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 5px;
     }
-    .bunker-grid .kpi-item { padding: 6px; }
-    .bunker-grid .kpi-label { font-size: 8px; }
-    .bunker-grid .kpi-val { font-size: 9.5px; letter-spacing: -0.4px; }
+    .grid-triple .kpi-item { padding: 6px 5px; }
+    .grid-triple .kpi-label { font-size: 8px; }
+    .grid-triple .kpi-val { font-size: 10px; letter-spacing: -0.3px; }
+
+    /* Delta & Arrow Styles */
+    .delta-sub {
+      margin-top: 4px;
+      font-family: var(--mono);
+      font-size: 8.5px;
+      font-weight: 700;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      letter-spacing: -0.3px;
+    }
+    .delta-up { color: #00e676; }
+    .delta-down { color: #ff5252; }
+    .delta-neutral { color: var(--text-dim); }
 
     .card-footer {
       display: flex;
@@ -917,13 +1018,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       font-size: 9px;
     }
 
-    @media (max-width: 1240px) {
-      .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    @media (max-width: 1400px) {
+      .grid-sea { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
 
-    @media (max-width: 760px) {
+    @media (max-width: 900px) {
+      .grid-sea { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 600px) {
       body { padding: 8px; }
-      .grid-4, .grid-2 { grid-template-columns: 1fr; }
+      .grid-sea, .grid-2 { grid-template-columns: 1fr; }
       .top-bar {
         align-items: flex-start;
         flex-direction: column;
@@ -950,7 +1056,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <section class="section-group">
       <div class="section-title">Sea</div>
 
-      <div class="grid-4">
+      <div class="grid-sea">
 
         <!-- 1. Shipping Index -->
         <a href="__SHIPPING_PATH__" class="card">
@@ -1018,39 +1124,32 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </a>
 
-        <!-- 3. Bunker Price -->
+        <!-- 3. Bunker Price (VLSFO Rotterdam / Fujairah / Singapore) -->
         <a href="__BUNKER_PATH__" class="card">
           <div>
             <div class="card-header">
-              <span class="card-title">Bunker Price (VLSFO)</span>
+              <span class="card-title">Bunker Price</span>
               <span class="badge __BUNKER_STATUS_CLASS__">__BUNKER_STATUS__</span>
             </div>
 
-            <div class="bunker-section-label">SHIP &amp; BUNKER / LATEST VLSFO</div>
-            <div class="bunker-grid">
+            <div class="section-sublabel">VLSFO / LATEST PRICE &amp; CHANGE</div>
+            <div class="grid-triple">
               <div class="kpi-item">
                 <div class="kpi-label">Rotterdam</div>
                 <div class="kpi-val highlight">__BUNKER_ROTTERDAM__</div>
+                <div class="delta-sub">__BUNKER_ROTTERDAM_DELTA__</div>
               </div>
+
               <div class="kpi-item">
                 <div class="kpi-label">Fujairah</div>
                 <div class="kpi-val">__BUNKER_FUJAIRAH__</div>
+                <div class="delta-sub">__BUNKER_FUJAIRAH_DELTA__</div>
               </div>
+
               <div class="kpi-item">
                 <div class="kpi-label">Singapore</div>
                 <div class="kpi-val amber">__BUNKER_SINGAPORE__</div>
-              </div>
-            </div>
-
-            <div class="bunker-section-label">THREE-PORT MARKET INDICATOR</div>
-            <div class="kpi-group">
-              <div class="kpi-item">
-                <div class="kpi-label">VLSFO Average</div>
-                <div class="kpi-val highlight">__BUNKER_AVERAGE__</div>
-              </div>
-              <div class="kpi-item">
-                <div class="kpi-label">Available Ports</div>
-                <div class="kpi-val amber">__BUNKER_PORT_COUNT__ / 3</div>
+                <div class="delta-sub">__BUNKER_SINGAPORE_DELTA__</div>
               </div>
             </div>
           </div>
@@ -1061,7 +1160,43 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </a>
 
-        <!-- 4. Top 25 Forwarders -->
+        <!-- 4. Crude Oil (Dubai / Brent / WTI) -->
+        <a href="__OIL_PATH__" class="card">
+          <div>
+            <div class="card-header">
+              <span class="card-title">Crude Oil</span>
+              <span class="badge __OIL_STATUS_CLASS__">__OIL_STATUS__</span>
+            </div>
+
+            <div class="section-sublabel">OPINET / LATEST PRICE &amp; CHANGE</div>
+            <div class="grid-triple">
+              <div class="kpi-item">
+                <div class="kpi-label">Dubai</div>
+                <div class="kpi-val highlight">__OIL_DUBAI__</div>
+                <div class="delta-sub">__OIL_DUBAI_DELTA__</div>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-label">Brent</div>
+                <div class="kpi-val">__OIL_BRENT__</div>
+                <div class="delta-sub">__OIL_BRENT_DELTA__</div>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-label">WTI</div>
+                <div class="kpi-val amber">__OIL_WTI__</div>
+                <div class="delta-sub">__OIL_WTI_DELTA__</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card-footer">
+            <span>Date: __OIL_DATE__</span>
+            <span class="arrow">OPEN &rarr;</span>
+          </div>
+        </a>
+
+        <!-- 5. Top 25 Forwarders -->
         <a href="__FORWARDER_PATH__" class="card">
           <div>
             <div class="card-header">
@@ -1168,7 +1303,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 """
 
 # =============================================================================
-# 10. Dashboard Build
+# 11. Dashboard Build
 # =============================================================================
 
 def main():
@@ -1178,6 +1313,7 @@ def main():
     shipping = get_shipping_summary()
     alphaliner = get_alphaliner_summary()
     bunker = get_bunker_summary()
+    oil = get_oil_summary()
     forwarder = get_forwarder_summary()
     tac = get_tac_summary()
     macro = get_macro_summary()
@@ -1226,11 +1362,26 @@ def main():
     html_output = replace_template_value(html_output, "__BUNKER_STATUS__", bunker["status"])
     html_output = html_output.replace("__BUNKER_STATUS_CLASS__", get_status_class(bunker["status"]))
     html_output = replace_template_value(html_output, "__BUNKER_ROTTERDAM__", bunker["rotterdam"])
+    html_output = html_output.replace("__BUNKER_ROTTERDAM_DELTA__", bunker["rotterdam_delta_html"])
     html_output = replace_template_value(html_output, "__BUNKER_FUJAIRAH__", bunker["fujairah"])
+    html_output = html_output.replace("__BUNKER_FUJAIRAH_DELTA__", bunker["fujairah_delta_html"])
     html_output = replace_template_value(html_output, "__BUNKER_SINGAPORE__", bunker["singapore"])
-    html_output = replace_template_value(html_output, "__BUNKER_AVERAGE__", bunker["market_average"])
-    html_output = replace_template_value(html_output, "__BUNKER_PORT_COUNT__", bunker["available_ports"])
+    html_output = html_output.replace("__BUNKER_SINGAPORE_DELTA__", bunker["singapore_delta_html"])
     html_output = replace_template_value(html_output, "__BUNKER_DATE__", bunker["latest_date"])
+
+    # -------------------------------------------------------------------------
+    # Crude Oil
+    # -------------------------------------------------------------------------
+    html_output = replace_template_value(html_output, "__OIL_PATH__", oil["path"])
+    html_output = replace_template_value(html_output, "__OIL_STATUS__", oil["status"])
+    html_output = html_output.replace("__OIL_STATUS_CLASS__", get_status_class(oil["status"]))
+    html_output = replace_template_value(html_output, "__OIL_DUBAI__", oil["dubai"])
+    html_output = html_output.replace("__OIL_DUBAI_DELTA__", oil["dubai_delta_html"])
+    html_output = replace_template_value(html_output, "__OIL_BRENT__", oil["brent"])
+    html_output = html_output.replace("__OIL_BRENT_DELTA__", oil["brent_delta_html"])
+    html_output = replace_template_value(html_output, "__OIL_WTI__", oil["wti"])
+    html_output = html_output.replace("__OIL_WTI_DELTA__", oil["wti_delta_html"])
+    html_output = replace_template_value(html_output, "__OIL_DATE__", oil["latest_date"])
 
     # -------------------------------------------------------------------------
     # Forwarder
@@ -1276,6 +1427,7 @@ def main():
         "shipping": shipping,
         "alphaliner": alphaliner,
         "bunker": bunker,
+        "oil": oil,
         "forwarder": forwarder,
         "tac": tac,
         "macro": macro,
