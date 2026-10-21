@@ -1,8 +1,31 @@
 # -*- coding: utf-8 -*-
 """
 Market Intelligence Portal - Main Dashboard Generator
-통합 포털 index.html 생성 스크립트
-Bloomberg / MI Terminal Single-Screen Layout
+
+통합 Market Intelligence Portal의 루트 index.html을 생성한다.
+
+연결 모듈:
+- Sea
+  - Shipping Index (SCFI / BDI)
+  - Alphaliner TOP 100
+  - Bunker Price (Ship & Bunker VLSFO)
+  - Global Top 25 Forwarders
+- Air
+  - TAC Air Freight Index
+- Global
+  - Macro Economies & GSCPI
+
+Bunker DB 실제 구조:
+- DB: BunkerPrice/bunker_price_data.db
+- Table: product_vlsfo
+- Columns:
+  port, series_name, source_type, timestamp_ms, price,
+  source_url, date, date_str
+
+Bunker 수집 항만:
+- Rotterdam
+- Fujairah
+- Singapore
 """
 
 import html
@@ -13,9 +36,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# =========================================================
-# 1. 설정 및 경로 정의
-# =========================================================
+# =============================================================================
+# 1. Configuration
+# =============================================================================
+
 BASE_DIR = Path(__file__).resolve().parent
 
 OUTPUT_HTML = BASE_DIR / "index.html"
@@ -38,9 +62,10 @@ logging.basicConfig(
 
 logger = logging.getLogger("dashboard_generator")
 
-# =========================================================
-# 2. 공통 유틸리티
-# =========================================================
+# =============================================================================
+# 2. Common Utilities
+# =============================================================================
+
 def table_exists(cursor, table_name):
     """SQLite 테이블 존재 여부를 확인한다."""
     row = cursor.execute(
@@ -55,17 +80,62 @@ def table_exists(cursor, table_name):
 
     return row is not None
 
+def quote_identifier(identifier):
+    """SQLite 식별자(테이블명/컬럼명)를 안전하게 감싼다."""
+    return '"' + str(identifier).replace('"', '""') + '"'
+
+def get_table_columns(cursor, table_name):
+    """
+    테이블의 실제 컬럼명을 lower-case key 기준 Dictionary로 반환한다.
+
+    예시:
+    {
+        "date_str": "date_str",
+        "price": "price",
+        "port": "port"
+    }
+    """
+    rows = cursor.execute(
+        f"PRAGMA table_info({quote_identifier(table_name)})"
+    ).fetchall()
+
+    return {
+        str(row[1]).lower(): str(row[1])
+        for row in rows
+    }
+
+def find_first_column(columns, candidates):
+    """후보 컬럼명 중 실제 존재하는 첫 번째 컬럼을 반환한다."""
+    for candidate in candidates:
+        actual_column = columns.get(candidate.lower())
+
+        if actual_column:
+            return actual_column
+
+    return None
+
 def safe_html(value):
-    """HTML 템플릿 치환 시 특수문자를 안전하게 변환한다."""
-    return html.escape(str(value if value is not None else "-"))
+    """HTML 삽입 시 특수문자를 이스케이프한다."""
+    if value is None:
+        return "-"
+
+    return html.escape(str(value))
+
+def replace_template_value(html_output, placeholder, value):
+    """HTML Placeholder를 안전한 문자열로 대체한다."""
+    return html_output.replace(
+        placeholder,
+        safe_html(value),
+    )
+
+def get_status_class(status):
+    """모듈 상태에 따른 CSS 클래스를 반환한다."""
+    return "active" if status == "Active" else "nodata"
 
 def get_latest_available_date(*dates):
-    """
-    문자열 날짜 목록에서 가장 최신 날짜를 반환한다.
-    ISO 형식 YYYY-MM-DD 기준으로 비교한다.
-    """
+    """유효 날짜 문자열 중 가장 최신 값을 반환한다."""
     valid_dates = [
-        date
+        str(date)[:10]
         for date in dates
         if date and str(date).strip() != "-"
     ]
@@ -74,11 +144,11 @@ def get_latest_available_date(*dates):
 
 def format_compact_number(value, suffix=""):
     """
-    큰 숫자를 Terminal 카드용 축약 표기로 변환한다.
+    큰 숫자를 K / M / B 단위로 축약한다.
 
     예시:
     1250000 -> 1.25M
-    24500   -> 24.5K
+    35000   -> 35.0K
     """
     try:
         number = float(value)
@@ -103,177 +173,45 @@ def format_compact_number(value, suffix=""):
 
 def format_price(value, suffix=" USD/MT"):
     """
-    벙커 가격 표시용 포맷.
-    일반적으로 USD/MT 단위 가격은 축약하지 않고 소수점 두 자리까지 표시한다.
+    벙커유 가격 표시 형식.
+
+    예시:
+    512.5 -> 512.50 USD/MT
     """
     try:
         number = float(value)
     except (TypeError, ValueError):
         return "-"
 
-    if number == 0:
-        return "-"
-
     return f"{number:,.2f}{suffix}"
 
-def quote_identifier(identifier):
-    """SQLite 테이블 및 컬럼 식별자를 안전하게 감싼다."""
-    return '"' + str(identifier).replace('"', '""') + '"'
-
-def get_table_columns(cursor, table_name):
-    """
-    SQLite 테이블의 실제 컬럼을 반환한다.
-
-    반환 예시:
-    {
-        "date": "date",
-        "port": "port",
-        "vlsfo": "VLSFO"
-    }
-    """
-    rows = cursor.execute(
-        f"PRAGMA table_info({quote_identifier(table_name)})"
-    ).fetchall()
-
-    return {
-        str(row[1]).lower(): str(row[1])
-        for row in rows
-    }
-
-def find_first_column(columns, candidates):
-    """
-    후보 컬럼명 가운데 실제 DB에 존재하는 첫 컬럼을 반환한다.
-    """
-    for candidate in candidates:
-        actual_column = columns.get(candidate.lower())
-
-        if actual_column:
-            return actual_column
-
-    return None
-
 def normalize_port_name(value):
-    """주요 벙커 항만명을 표준화한다."""
+    """수집 데이터의 항만명을 포털 표준 명칭으로 정규화한다."""
     original_value = str(value or "").strip()
     normalized = original_value.upper()
 
     mapping = {
-        "SINGAPORE": "Singapore",
-        "SIN": "Singapore",
-        "SINGAPORE PORT": "Singapore",
         "ROTTERDAM": "Rotterdam",
-        "RDM": "Rotterdam",
         "ROTTERDAM PORT": "Rotterdam",
-        "HOUSTON": "Houston",
-        "HOU": "Houston",
-        "HOUSTON PORT": "Houston",
+        "RDM": "Rotterdam",
+
+        "FUJAIRAH": "Fujairah",
+        "FUJAIRAH PORT": "Fujairah",
+        "FJR": "Fujairah",
+
+        "SINGAPORE": "Singapore",
+        "SINGAPORE PORT": "Singapore",
+        "SIN": "Singapore",
     }
 
     return mapping.get(normalized, original_value)
 
-def normalize_fuel_name(value):
-    """유종명을 카드 표시 기준으로 정규화한다."""
-    original_value = str(value or "").strip()
-    normalized = (
-        original_value.upper()
-        .replace("-", "")
-        .replace("_", "")
-        .replace(" ", "")
-    )
-
-    mapping = {
-        "VLSFO": "VLSFO",
-        "VLSFO05": "VLSFO",
-        "VLSFO0.5": "VLSFO",
-        "VLSFO0,5": "VLSFO",
-        "ULSVLSFO": "VLSFO",
-        "LSMGO": "LSMGO",
-        "MGO": "LSMGO",
-        "DMA": "LSMGO",
-        "LSGO": "LSMGO",
-        "IFO380": "IFO380",
-        "IFO380CST": "IFO380",
-        "HSFO380": "IFO380",
-        "RMG380": "IFO380",
-    }
-
-    return mapping.get(normalized, original_value)
-
-def get_status_class(status):
-    """포털 상태에 따른 CSS 클래스를 반환한다."""
-    return "active" if status == "Active" else "nodata"
-
-# =========================================================
-# 3. 개별 모듈 데이터 요약 수집기
-# =========================================================
-def get_tac_summary():
-    """TAC Index (Air Freight) 요약 정보 조회"""
-    summary = {
-        "title": "Air Freight (TAC Index)",
-        "path": "TAC Index/index.html",
-        "category": "Air",
-        "latest_date": "-",
-        "overall_index": "-",
-        "weekly_change": "-",
-        "route_count": "-",
-        "status": "No Data",
-    }
-
-    db_path = DB_PATHS["tac"]
-
-    if not db_path.exists():
-        logger.warning(f"TAC Index DB not found: {db_path}")
-        return summary
-
-    try:
-        with sqlite3.connect(db_path, timeout=10) as conn:
-            cursor = conn.cursor()
-
-            if not table_exists(cursor, "tac_master"):
-                logger.warning("TAC table not found: tac_master")
-                return summary
-
-            row = cursor.execute(
-                """
-                SELECT
-                    data_date,
-                    overall_index,
-                    weekly_change,
-                    route_count
-                FROM tac_master
-                ORDER BY data_date DESC, snapshot_id DESC
-                LIMIT 1
-                """
-            ).fetchone()
-
-        if row:
-            data_date, overall_index, weekly_change, route_count = row
-
-            summary["latest_date"] = str(data_date or "-")
-            summary["overall_index"] = (
-                f"{float(overall_index):,.2f}"
-                if overall_index is not None
-                else "-"
-            )
-            summary["weekly_change"] = (
-                f"{float(weekly_change):+.2f}%"
-                if weekly_change is not None
-                else "-"
-            )
-            summary["route_count"] = (
-                str(route_count)
-                if route_count is not None
-                else "-"
-            )
-            summary["status"] = "Active"
-
-    except Exception as error:
-        logger.exception(f"Failed to read TAC Index DB: {error}")
-
-    return summary
+# =============================================================================
+# 3. Shipping Index Summary
+# =============================================================================
 
 def get_shipping_summary():
-    """SCFI / BDI Shipping Index 요약 정보 조회"""
+    """Shipping Index (SCFI / BDI) 최신 요약 데이터를 읽는다."""
     summary = {
         "title": "Shipping Index (SCFI / BDI)",
         "path": "Shipping Index/index.html",
@@ -296,9 +234,7 @@ def get_shipping_summary():
             cursor = conn.cursor()
 
             if not table_exists(cursor, "index_raw"):
-                logger.warning(
-                    f"Shipping Index table 'index_raw' not found: {db_path}"
-                )
+                logger.warning("Shipping Index table not found: index_raw")
                 return summary
 
             scfi_row = cursor.execute(
@@ -349,7 +285,7 @@ def get_shipping_summary():
         if scfi_row:
             scfi_date, scfi_value, _ = scfi_row
 
-            summary["scfi_date"] = str(scfi_date or "-")
+            summary["scfi_date"] = str(scfi_date or "-")[:10]
             summary["scfi_latest"] = (
                 f"{float(scfi_value):,.1f}"
                 if scfi_value is not None
@@ -359,7 +295,7 @@ def get_shipping_summary():
         if bdi_row:
             bdi_date, bdi_value, _ = bdi_row
 
-            summary["bdi_date"] = str(bdi_date or "-")
+            summary["bdi_date"] = str(bdi_date or "-")[:10]
             summary["bdi_latest"] = (
                 f"{float(bdi_value):,.0f}"
                 if bdi_value is not None
@@ -374,8 +310,12 @@ def get_shipping_summary():
 
     return summary
 
+# =============================================================================
+# 4. Alphaliner Summary
+# =============================================================================
+
 def get_alphaliner_summary():
-    """Alphaliner TOP 100 요약 정보 조회"""
+    """Alphaliner TOP 100 최신 Snapshot을 읽는다."""
     summary = {
         "title": "Alphaliner TOP 100",
         "path": "Alphaliner/index.html",
@@ -398,14 +338,14 @@ def get_alphaliner_summary():
             cursor = conn.cursor()
 
             if not table_exists(cursor, "alphaliner_master"):
-                logger.warning("Alphaliner master table not found.")
+                logger.warning("Alphaliner table not found: alphaliner_master")
                 return summary
 
             if not table_exists(cursor, "alphaliner_detail"):
-                logger.warning("Alphaliner detail table not found.")
+                logger.warning("Alphaliner table not found: alphaliner_detail")
                 return summary
 
-            m_row = cursor.execute(
+            master_row = cursor.execute(
                 """
                 SELECT
                     snapshot_id,
@@ -418,12 +358,12 @@ def get_alphaliner_summary():
                 """
             ).fetchone()
 
-            if not m_row:
+            if not master_row:
                 return summary
 
-            snapshot_id, data_date, total_teu, total_ships = m_row
+            snapshot_id, data_date, total_teu, total_ships = master_row
 
-            summary["latest_date"] = str(data_date or "-")
+            summary["latest_date"] = str(data_date or "-")[:10]
             summary["total_teu"] = (
                 f"{int(total_teu):,}"
                 if total_teu is not None
@@ -435,7 +375,7 @@ def get_alphaliner_summary():
                 else "-"
             )
 
-            d_row = cursor.execute(
+            top_operator_row = cursor.execute(
                 """
                 SELECT
                     operator_name,
@@ -443,19 +383,20 @@ def get_alphaliner_summary():
                 FROM alphaliner_detail
                 WHERE snapshot_id = ?
                   AND rank = 1
+                LIMIT 1
                 """,
                 (snapshot_id,),
             ).fetchone()
 
-            if d_row:
-                operator_name, market_share = d_row
+            if top_operator_row:
+                operator_name, market_share = top_operator_row
 
-                if market_share is None:
-                    summary["top1_operator"] = str(operator_name or "-")
-                else:
+                if market_share is not None:
                     summary["top1_operator"] = (
                         f"{operator_name} ({float(market_share):.2f}%)"
                     )
+                else:
+                    summary["top1_operator"] = str(operator_name or "-")
 
             summary["status"] = "Active"
 
@@ -464,18 +405,216 @@ def get_alphaliner_summary():
 
     return summary
 
+# =============================================================================
+# 5. Bunker Price Summary
+# =============================================================================
+
+def get_bunker_summary():
+    """
+    Ship & Bunker VLSFO 최신 가격을 읽는다.
+
+    실제 Bunker DB 구조:
+    - DB: BunkerPrice/bunker_price_data.db
+    - Table: product_vlsfo
+
+    실제 컬럼:
+    - port
+    - price
+    - date
+    - date_str
+    - timestamp_ms
+    - source_url
+
+    실제 수집 항만:
+    - Rotterdam
+    - Fujairah
+    - Singapore
+
+    주의:
+    현재 bunker_price.py는 VLSFO 가격만 저장한다.
+    따라서 Houston, LSMGO, IFO380은 이 포털 카드에 표시하지 않는다.
+    """
+    summary = {
+        "title": "Bunker Price (VLSFO)",
+        "path": "BunkerPrice/index.html",
+        "category": "Sea",
+        "latest_date": "-",
+        "rotterdam": "-",
+        "fujairah": "-",
+        "singapore": "-",
+        "market_average": "-",
+        "available_ports": 0,
+        "status": "No Data",
+    }
+
+    db_path = DB_PATHS["bunker"]
+
+    if not db_path.exists():
+        logger.warning(f"Bunker DB not found: {db_path}")
+        return summary
+
+    target_ports = [
+        "Rotterdam",
+        "Fujairah",
+        "Singapore",
+    ]
+
+    try:
+        with sqlite3.connect(db_path, timeout=10) as conn:
+            cursor = conn.cursor()
+
+            if not table_exists(cursor, "product_vlsfo"):
+                logger.warning(
+                    "Bunker table not found: product_vlsfo "
+                    f"(DB: {db_path})"
+                )
+                return summary
+
+            columns = get_table_columns(cursor, "product_vlsfo")
+
+            port_column = find_first_column(
+                columns,
+                ["port"],
+            )
+
+            price_column = find_first_column(
+                columns,
+                ["price"],
+            )
+
+            date_column = find_first_column(
+                columns,
+                ["date_str", "date"],
+            )
+
+            timestamp_column = find_first_column(
+                columns,
+                ["timestamp_ms"],
+            )
+
+            if not port_column or not price_column or not date_column:
+                logger.warning(
+                    "Bunker schema mismatch. "
+                    "Required columns: port, price, date_str/date"
+                )
+                return summary
+
+            port_prices = {}
+            port_dates = {}
+
+            for target_port in target_ports:
+                order_by_columns = [
+                    f"{quote_identifier(date_column)} DESC",
+                ]
+
+                if timestamp_column:
+                    order_by_columns.append(
+                        f"{quote_identifier(timestamp_column)} DESC"
+                    )
+
+                row = cursor.execute(
+                    f"""
+                    SELECT
+                        {quote_identifier(port_column)},
+                        {quote_identifier(price_column)},
+                        {quote_identifier(date_column)}
+                    FROM {quote_identifier("product_vlsfo")}
+                    WHERE UPPER(TRIM({quote_identifier(port_column)}))
+                          = UPPER(TRIM(?))
+                    ORDER BY {", ".join(order_by_columns)}
+                    LIMIT 1
+                    """,
+                    (target_port,),
+                ).fetchone()
+
+                if not row:
+                    logger.warning(
+                        f"No bunker VLSFO record found for: {target_port}"
+                    )
+                    continue
+
+                actual_port, price, data_date = row
+
+                try:
+                    price_value = float(price)
+                except (TypeError, ValueError):
+                    logger.warning(
+                        f"Invalid bunker price | "
+                        f"Port={actual_port} | Price={price}"
+                    )
+                    continue
+
+                normalized_port = normalize_port_name(actual_port)
+
+                if normalized_port not in target_ports:
+                    continue
+
+                port_prices[normalized_port] = price_value
+                port_dates[normalized_port] = str(data_date or "-")[:10]
+
+            summary["rotterdam"] = format_price(
+                port_prices.get("Rotterdam")
+            )
+
+            summary["fujairah"] = format_price(
+                port_prices.get("Fujairah")
+            )
+
+            summary["singapore"] = format_price(
+                port_prices.get("Singapore")
+            )
+
+            summary["available_ports"] = len(port_prices)
+
+            if port_dates:
+                summary["latest_date"] = max(port_dates.values())
+
+            if port_prices:
+                market_average = (
+                    sum(port_prices.values())
+                    / len(port_prices)
+                )
+
+                summary["market_average"] = format_price(
+                    market_average
+                )
+
+                summary["status"] = "Active"
+
+                logger.info(
+                    "Bunker summary loaded | "
+                    f"Date={summary['latest_date']} | "
+                    f"Rotterdam={summary['rotterdam']} | "
+                    f"Fujairah={summary['fujairah']} | "
+                    f"Singapore={summary['singapore']} | "
+                    f"Average={summary['market_average']}"
+                )
+
+            else:
+                logger.warning(
+                    "Bunker product_vlsfo table exists, "
+                    "but no valid latest port price was loaded."
+                )
+
+    except Exception as error:
+        logger.exception(f"Failed to read Bunker DB: {error}")
+
+    return summary
+
+# =============================================================================
+# 6. Forwarder Summary
+# =============================================================================
+
 def get_forwarder_summary():
     """
-    A&A Global Top 25 Forwarders 요약 정보 조회
+    A&A Global Top 25 Forwarders 최신 Snapshot을 읽는다.
 
-    실제 Forwarder DB 구조:
+    실제 DB 구조:
     - DB: Forwarder/freight_forwarders_data.db
     - Table: forwarders
     - Columns:
       date, rank, provider, hq, revenue, teu, air_tons,
       source_url, created_at
-
-    최신 Snapshot의 Global Rank 1위 업체를 포털 카드에 표시한다.
     """
     summary = {
         "title": "Global Top 25 Forwarders",
@@ -501,10 +640,7 @@ def get_forwarder_summary():
             cursor = conn.cursor()
 
             if not table_exists(cursor, "forwarders"):
-                logger.warning(
-                    "Forwarder table not found: forwarders "
-                    f"(DB: {db_path})"
-                )
+                logger.warning("Forwarder table not found: forwarders")
                 return summary
 
             latest_date_row = cursor.execute(
@@ -521,12 +657,10 @@ def get_forwarder_summary():
             )
 
             if not latest_date:
-                logger.warning(
-                    "Forwarder DB exists but no latest snapshot date was found."
-                )
+                logger.warning("Forwarder latest snapshot date not found.")
                 return summary
 
-            top_forwarder = cursor.execute(
+            top_forwarder_row = cursor.execute(
                 """
                 SELECT
                     rank,
@@ -542,416 +676,107 @@ def get_forwarder_summary():
                 (latest_date,),
             ).fetchone()
 
-        if not top_forwarder:
+        if not top_forwarder_row:
             logger.warning(
-                "Forwarder latest snapshot exists but ranking records are missing."
+                "Forwarder latest snapshot found but ranking data is missing."
             )
             return summary
 
-        rank, provider, revenue, teu, air_tons = top_forwarder
+        rank, provider, revenue, teu, air_tons = top_forwarder_row
 
-        summary["latest_date"] = str(latest_date)
-        summary["rank"] = f"#{int(rank):02d}" if rank is not None else "-"
+        summary["latest_date"] = str(latest_date)[:10]
+        summary["rank"] = (
+            f"#{int(rank):02d}"
+            if rank is not None
+            else "-"
+        )
         summary["provider"] = str(provider or "-")
         summary["revenue"] = format_compact_number(revenue, " USD")
         summary["teu"] = format_compact_number(teu, " TEU")
         summary["air_tons"] = format_compact_number(air_tons, " Tons")
         summary["status"] = "Active"
 
-        logger.info(
-            "Forwarder summary loaded: "
-            f"{summary['provider']} / {summary['latest_date']}"
-        )
-
     except Exception as error:
         logger.exception(f"Failed to read Forwarder DB: {error}")
 
     return summary
 
-def get_bunker_summary():
-    """
-    Bunker Price 요약 정보 조회.
+# =============================================================================
+# 7. TAC Air Freight Summary
+# =============================================================================
 
-    포털 표시 기준:
-    1. VLSFO / 주요 항만
-       - Singapore
-       - Rotterdam
-       - Houston
-
-    2. Singapore / 유종별
-       - VLSFO
-       - LSMGO
-       - IFO380
-
-    지원 DB 구조:
-    A. Wide Format
-       date / port / vlsfo / lsmgo / ifo380
-
-    B. Long Format
-       date / port / fuel 또는 product / price 또는 value
-
-    현재 BunkerPrice DB가 VLSFO 데이터만 보유해도,
-    VLSFO 가격이 존재하면 Active 상태로 전환한다.
-    """
+def get_tac_summary():
+    """TAC Air Freight Index 최신 데이터를 읽는다."""
     summary = {
-        "title": "Bunker Price Monitor",
-        "path": "BunkerPrice/index.html",
-        "category": "Sea",
+        "title": "Air Freight (TAC Index)",
+        "path": "TAC Index/index.html",
+        "category": "Air",
         "latest_date": "-",
-        "singapore_vlsfo": "-",
-        "rotterdam_vlsfo": "-",
-        "houston_vlsfo": "-",
-        "vlsfo": "-",
-        "lsmgo": "-",
-        "ifo380": "-",
+        "overall_index": "-",
+        "weekly_change": "-",
+        "route_count": "-",
         "status": "No Data",
     }
 
-    db_path = DB_PATHS["bunker"]
+    db_path = DB_PATHS["tac"]
 
     if not db_path.exists():
-        logger.warning(f"Bunker DB not found: {db_path}")
+        logger.warning(f"TAC DB not found: {db_path}")
         return summary
-
-    target_ports = {"Singapore", "Rotterdam", "Houston"}
-    target_fuels = {"VLSFO", "LSMGO", "IFO380"}
 
     try:
         with sqlite3.connect(db_path, timeout=10) as conn:
             cursor = conn.cursor()
 
-            table_rows = cursor.execute(
-                """
-                SELECT name
-                FROM sqlite_master
-                WHERE type = 'table'
-                  AND name NOT LIKE 'sqlite_%'
-                """
-            ).fetchall()
-
-            candidates = []
-
-            for (table_name,) in table_rows:
-                columns = get_table_columns(cursor, table_name)
-
-                date_column = find_first_column(
-                    columns,
-                    [
-                        "date",
-                        "data_date",
-                        "snapshot_date",
-                        "record_date",
-                        "dt",
-                    ],
-                )
-
-                port_column = find_first_column(
-                    columns,
-                    [
-                        "port",
-                        "port_name",
-                        "location",
-                        "city",
-                        "market",
-                    ],
-                )
-
-                vlsfo_column = find_first_column(
-                    columns,
-                    [
-                        "vlsfo",
-                        "vlsfo_price",
-                        "vlsfo_usd",
-                        "vlsfo_usd_mt",
-                    ],
-                )
-
-                lsmgo_column = find_first_column(
-                    columns,
-                    [
-                        "lsmgo",
-                        "lsmgo_price",
-                        "lsmgo_usd",
-                        "mgo",
-                        "mgo_price",
-                    ],
-                )
-
-                ifo380_column = find_first_column(
-                    columns,
-                    [
-                        "ifo380",
-                        "ifo380_price",
-                        "ifo_380",
-                        "hsfo380",
-                        "hsfo_380",
-                    ],
-                )
-
-                fuel_column = find_first_column(
-                    columns,
-                    [
-                        "fuel",
-                        "fuel_type",
-                        "product",
-                        "grade",
-                        "bunker_type",
-                        "fuel_grade",
-                    ],
-                )
-
-                price_column = find_first_column(
-                    columns,
-                    [
-                        "price",
-                        "value",
-                        "bunker_price",
-                        "price_usd",
-                        "usd_per_mt",
-                        "usd_mt",
-                        "rate",
-                    ],
-                )
-
-                is_wide_format = bool(
-                    date_column
-                    and port_column
-                    and (
-                        vlsfo_column
-                        or lsmgo_column
-                        or ifo380_column
-                    )
-                )
-
-                is_long_format = bool(
-                    date_column
-                    and port_column
-                    and fuel_column
-                    and price_column
-                )
-
-                if not is_wide_format and not is_long_format:
-                    continue
-
-                score = 0
-
-                if is_wide_format:
-                    score += 10
-
-                    if vlsfo_column:
-                        score += 10
-
-                    if lsmgo_column:
-                        score += 3
-
-                    if ifo380_column:
-                        score += 3
-
-                if is_long_format:
-                    score += 8
-
-                candidates.append({
-                    "table_name": table_name,
-                    "columns": columns,
-                    "date_column": date_column,
-                    "port_column": port_column,
-                    "vlsfo_column": vlsfo_column,
-                    "lsmgo_column": lsmgo_column,
-                    "ifo380_column": ifo380_column,
-                    "fuel_column": fuel_column,
-                    "price_column": price_column,
-                    "is_wide_format": is_wide_format,
-                    "is_long_format": is_long_format,
-                    "score": score,
-                })
-
-            if not candidates:
-                logger.warning(
-                    "No compatible bunker table was found. "
-                    "Expected date/port/vlsfo columns or date/port/fuel/price columns."
-                )
+            if not table_exists(cursor, "tac_master"):
+                logger.warning("TAC table not found: tac_master")
                 return summary
 
-            candidates.sort(
-                key=lambda item: item["score"],
-                reverse=True,
-            )
-
-            selected = candidates[0]
-
-            table_name = selected["table_name"]
-            date_column = selected["date_column"]
-            port_column = selected["port_column"]
-
-            latest_date_row = cursor.execute(
-                f"""
-                SELECT MAX({quote_identifier(date_column)})
-                FROM {quote_identifier(table_name)}
+            row = cursor.execute(
+                """
+                SELECT
+                    data_date,
+                    overall_index,
+                    weekly_change,
+                    route_count
+                FROM tac_master
+                ORDER BY data_date DESC, snapshot_id DESC
+                LIMIT 1
                 """
             ).fetchone()
 
-            latest_date = (
-                latest_date_row[0]
-                if latest_date_row and latest_date_row[0]
-                else None
+        if row:
+            data_date, overall_index, weekly_change, route_count = row
+
+            summary["latest_date"] = str(data_date or "-")[:10]
+            summary["overall_index"] = (
+                f"{float(overall_index):,.2f}"
+                if overall_index is not None
+                else "-"
             )
-
-            if not latest_date:
-                logger.warning(
-                    f"Bunker table '{table_name}' has no valid latest date."
-                )
-                return summary
-
-            summary["latest_date"] = str(latest_date)
-
-            # =================================================
-            # A. Wide Format
-            # =================================================
-            if selected["is_wide_format"]:
-                vlsfo_column = selected["vlsfo_column"]
-                lsmgo_column = selected["lsmgo_column"]
-                ifo380_column = selected["ifo380_column"]
-
-                select_parts = [
-                    f"{quote_identifier(port_column)} AS port_name",
-                ]
-
-                if vlsfo_column:
-                    select_parts.append(
-                        f"{quote_identifier(vlsfo_column)} AS vlsfo_value"
-                    )
-                else:
-                    select_parts.append("NULL AS vlsfo_value")
-
-                if lsmgo_column:
-                    select_parts.append(
-                        f"{quote_identifier(lsmgo_column)} AS lsmgo_value"
-                    )
-                else:
-                    select_parts.append("NULL AS lsmgo_value")
-
-                if ifo380_column:
-                    select_parts.append(
-                        f"{quote_identifier(ifo380_column)} AS ifo380_value"
-                    )
-                else:
-                    select_parts.append("NULL AS ifo380_value")
-
-                query = f"""
-                    SELECT
-                        {", ".join(select_parts)}
-                    FROM {quote_identifier(table_name)}
-                    WHERE {quote_identifier(date_column)} = ?
-                """
-
-                rows = cursor.execute(
-                    query,
-                    (latest_date,),
-                ).fetchall()
-
-                for (
-                    port_name,
-                    vlsfo_value,
-                    lsmgo_value,
-                    ifo380_value,
-                ) in rows:
-                    normalized_port = normalize_port_name(port_name)
-
-                    if normalized_port not in target_ports:
-                        continue
-
-                    if normalized_port == "Singapore":
-                        summary["singapore_vlsfo"] = format_price(vlsfo_value)
-                        summary["vlsfo"] = format_price(vlsfo_value)
-                        summary["lsmgo"] = format_price(lsmgo_value)
-                        summary["ifo380"] = format_price(ifo380_value)
-
-                    elif normalized_port == "Rotterdam":
-                        summary["rotterdam_vlsfo"] = format_price(vlsfo_value)
-
-                    elif normalized_port == "Houston":
-                        summary["houston_vlsfo"] = format_price(vlsfo_value)
-
-            # =================================================
-            # B. Long Format
-            # =================================================
-            elif selected["is_long_format"]:
-                fuel_column = selected["fuel_column"]
-                price_column = selected["price_column"]
-
-                query = f"""
-                    SELECT
-                        {quote_identifier(port_column)} AS port_name,
-                        {quote_identifier(fuel_column)} AS fuel_name,
-                        {quote_identifier(price_column)} AS price_value
-                    FROM {quote_identifier(table_name)}
-                    WHERE {quote_identifier(date_column)} = ?
-                """
-
-                rows = cursor.execute(
-                    query,
-                    (latest_date,),
-                ).fetchall()
-
-                for port_name, fuel_name, price_value in rows:
-                    normalized_port = normalize_port_name(port_name)
-                    normalized_fuel = normalize_fuel_name(fuel_name)
-
-                    if normalized_fuel == "VLSFO":
-                        if normalized_port == "Singapore":
-                            summary["singapore_vlsfo"] = format_price(price_value)
-
-                        elif normalized_port == "Rotterdam":
-                            summary["rotterdam_vlsfo"] = format_price(price_value)
-
-                        elif normalized_port == "Houston":
-                            summary["houston_vlsfo"] = format_price(price_value)
-
-                    if (
-                        normalized_port == "Singapore"
-                        and normalized_fuel in target_fuels
-                    ):
-                        if normalized_fuel == "VLSFO":
-                            summary["vlsfo"] = format_price(price_value)
-
-                        elif normalized_fuel == "LSMGO":
-                            summary["lsmgo"] = format_price(price_value)
-
-                        elif normalized_fuel == "IFO380":
-                            summary["ifo380"] = format_price(price_value)
-
-        valid_price_count = sum(
-            price != "-"
-            for price in [
-                summary["singapore_vlsfo"],
-                summary["rotterdam_vlsfo"],
-                summary["houston_vlsfo"],
-                summary["vlsfo"],
-                summary["lsmgo"],
-                summary["ifo380"],
-            ]
-        )
-
-        if valid_price_count > 0:
+            summary["weekly_change"] = (
+                f"{float(weekly_change):+.2f}%"
+                if weekly_change is not None
+                else "-"
+            )
+            summary["route_count"] = (
+                str(route_count)
+                if route_count is not None
+                else "-"
+            )
             summary["status"] = "Active"
 
-            logger.info(
-                "Bunker summary loaded: "
-                f"table={table_name}, date={summary['latest_date']}, "
-                f"valid_price_count={valid_price_count}"
-            )
-        else:
-            logger.warning(
-                "Bunker DB was found but no usable latest price values were loaded."
-            )
-
     except Exception as error:
-        logger.exception(f"Failed to read Bunker DB: {error}")
+        logger.exception(f"Failed to read TAC DB: {error}")
 
     return summary
 
+# =============================================================================
+# 8. Macro Summary
+# =============================================================================
+
 def get_macro_summary():
-    """Macro Economies (GDP, Inflation & GSCPI) 요약 정보 조회"""
+    """Macro Economies 및 New York Fed GSCPI 최신 데이터를 읽는다."""
     summary = {
         "title": "Macro Economies & GSCPI",
         "path": "GDP&Inflation/index.html",
@@ -972,7 +797,9 @@ def get_macro_summary():
             cursor = conn.cursor()
 
             if not table_exists(cursor, "newyorkfed_gscpi"):
-                logger.warning("Macro table not found: newyorkfed_gscpi")
+                logger.warning(
+                    "Macro table not found: newyorkfed_gscpi"
+                )
                 return summary
 
             row = cursor.execute(
@@ -989,7 +816,7 @@ def get_macro_summary():
         if row:
             data_date, gscpi_value = row
 
-            summary["latest_date"] = str(data_date or "-")
+            summary["latest_date"] = str(data_date or "-")[:10]
             summary["gscpi_latest"] = (
                 f"{float(gscpi_value):,.2f}"
                 if gscpi_value is not None
@@ -1002,9 +829,10 @@ def get_macro_summary():
 
     return summary
 
-# =========================================================
-# 4. Bloomberg / MI Terminal HTML Template
-# =========================================================
+# =============================================================================
+# 9. HTML Template
+# =============================================================================
+
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -1026,14 +854,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       --cyan: #42c6e8;
       --cyan-bright: #75daf2;
       --green: #00d26a;
-      --red: #ff4d4f;
       --text: #e7edf4;
       --text-muted: #8798aa;
       --text-dim: #5d6d7d;
       --border: #243342;
       --border-light: #405064;
-      --mono: "IBM Plex Mono", "Roboto Mono", "Consolas", "Courier New", monospace;
-      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", Arial, sans-serif;
+      --mono: "IBM Plex Mono", "Roboto Mono", Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI",
+              Roboto, "Noto Sans KR", Arial, sans-serif;
     }
 
     * {
@@ -1048,21 +876,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       background:
         linear-gradient(
           180deg,
-          rgba(255, 138, 0, 0.035) 0%,
+          rgba(255, 138, 0, 0.04) 0%,
           rgba(2, 6, 11, 0) 260px
         ),
         var(--bg-dark);
       color: var(--text);
       font-family: var(--sans);
       font-size: 12px;
-      line-height: 1.35;
-      overflow-x: hidden;
     }
 
     body {
-      display: flex;
-      flex-direction: column;
-      min-height: 100vh;
       padding: 10px 16px;
     }
 
@@ -1070,25 +893,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       width: 100%;
       max-width: 1600px;
       margin: 0 auto;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
     }
 
-    /* =====================================================
-       Top Bloomberg Terminal Bar
-       ===================================================== */
     .top-bar {
+      min-height: 36px;
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      min-height: 34px;
+      justify-content: space-between;
+      gap: 14px;
       padding: 0 10px;
       border: 1px solid var(--border-light);
       background: var(--bg-panel);
       font-family: var(--mono);
-      font-size: 11px;
     }
 
     .top-left {
@@ -1099,23 +915,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     .badge-term {
-      display: inline-block;
-      padding: 2px 6px;
+      padding: 3px 6px;
       background: var(--amber);
-      color: #050505;
-      font-weight: 800;
+      color: #000;
       font-size: 10px;
+      font-weight: 900;
       letter-spacing: 0.4px;
     }
 
     .title-main {
-      color: #ffffff;
-      font-size: 14px;
-      font-weight: 800;
-      letter-spacing: 0.1px;
-      white-space: nowrap;
       overflow: hidden;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 800;
       text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .updated-at {
@@ -1128,31 +942,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       color: var(--amber-bright);
     }
 
-    /* =====================================================
-       Section Layout
-       ===================================================== */
     .section-group {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
+      margin-top: 12px;
     }
 
     .section-title {
-      display: flex;
-      align-items: center;
-      gap: 6px;
+      margin-bottom: 7px;
       color: var(--amber);
       font-family: var(--mono);
       font-size: 11px;
       font-weight: 800;
-      letter-spacing: 0.65px;
+      letter-spacing: 0.8px;
       text-transform: uppercase;
     }
 
     .section-title::before {
-      content: "//";
+      content: "// ";
       color: var(--text-dim);
-      font-weight: 800;
     }
 
     .grid-4 {
@@ -1161,35 +967,30 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       gap: 10px;
     }
 
-    .grid-split {
+    .grid-2 {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
     }
 
-    /* =====================================================
-       Terminal Cards
-       ===================================================== */
     .card {
-      position: relative;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      min-height: 148px;
+      min-height: 158px;
       padding: 10px 12px;
-      overflow: hidden;
       border: 1px solid var(--border);
       border-top: 2px solid var(--border-light);
       background:
         linear-gradient(
           135deg,
           rgba(255, 138, 0, 0.035),
-          transparent 55%
+          transparent 60%
         ),
         var(--bg-panel);
       color: inherit;
       text-decoration: none;
-      transition: all 0.15s ease;
+      transition: 0.15s ease;
     }
 
     .card:hover {
@@ -1197,27 +998,25 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       border-top-color: var(--amber);
       background: var(--bg-hover);
       transform: translateY(-2px);
-      box-shadow: 0 5px 14px rgba(0, 0, 0, 0.45);
     }
 
     .bunker-card {
-      min-height: 204px;
+      min-height: 205px;
     }
 
     .card-header {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      gap: 7px;
-      margin-bottom: 7px;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
     }
 
     .card-title {
-      min-width: 0;
       overflow: hidden;
-      color: #ffffff;
+      color: #fff;
       font-family: var(--mono);
-      font-size: 11.5px;
+      font-size: 11px;
       font-weight: 800;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -1225,62 +1024,54 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     .badge {
       flex-shrink: 0;
-      padding: 1px 5px;
+      padding: 2px 5px;
       border: 1px solid var(--border);
       color: var(--text-dim);
       font-family: var(--mono);
       font-size: 9px;
       font-weight: 800;
-      letter-spacing: 0.2px;
     }
 
     .badge.active {
       border-color: var(--green);
-      background: rgba(0, 210, 106, 0.1);
+      background: rgba(0, 210, 106, 0.08);
       color: var(--green);
     }
 
     .badge.nodata {
-      border-color: var(--border);
-      background: rgba(93, 109, 125, 0.12);
+      background: rgba(93, 109, 125, 0.08);
       color: var(--text-dim);
     }
 
-    /* =====================================================
-       KPI Components
-       ===================================================== */
     .kpi-group {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 6px;
-      margin: 4px 0 6px;
     }
 
     .kpi-item {
       min-width: 0;
-      padding: 6px 8px;
+      padding: 7px 8px;
       border: 1px solid rgba(64, 80, 100, 0.55);
       background: var(--bg-item);
     }
 
     .kpi-label {
-      margin-bottom: 3px;
+      margin-bottom: 4px;
       overflow: hidden;
       color: var(--text-muted);
       font-family: var(--mono);
-      font-size: 9.5px;
-      letter-spacing: 0.1px;
+      font-size: 9px;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
     .kpi-val {
       overflow: hidden;
-      color: #ffffff;
+      color: #fff;
       font-family: var(--mono);
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 800;
-      font-variant-numeric: tabular-nums;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
@@ -1294,56 +1085,48 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     .small-value {
-      font-size: 10.5px;
-      letter-spacing: -0.2px;
+      font-size: 10px;
     }
 
-    /* =====================================================
-       Bunker-Specific Compact KPI Layout
-       ===================================================== */
     .bunker-section-label {
-      margin: 7px 0 4px;
+      margin: 8px 0 5px;
       color: var(--amber);
       font-family: var(--mono);
       font-size: 8.5px;
       font-weight: 800;
-      letter-spacing: 0.45px;
+      letter-spacing: 0.5px;
     }
 
     .bunker-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 5px;
-      margin-bottom: 4px;
     }
 
     .bunker-grid .kpi-item {
-      padding: 5px 6px;
+      padding: 6px;
     }
 
     .bunker-grid .kpi-label {
-      font-size: 8.5px;
+      font-size: 8px;
     }
 
     .bunker-grid .kpi-val {
       font-size: 9.5px;
-      letter-spacing: -0.45px;
+      letter-spacing: -0.4px;
     }
 
-    /* =====================================================
-       Card Footer
-       ===================================================== */
     .card-footer {
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      justify-content: space-between;
       gap: 6px;
-      margin-top: 5px;
+      margin-top: 9px;
       padding-top: 6px;
       border-top: 1px solid var(--border);
       color: var(--text-dim);
       font-family: var(--mono);
-      font-size: 9.5px;
+      font-size: 9px;
     }
 
     .arrow {
@@ -1352,24 +1135,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       font-weight: 800;
     }
 
-    /* =====================================================
-       Portal Footer
-       ===================================================== */
     footer {
       display: flex;
       justify-content: space-between;
-      gap: 12px;
-      width: 100%;
+      gap: 10px;
       max-width: 1600px;
-      margin: 10px auto 0;
+      margin: 12px auto 0;
       padding-top: 8px;
       border-top: 1px solid var(--border);
       color: var(--text-dim);
       font-family: var(--mono);
-      font-size: 9.5px;
+      font-size: 9px;
     }
 
-    @media (max-width: 1250px) {
+    @media (max-width: 1240px) {
       .grid-4 {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -1381,23 +1160,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       }
 
       .grid-4,
-      .grid-split {
+      .grid-2 {
         grid-template-columns: 1fr;
       }
 
       .top-bar {
         align-items: flex-start;
         flex-direction: column;
-        gap: 5px;
+        gap: 6px;
         padding: 8px 10px;
-      }
-
-      .top-left {
-        width: 100%;
-      }
-
-      .updated-at {
-        padding-left: 1px;
       }
 
       footer {
@@ -1417,19 +1188,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           MARKET INTELLIGENCE // MAIN PORTAL
         </span>
       </div>
+
       <div class="updated-at">
         UPDATED: <span>__GENERATED_AT__</span>
       </div>
     </header>
 
-    <!-- =================================================
-         1. Sea Section
-         ================================================= -->
     <section class="section-group">
       <div class="section-title">Sea</div>
 
       <div class="grid-4">
-        <!-- Shipping Index -->
+
         <a href="__SHIPPING_PATH__" class="card">
           <div>
             <div class="card-header">
@@ -1458,7 +1227,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </a>
 
-        <!-- Alphaliner -->
         <a href="__ALPHALINER_PATH__" class="card">
           <div>
             <div class="card-header">
@@ -1489,66 +1257,58 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </a>
 
-        <!-- Bunker Price -->
         <a href="__BUNKER_PATH__" class="card bunker-card">
           <div>
             <div class="card-header">
-              <span class="card-title">Bunker Price Monitor</span>
+              <span class="card-title">Bunker Price (VLSFO)</span>
               <span class="badge __BUNKER_STATUS_CLASS__">
                 __BUNKER_STATUS__
               </span>
             </div>
 
             <div class="bunker-section-label">
-              VLSFO / MAJOR PORTS
+              SHIP &amp; BUNKER / LATEST VLSFO
             </div>
 
             <div class="bunker-grid">
               <div class="kpi-item">
-                <div class="kpi-label">Singapore</div>
-                <div class="kpi-val highlight">
-                  __BUNKER_SINGAPORE_VLSFO__
-                </div>
-              </div>
-
-              <div class="kpi-item">
                 <div class="kpi-label">Rotterdam</div>
-                <div class="kpi-val">
-                  __BUNKER_ROTTERDAM_VLSFO__
+                <div class="kpi-val highlight">
+                  __BUNKER_ROTTERDAM__
                 </div>
               </div>
 
               <div class="kpi-item">
-                <div class="kpi-label">Houston</div>
+                <div class="kpi-label">Fujairah</div>
                 <div class="kpi-val">
-                  __BUNKER_HOUSTON_VLSFO__
+                  __BUNKER_FUJAIRAH__
+                </div>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-label">Singapore</div>
+                <div class="kpi-val amber">
+                  __BUNKER_SINGAPORE__
                 </div>
               </div>
             </div>
 
             <div class="bunker-section-label">
-              SINGAPORE / FUEL GRADES
+              THREE-PORT MARKET INDICATOR
             </div>
 
-            <div class="bunker-grid">
+            <div class="kpi-group">
               <div class="kpi-item">
-                <div class="kpi-label">VLSFO</div>
+                <div class="kpi-label">VLSFO Average</div>
+                <div class="kpi-val highlight">
+                  __BUNKER_AVERAGE__
+                </div>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-label">Available Ports</div>
                 <div class="kpi-val amber">
-                  __BUNKER_VLSFO__
-                </div>
-              </div>
-
-              <div class="kpi-item">
-                <div class="kpi-label">LSMGO</div>
-                <div class="kpi-val">
-                  __BUNKER_LSMGO__
-                </div>
-              </div>
-
-              <div class="kpi-item">
-                <div class="kpi-label">IFO380</div>
-                <div class="kpi-val">
-                  __BUNKER_IFO380__
+                  __BUNKER_PORT_COUNT__ / 3
                 </div>
               </div>
             </div>
@@ -1560,7 +1320,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           </div>
         </a>
 
-        <!-- Forwarder Top 25 -->
         <a href="__FORWARDER_PATH__" class="card">
           <div>
             <div class="card-header">
@@ -1606,13 +1365,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <span class="arrow">OPEN &rarr;</span>
           </div>
         </a>
+
       </div>
     </section>
 
-    <!-- =================================================
-         2. Air & Global Section
-         ================================================= -->
-    <div class="grid-split">
+    <div class="grid-2">
       <section class="section-group">
         <div class="section-title">Air</div>
 
@@ -1691,17 +1448,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </html>
 """
 
-# =========================================================
-# 5. 템플릿 치환 유틸리티
-# =========================================================
-def replace_template_value(html_output, key, value):
-    """템플릿의 단일 Placeholder를 안전한 HTML 문자열로 치환한다."""
-    return html_output.replace(key, safe_html(value))
+# =============================================================================
+# 10. Dashboard Build
+# =============================================================================
 
-# =========================================================
-# 6. 메인 빌드 로직
-# =========================================================
 def main():
+    """모든 모듈 DB에서 최신 요약을 읽고 루트 포털을 생성한다."""
     logger.info("Building Market Intelligence Portal Dashboard...")
 
     shipping = get_shipping_summary()
@@ -1711,292 +1463,320 @@ def main():
     tac = get_tac_summary()
     macro = get_macro_summary()
 
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    shipping_latest_date = get_latest_available_date(
-        shipping["scfi_date"],
-        shipping["bdi_date"],
-    )
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     html_output = HTML_TEMPLATE
 
-    # =====================================================
+    # -------------------------------------------------------------------------
     # Header
-    # =====================================================
+    # -------------------------------------------------------------------------
     html_output = replace_template_value(
         html_output,
         "__GENERATED_AT__",
-        now_str,
+        generated_at,
     )
 
-    # =====================================================
-    # Shipping
-    # =====================================================
+    # -------------------------------------------------------------------------
+    # Shipping Index
+    # -------------------------------------------------------------------------
     html_output = replace_template_value(
         html_output,
         "__SHIPPING_PATH__",
         shipping["path"],
     )
+
     html_output = replace_template_value(
         html_output,
         "__SHIPPING_STATUS__",
         shipping["status"],
     )
+
     html_output = html_output.replace(
         "__SHIPPING_STATUS_CLASS__",
         get_status_class(shipping["status"]),
     )
+
     html_output = replace_template_value(
         html_output,
         "__SHIPPING_SCFI__",
         shipping["scfi_latest"],
     )
+
     html_output = replace_template_value(
         html_output,
         "__SHIPPING_BDI__",
         shipping["bdi_latest"],
     )
+
     html_output = replace_template_value(
         html_output,
         "__SHIPPING_DATE__",
-        shipping_latest_date,
+        get_latest_available_date(
+            shipping["scfi_date"],
+            shipping["bdi_date"],
+        ),
     )
 
-    # =====================================================
+    # -------------------------------------------------------------------------
     # Alphaliner
-    # =====================================================
+    # -------------------------------------------------------------------------
     html_output = replace_template_value(
         html_output,
         "__ALPHALINER_PATH__",
         alphaliner["path"],
     )
+
     html_output = replace_template_value(
         html_output,
         "__ALPHALINER_STATUS__",
         alphaliner["status"],
     )
+
     html_output = html_output.replace(
         "__ALPHALINER_STATUS_CLASS__",
         get_status_class(alphaliner["status"]),
     )
+
     html_output = replace_template_value(
         html_output,
         "__ALPHALINER_TEU__",
         alphaliner["total_teu"],
     )
+
     html_output = replace_template_value(
         html_output,
         "__ALPHALINER_TOP1__",
         alphaliner["top1_operator"],
     )
+
     html_output = replace_template_value(
         html_output,
         "__ALPHALINER_DATE__",
         alphaliner["latest_date"],
     )
 
-    # =====================================================
+    # -------------------------------------------------------------------------
     # Bunker Price
-    # =====================================================
+    # -------------------------------------------------------------------------
     html_output = replace_template_value(
         html_output,
         "__BUNKER_PATH__",
         bunker["path"],
     )
+
     html_output = replace_template_value(
         html_output,
         "__BUNKER_STATUS__",
         bunker["status"],
     )
+
     html_output = html_output.replace(
         "__BUNKER_STATUS_CLASS__",
         get_status_class(bunker["status"]),
     )
+
     html_output = replace_template_value(
         html_output,
-        "__BUNKER_SINGAPORE_VLSFO__",
-        bunker["singapore_vlsfo"],
+        "__BUNKER_ROTTERDAM__",
+        bunker["rotterdam"],
     )
+
     html_output = replace_template_value(
         html_output,
-        "__BUNKER_ROTTERDAM_VLSFO__",
-        bunker["rotterdam_vlsfo"],
+        "__BUNKER_FUJAIRAH__",
+        bunker["fujairah"],
     )
+
     html_output = replace_template_value(
         html_output,
-        "__BUNKER_HOUSTON_VLSFO__",
-        bunker["houston_vlsfo"],
+        "__BUNKER_SINGAPORE__",
+        bunker["singapore"],
     )
+
     html_output = replace_template_value(
         html_output,
-        "__BUNKER_VLSFO__",
-        bunker["vlsfo"],
+        "__BUNKER_AVERAGE__",
+        bunker["market_average"],
     )
+
     html_output = replace_template_value(
         html_output,
-        "__BUNKER_LSMGO__",
-        bunker["lsmgo"],
+        "__BUNKER_PORT_COUNT__",
+        bunker["available_ports"],
     )
-    html_output = replace_template_value(
-        html_output,
-        "__BUNKER_IFO380__",
-        bunker["ifo380"],
-    )
+
     html_output = replace_template_value(
         html_output,
         "__BUNKER_DATE__",
         bunker["latest_date"],
     )
 
-    # =====================================================
+    # -------------------------------------------------------------------------
     # Forwarder
-    # =====================================================
+    # -------------------------------------------------------------------------
     html_output = replace_template_value(
         html_output,
         "__FORWARDER_PATH__",
         forwarder["path"],
     )
+
     html_output = replace_template_value(
         html_output,
         "__FORWARDER_STATUS__",
         forwarder["status"],
     )
+
     html_output = html_output.replace(
         "__FORWARDER_STATUS_CLASS__",
         get_status_class(forwarder["status"]),
     )
+
     html_output = replace_template_value(
         html_output,
         "__FORWARDER_PROVIDER__",
         forwarder["provider"],
     )
+
     html_output = replace_template_value(
         html_output,
         "__FORWARDER_REVENUE__",
         forwarder["revenue"],
     )
+
     html_output = replace_template_value(
         html_output,
         "__FORWARDER_TEU__",
         forwarder["teu"],
     )
+
     html_output = replace_template_value(
         html_output,
         "__FORWARDER_AIR_TONS__",
         forwarder["air_tons"],
     )
+
     html_output = replace_template_value(
         html_output,
         "__FORWARDER_DATE__",
         forwarder["latest_date"],
     )
 
-    # =====================================================
-    # TAC Index
-    # =====================================================
+    # -------------------------------------------------------------------------
+    # TAC Air Freight
+    # -------------------------------------------------------------------------
     html_output = replace_template_value(
         html_output,
         "__TAC_PATH__",
         tac["path"],
     )
+
     html_output = replace_template_value(
         html_output,
         "__TAC_STATUS__",
         tac["status"],
     )
+
     html_output = html_output.replace(
         "__TAC_STATUS_CLASS__",
         get_status_class(tac["status"]),
     )
+
     html_output = replace_template_value(
         html_output,
         "__TAC_INDEX__",
         tac["overall_index"],
     )
+
     html_output = replace_template_value(
         html_output,
         "__TAC_WEEKLY__",
         tac["weekly_change"],
     )
+
     html_output = replace_template_value(
         html_output,
         "__TAC_DATE__",
         tac["latest_date"],
     )
+
     html_output = replace_template_value(
         html_output,
         "__TAC_ROUTES__",
         tac["route_count"],
     )
 
-    # =====================================================
-    # Macro
-    # =====================================================
+    # -------------------------------------------------------------------------
+    # Macro / GSCPI
+    # -------------------------------------------------------------------------
     html_output = replace_template_value(
         html_output,
         "__MACRO_PATH__",
         macro["path"],
     )
+
     html_output = replace_template_value(
         html_output,
         "__MACRO_STATUS__",
         macro["status"],
     )
+
     html_output = html_output.replace(
         "__MACRO_STATUS_CLASS__",
         get_status_class(macro["status"]),
     )
+
     html_output = replace_template_value(
         html_output,
         "__MACRO_GSCPI__",
         macro["gscpi_latest"],
     )
+
     html_output = replace_template_value(
         html_output,
         "__MACRO_DATE__",
         macro["latest_date"],
     )
 
-    # =====================================================
-    # 미치환 Placeholder 점검
-    # =====================================================
-    unresolved_placeholders = []
+    # -------------------------------------------------------------------------
+    # Unresolved Placeholder Validation
+    # -------------------------------------------------------------------------
+    unresolved_tokens = []
 
     for token in [
+        "__GENERATED_",
         "__SHIPPING_",
         "__ALPHALINER_",
         "__BUNKER_",
         "__FORWARDER_",
         "__TAC_",
         "__MACRO_",
-        "__GENERATED_",
     ]:
         if token in html_output:
-            unresolved_placeholders.append(token)
+            unresolved_tokens.append(token)
 
-    if unresolved_placeholders:
+    if unresolved_tokens:
         logger.warning(
-            "Unresolved template placeholders found: "
-            + ", ".join(unresolved_placeholders)
+            "Unresolved HTML placeholders found: "
+            + ", ".join(unresolved_tokens)
         )
 
-    # =====================================================
-    # index.html 원자적 저장
-    # =====================================================
-    temp_path = OUTPUT_HTML.with_suffix(".tmp")
+    # -------------------------------------------------------------------------
+    # Atomic HTML Write
+    # -------------------------------------------------------------------------
+    temp_html_path = OUTPUT_HTML.with_suffix(".html.tmp")
 
-    temp_path.write_text(
+    temp_html_path.write_text(
         html_output,
         encoding="utf-8",
     )
 
-    temp_path.replace(OUTPUT_HTML)
+    temp_html_path.replace(OUTPUT_HTML)
 
-    # =====================================================
-    # JSON 요약 저장
-    # =====================================================
-    summary_data = {
-        "generated_at": now_str,
+    # -------------------------------------------------------------------------
+    # Dashboard Summary JSON
+    # -------------------------------------------------------------------------
+    summary_json = {
+        "generated_at": generated_at,
         "shipping": shipping,
         "alphaliner": alphaliner,
         "bunker": bunker,
@@ -2007,18 +1787,18 @@ def main():
 
     OUTPUT_JSON.write_text(
         json.dumps(
-            summary_data,
+            summary_json,
             ensure_ascii=False,
             indent=2,
         ),
         encoding="utf-8",
     )
 
-    logger.info(f"[SUCCESS] Portal HTML built: {OUTPUT_HTML}")
-    logger.info(f"[SUCCESS] Summary JSON built: {OUTPUT_JSON}")
+    logger.info(f"[SUCCESS] Portal HTML created: {OUTPUT_HTML}")
+    logger.info(f"[SUCCESS] Summary JSON created: {OUTPUT_JSON}")
 
     logger.info(
-        "Module status | "
+        "Module Status | "
         f"Shipping={shipping['status']} | "
         f"Alphaliner={alphaliner['status']} | "
         f"Bunker={bunker['status']} | "
