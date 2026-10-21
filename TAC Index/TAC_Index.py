@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 TAC Index / Baltic Exchange Airfreight Rate Index Crawler
-GitHub Actions + GitHub Pages static dashboard version
+GitHub Actions + GitHub Pages static dashboard version (Bloomberg Terminal Style)
 
 Data source:
 - Air Cargo News Data Hub
@@ -299,12 +299,6 @@ def get_last_sync_meta() -> Dict[str, Any]:
 # 5. Infogram extraction
 # =============================================================================
 def fetch_infogram_html() -> str:
-    """
-    Retrieve the Infogram embed HTML.
-
-    The previous local implementation used this direct request approach,
-    which is retained because it avoids Selenium DOM timing issues.
-    """
     log_info(f"[FETCH] Infogram embed request: {EMBED_URL}")
 
     response = requests.get(
@@ -322,12 +316,6 @@ def fetch_infogram_html() -> str:
     return response.text
 
 def extract_balanced_json_object(source_text: str, start_position: int) -> Dict[str, Any]:
-    """
-    Extract a full JSON object by tracking braces, strings and escaped characters.
-
-    This is safer than a regular expression because the Infogram payload can
-    contain nested objects, long arrays and escaped strings.
-    """
     object_start = source_text.find("{", start_position)
     if object_start < 0:
         raise RuntimeError("infographicData JSON object start was not found.")
@@ -371,7 +359,6 @@ def extract_balanced_json_object(source_text: str, start_position: int) -> Dict[
     raise RuntimeError("Infogram JSON object end was not found.")
 
 def extract_infographic_data(embed_html: str) -> Dict[str, Any]:
-    """Extract window.infographicData from the Infogram embed page."""
     log_info("[PARSE] Extracting Infogram infographicData...")
 
     patterns = [
@@ -392,7 +379,6 @@ def extract_infographic_data(embed_html: str) -> Dict[str, Any]:
     )
 
 def get_cell_value(cell: Any) -> Any:
-    """Return a usable scalar from Infogram cell object / raw value."""
     if isinstance(cell, dict):
         for key in ("value", "formattedValue", "label", "text"):
             if key in cell:
@@ -402,7 +388,6 @@ def get_cell_value(cell: Any) -> Any:
     return cell
 
 def normalize_sheet(sheet: Any) -> List[List[Any]]:
-    """Convert one Infogram sheet to a simple two-dimensional list."""
     normalized_rows: List[List[Any]] = []
 
     if not isinstance(sheet, list):
@@ -417,7 +402,6 @@ def normalize_sheet(sheet: Any) -> List[List[Any]]:
     return normalized_rows
 
 def get_chart_sheets(entity: Dict[str, Any]) -> List[List[List[Any]]]:
-    """Extract chart sheets from multiple possible Infogram structures."""
     props = entity.get("props", {})
     chart_data = props.get("chartData", {})
 
@@ -425,14 +409,12 @@ def get_chart_sheets(entity: Dict[str, Any]) -> List[List[List[Any]]]:
 
     sheets: List[List[List[Any]]] = []
 
-    # Typical structure: chartData.data = [sheet1, sheet2, ...]
     if isinstance(raw_data, list):
         for candidate in raw_data:
             normalized = normalize_sheet(candidate)
             if normalized:
                 sheets.append(normalized)
 
-    # Fallback structure for certain embed variants.
     if not sheets and isinstance(chart_data.get("sheets"), list):
         for candidate in chart_data["sheets"]:
             normalized = normalize_sheet(candidate)
@@ -442,7 +424,6 @@ def get_chart_sheets(entity: Dict[str, Any]) -> List[List[List[Any]]]:
     return sheets
 
 def iter_chart_entities(data: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
-    """Find all CHART entities in the standard Infogram content tree."""
     entities = (
         data.get("elements", {})
         .get("content", {})
@@ -465,12 +446,6 @@ def iter_chart_entities(data: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]
     return charts
 
 def score_chart_sheet(rows: List[List[Any]]) -> int:
-    """
-    Score candidates to identify the Baltic airfreight chart.
-
-    A sheet containing expected route terms gets the highest score.
-    This prevents selecting an unrelated first chart from the infographic.
-    """
     if len(rows) < 2:
         return -10000
 
@@ -483,21 +458,18 @@ def score_chart_sheet(rows: List[List[Any]]) -> int:
 
     score = 0
 
-    # Data-quality score
     if len(rows[0]) >= 3:
         score += 10
 
     if len(rows) >= 10:
         score += 5
 
-    # Route recognition score
     for keyword in EXPECTED_ROUTE_KEYWORDS:
         if keyword in header_text:
             score += 50
         elif keyword in whole_text:
             score += 10
 
-    # BAI / Baltic related bonus
     if "baltic" in whole_text:
         score += 10
     if "airfreight" in whole_text or "air freight" in whole_text:
@@ -506,7 +478,6 @@ def score_chart_sheet(rows: List[List[Any]]) -> int:
     return score
 
 def extract_best_chart_rows(data: Dict[str, Any]) -> List[List[Any]]:
-    """Find the most likely BAI route-level chart from all chart entities."""
     log_info("[PARSE] Searching BAI route-level chart data...")
 
     chart_entities = iter_chart_entities(data)
@@ -555,7 +526,6 @@ def extract_best_chart_rows(data: Dict[str, Any]) -> List[List[Any]]:
 # 6. Dataset transformation
 # =============================================================================
 def normalize_route_name(route_name: str) -> str:
-    """Normalize source route spelling to stable DB route codes."""
     cleaned = normalize_text(route_name)
     cleaned = re.sub(r"\s*-\s*", "-", cleaned)
 
@@ -571,7 +541,6 @@ def normalize_route_name(route_name: str) -> str:
     return replacements.get(cleaned, cleaned)
 
 def split_route(route_name: str) -> Tuple[str, str]:
-    """Split route text into origin and destination."""
     normalized = normalize_route_name(route_name)
 
     if "-" in normalized:
@@ -581,17 +550,6 @@ def split_route(route_name: str) -> Tuple[str, str]:
     return normalized, ""
 
 def parse_source_date(label: str) -> Optional[str]:
-    """
-    Convert source labels into ISO data_date format.
-
-    Supports common source label formats:
-    - 2026-10-18
-    - 18/10/2026
-    - 18 Oct 2026
-    - Oct 2026
-    - Oct-26
-    - October 2026
-    """
     raw = normalize_text(label)
 
     date_formats = [
@@ -613,25 +571,15 @@ def parse_source_date(label: str) -> Optional[str]:
     for fmt in date_formats:
         try:
             parsed = datetime.strptime(raw, fmt)
-
-            # Monthly source labels are normalized to the first day of month.
             return parsed.strftime("%Y-%m-%d")
         except ValueError:
             continue
 
-    # Example: "Week ending 18 October 2026"
-    matched = re.search(
-        r"(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})",
-        raw,
-    )
+    matched = re.search(r"(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})", raw)
     if matched:
         return parse_source_date(matched.group(1))
 
-    # Example: "18-Oct-2026"
-    matched = re.search(
-        r"(\d{1,2}-[A-Za-z]{3}-\d{4})",
-        raw,
-    )
+    matched = re.search(r"(\d{1,2}-[A-Za-z]{3}-\d{4})", raw)
     if matched:
         try:
             parsed = datetime.strptime(matched.group(1), "%d-%b-%Y")
@@ -642,16 +590,6 @@ def parse_source_date(label: str) -> Optional[str]:
     return None
 
 def build_dataset(rows: List[List[Any]]) -> Dict[str, Any]:
-    """
-    Convert Infogram rows into:
-    {
-      labels: [...],
-      source_dates: [...],
-      series: [
-        {name: route, values: [...]}
-      ]
-    }
-    """
     if not rows or len(rows) < 2:
         raise RuntimeError("The selected TAC chart dataset is empty.")
 
@@ -698,7 +636,6 @@ def build_dataset(rows: List[List[Any]]) -> Dict[str, Any]:
 
             values.append(numeric_value)
 
-        # Exclude empty / irrelevant columns.
         if valid_value_count == 0:
             continue
 
@@ -725,7 +662,6 @@ def build_dataset(rows: List[List[Any]]) -> Dict[str, Any]:
     }
 
 def get_latest_data_position(dataset: Dict[str, Any]) -> int:
-    """Find the latest point with at least one valid route value."""
     labels = dataset.get("labels", [])
     series = dataset.get("series", [])
 
@@ -741,7 +677,6 @@ def get_previous_valid_value(
     values: List[Optional[float]],
     from_index: int,
 ) -> Optional[float]:
-    """Find prior available value for period-on-period calculation."""
     for index in range(from_index - 1, -1, -1):
         if index < len(values) and values[index] is not None:
             return values[index]
@@ -749,17 +684,6 @@ def get_previous_valid_value(
     return None
 
 def build_snapshot_bundle(dataset: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Create the latest snapshot record.
-
-    overall_index:
-        Mean of the latest observed rate across displayed routes.
-        This is a dashboard convenience metric, not an official TAC composite index.
-
-    weekly_change:
-        Mean percentage change versus the preceding available source period
-        across routes with valid consecutive values.
-    """
     latest_index = get_latest_data_position(dataset)
     labels = dataset["labels"]
     source_dates = dataset["source_dates"]
@@ -833,7 +757,6 @@ def build_snapshot_bundle(dataset: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 def make_snapshot_hash(bundle: Dict[str, Any]) -> str:
-    """Create a deterministic hash to prevent duplicate snapshots."""
     normalized_payload = {
         "data_date": bundle["data_date"],
         "source_label": bundle["source_label"],
@@ -856,7 +779,6 @@ def make_snapshot_hash(bundle: Dict[str, Any]) -> str:
 # 7. Save snapshot
 # =============================================================================
 def save_snapshot(bundle: Dict[str, Any]) -> Tuple[int, bool]:
-    """Save the latest TAC snapshot. Return (snapshot_id, is_new_snapshot)."""
     data_hash = make_snapshot_hash(bundle)
     captured_at = get_now_string()
     details = bundle["details"]
@@ -951,7 +873,6 @@ def save_snapshot(bundle: Dict[str, Any]) -> Tuple[int, bool]:
 # 8. Static JSON data build
 # =============================================================================
 def load_history() -> List[Dict[str, Any]]:
-    """Load all historical snapshot summaries."""
     conn = get_db_connection()
 
     try:
@@ -975,7 +896,6 @@ def load_history() -> List[Dict[str, Any]]:
         conn.close()
 
 def load_latest_details() -> List[Dict[str, Any]]:
-    """Load detail rows for the newest snapshot."""
     conn = get_db_connection()
 
     try:
@@ -1011,7 +931,6 @@ def load_latest_details() -> List[Dict[str, Any]]:
         conn.close()
 
 def build_static_json() -> Dict[str, Any]:
-    """Generate tac_index_data.json from SQLite data."""
     history = load_history()
     latest_detail = load_latest_details()
     last_sync = get_last_sync_meta()
@@ -1055,327 +974,447 @@ def build_static_json() -> Dict[str, Any]:
     return payload
 
 # =============================================================================
-# 9. Static HTML dashboard
+# 9. Static HTML dashboard (Bloomberg Terminal Style)
 # =============================================================================
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TAC Index | Baltic Exchange Airfreight Rate Index</title>
+  <title>TAC INDEX // BALTIC AIRFREIGHT TERMINAL</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --navy: #0f172a;
-      --navy-2: #1e293b;
-      --blue: #0ea5e9;
-      --blue-dark: #0369a1;
-      --bg: #f1f5f9;
-      --card: #ffffff;
-      --line: #e2e8f0;
-      --text: #0f172a;
-      --muted: #64748b;
-      --green: #059669;
-      --red: #dc2626;
-      --amber: #d97706;
+      --bg-root: #0a0b0e;
+      --bg-panel: #12141a;
+      --bg-panel-alt: #171a22;
+      --border-subtle: #1e222d;
+      --border-strong: #2a303f;
+      --text-main: #f0f3f6;
+      --text-muted: #737c8e;
+      --text-dim: #454d5d;
+
+      /* Bloomberg Core Palette */
+      --bb-amber: #ff9900;
+      --bb-amber-dim: #b36b00;
+      --bb-cyan: #00e5ff;
+      --bb-green: #00e676;
+      --bb-red: #ff334b;
+      --bb-purple: #bb86fc;
+      --bb-yellow: #ffd600;
     }
 
     * {
       box-sizing: border-box;
+      margin: 0;
+      padding: 0;
     }
 
     body {
-      margin: 0;
-      font-family: Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-      color: var(--text);
-      background: var(--bg);
-    }
-
-    .hero {
-      padding: 42px 24px;
-      color: #fff;
-      background: linear-gradient(135deg, #0f172a, #0c4a6e);
-    }
-
-    .hero-inner,
-    .container {
-      max-width: 1240px;
-      margin: 0 auto;
-    }
-
-    h1 {
-      margin: 0;
-      font-size: 30px;
-      letter-spacing: -0.4px;
-    }
-
-    .subtitle {
-      margin: 10px 0 0;
-      font-size: 15px;
-      line-height: 1.6;
-      color: #cbd5e1;
-    }
-
-    .container {
-      padding: 28px 24px 52px;
-    }
-
-    .meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px 18px;
-      margin: 0 0 22px;
-      color: var(--muted);
+      background-color: var(--bg-root);
+      color: var(--text-main);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       font-size: 13px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      padding-bottom: 40px;
     }
 
-    .meta a {
-      color: var(--blue-dark);
+    .mono {
+      font-family: 'JetBrains Mono', Consolas, Menlo, monospace;
+      letter-spacing: -0.2px;
+    }
+
+    /* Terminal Header Bar */
+    .terminal-header {
+      background-color: var(--bg-panel);
+      border-bottom: 2px solid var(--bb-amber);
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .terminal-cmd {
+      background: var(--bb-amber);
+      color: #000;
+      font-weight: 800;
+      font-size: 11px;
+      padding: 3px 6px;
+      border-radius: 2px;
+    }
+
+    .terminal-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: 0.5px;
+    }
+
+    .terminal-title span {
+      color: var(--bb-amber);
+      font-weight: 400;
+    }
+
+    .meta-ticker {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .meta-ticker a {
+      color: var(--bb-cyan);
       text-decoration: none;
     }
-
-    .status {
-      padding: 14px 16px;
-      border-radius: 9px;
-      margin-bottom: 20px;
-      font-size: 14px;
-      line-height: 1.5;
+    .meta-ticker a:hover {
+      text-decoration: underline;
     }
 
-    .status.success {
-      color: #065f46;
-      background: #d1fae5;
-      border: 1px solid #a7f3d0;
+    .status-dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--bb-green);
+      margin-right: 5px;
+      box-shadow: 0 0 8px var(--bb-green);
+    }
+    .status-dot.warn {
+      background: var(--bb-amber);
+      box-shadow: 0 0 8px var(--bb-amber);
     }
 
-    .status.warning {
-      color: #92400e;
-      background: #fef3c7;
-      border: 1px solid #fde68a;
+    /* Main Container */
+    .container {
+      max-width: 1400px;
+      margin: 18px auto 0;
+      padding: 0 16px;
     }
 
-    .kpis {
+    /* KPI Command Matrix */
+    .kpi-matrix {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
     }
 
-    .kpi,
-    .card {
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: var(--card);
-      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+    .kpi-box {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-left: 3px solid var(--bb-amber);
+      padding: 12px 14px;
+      border-radius: 2px;
+      position: relative;
     }
 
-    .kpi {
-      padding: 18px;
+    .kpi-box.cyan {
+      border-left-color: var(--bb-cyan);
+    }
+    .kpi-box.green {
+      border-left-color: var(--bb-green);
+    }
+    .kpi-box.purple {
+      border-left-color: var(--bb-purple);
     }
 
-    .kpi-label {
-      color: var(--muted);
-      font-size: 12px;
+    .kpi-tag {
+      font-size: 10px;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .kpi-val {
+      font-size: 24px;
+      font-weight: 700;
+      color: #ffffff;
+      line-height: 1.1;
+    }
+
+    .kpi-sub {
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    /* Panel Shell */
+    .panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: 2px;
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+
+    .panel-head {
+      background: var(--bg-panel-alt);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .panel-head h2 {
+      font-size: 13px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.3px;
+      letter-spacing: 0.5px;
+      color: var(--bb-amber);
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
-    .kpi-value {
-      margin-top: 9px;
-      font-size: 25px;
-      font-weight: 800;
-      letter-spacing: -0.3px;
+    .panel-desc {
+      font-size: 11px;
+      color: var(--text-muted);
     }
 
-    .kpi-note {
-      margin-top: 8px;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.4;
+    .panel-body {
+      padding: 14px;
     }
 
-    .card {
-      padding: 22px;
-      margin-bottom: 22px;
-    }
-
-    .card h2 {
-      margin: 0 0 8px;
-      font-size: 20px;
-    }
-
-    .description {
-      margin: 0 0 18px;
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.6;
-    }
-
-    .toolbar {
+    /* Filter Toolbar */
+    .filter-bar {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 6px;
+      margin-bottom: 14px;
       align-items: center;
-      margin-bottom: 18px;
     }
 
-    .route-button {
-      padding: 8px 12px;
-      color: #334155;
-      border: 1px solid #cbd5e1;
-      border-radius: 999px;
-      background: #fff;
-      font-size: 13px;
+    .filter-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-right: 4px;
+      font-weight: 600;
+    }
+
+    .term-btn {
+      background: #0f1117;
+      border: 1px solid var(--border-strong);
+      color: var(--text-muted);
+      padding: 4px 10px;
+      font-size: 11px;
+      border-radius: 2px;
       cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: 'JetBrains Mono', Consolas, monospace;
     }
 
-    .route-button.active {
+    .term-btn:hover {
+      border-color: var(--bb-amber);
       color: #fff;
-      border-color: var(--blue-dark);
-      background: var(--blue-dark);
     }
 
-    .chart-area {
+    .term-btn.active {
+      background: rgba(255, 153, 0, 0.15);
+      border-color: var(--bb-amber);
+      color: var(--bb-amber);
+      font-weight: 600;
+    }
+
+    /* Chart Container */
+    .chart-box {
+      height: 400px;
       position: relative;
-      height: 430px;
     }
 
-    .table-wrap {
+    /* Terminal Data Table */
+    .data-table-wrap {
       overflow-x: auto;
     }
 
-    table {
+    table.terminal-tbl {
       width: 100%;
-      min-width: 680px;
       border-collapse: collapse;
-      font-size: 14px;
-    }
-
-    th,
-    td {
-      padding: 12px 10px;
-      border-bottom: 1px solid var(--line);
+      font-size: 12px;
       text-align: left;
-      white-space: nowrap;
     }
 
-    th {
-      color: #475569;
-      background: #f8fafc;
-      font-size: 12px;
+    table.terminal-tbl th {
+      background: #0c0e13;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 10.5px;
+      letter-spacing: 0.4px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border-strong);
     }
 
-    .positive {
-      color: var(--green);
-      font-weight: 700;
+    table.terminal-tbl td {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border-subtle);
+      color: #e2e8f0;
     }
 
-    .negative {
-      color: var(--red);
-      font-weight: 700;
+    table.terminal-tbl tbody tr:hover {
+      background: rgba(255, 153, 0, 0.04);
     }
 
-    .muted {
-      color: var(--muted);
+    .text-right {
+      text-align: right;
     }
 
-    .footnote {
-      margin: 18px 0 0;
-      color: var(--muted);
-      font-size: 12px;
+    .badge-route {
+      display: inline-block;
+      padding: 2px 6px;
+      background: #1e222d;
+      border: 1px solid #2d3343;
+      border-radius: 2px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--bb-cyan);
+    }
+
+    .delta-up {
+      color: var(--bb-green);
+      font-weight: 600;
+    }
+
+    .delta-down {
+      color: var(--bb-red);
+      font-weight: 600;
+    }
+
+    .delta-flat {
+      color: var(--text-dim);
+    }
+
+    /* Footer & Disclaimer */
+    .terminal-footer {
+      margin-top: 18px;
+      padding: 12px;
+      background: rgba(23, 26, 34, 0.6);
+      border: 1px dashed var(--border-strong);
+      border-radius: 2px;
+      font-size: 11px;
+      color: var(--text-muted);
       line-height: 1.6;
     }
 
-    @media (max-width: 850px) {
-      .kpis {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
+    .terminal-footer strong {
+      color: var(--bb-amber);
+    }
 
-      .chart-area {
-        height: 350px;
+    /* Responsive */
+    @media (max-width: 900px) {
+      .kpi-matrix {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .meta-ticker {
+        display: none;
+      }
+      .chart-box {
+        height: 320px;
       }
     }
 
-    @media (max-width: 520px) {
-      .hero {
-        padding: 32px 18px;
-      }
-
-      .container {
-        padding: 20px 18px 42px;
-      }
-
-      .kpis {
+    @media (max-width: 560px) {
+      .kpi-matrix {
         grid-template-columns: 1fr;
       }
-
-      h1 {
-        font-size: 24px;
+      .terminal-header {
+        padding: 8px 12px;
       }
     }
   </style>
 </head>
 <body>
-  <section class="hero">
-    <div class="hero-inner">
-      <h1>TAC Index · Baltic Exchange Airfreight Rate Index</h1>
-      <p class="subtitle">
-        Air Cargo News에 게시된 Baltic Exchange Airfreight Rate Index의 주요 노선별 운임 추이
-      </p>
+  <!-- Terminal Top Navigation Bar -->
+  <header class="terminal-header">
+    <div class="brand-section">
+      <div class="terminal-cmd mono">AIR &lt;GO&gt;</div>
+      <div class="terminal-title">TAC INDEX <span>// BALTIC AIRFREIGHT</span></div>
     </div>
-  </section>
+    <div class="meta-ticker mono">
+      <span id="sync-dot-container"><span class="status-dot"></span>LIVE</span>
+      <span>SRC: <a href="__PARENT_URL__" target="_blank" rel="noopener">AIR CARGO NEWS</a></span>
+      <span>UPDATED: <span id="build-timestamp" style="color: #fff;">__GENERATED_AT__</span></span>
+      <span>UNIT: <strong style="color: var(--bb-amber);">USD / kg</strong></span>
+    </div>
+  </header>
 
   <main class="container">
-    <div class="meta">
-      <span>Source: <a href="__PARENT_URL__" target="_blank" rel="noopener">Air Cargo News</a></span>
-      <span>Last dashboard build: __GENERATED_AT__</span>
-      <span>Unit: USD/kg</span>
-    </div>
+    <!-- Audit / Sync Meta Banner -->
+    <div id="sync-banner"></div>
 
-    <div id="sync-status"></div>
-    <section class="kpis" id="kpi-area"></section>
+    <!-- 4-Box Key Metrics Matrix -->
+    <section class="kpi-matrix mono" id="kpi-area"></section>
 
-    <section class="card">
-      <h2>Route Rate Trend</h2>
-      <p class="description">
-        노선을 선택하여 운임 시계열을 비교할 수 있습니다. 그래프의 값은 원천 데이터의 USD/kg 기준입니다.
-      </p>
-
-      <div class="toolbar" id="route-buttons"></div>
-      <div class="chart-area">
-        <canvas id="rate-chart"></canvas>
+    <!-- Interactive Route Rate Chart -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2><span>■</span> ROUTE RATE TIME-SERIES MONITOR</h2>
+        <span class="panel-desc mono">USD / KG INDEXED BENCHMARK</span>
+      </div>
+      <div class="panel-body">
+        <div class="filter-bar">
+          <span class="filter-label mono">SELECT ROUTE:</span>
+          <div id="route-buttons" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
+        </div>
+        <div class="chart-box">
+          <canvas id="rate-chart"></canvas>
+        </div>
       </div>
     </section>
 
-    <section class="card">
-      <h2>Latest Route Rates</h2>
-      <p class="description">
-        최신 원천 데이터 시점의 노선별 운임과 이전 가용 시점 대비 변동률입니다.
-      </p>
-
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Route</th>
-              <th>Origin</th>
-              <th>Destination</th>
-              <th>Latest Rate (USD/kg)</th>
-              <th>Change vs. Previous Period</th>
-              <th>Data Date</th>
-            </tr>
-          </thead>
-          <tbody id="detail-table-body"></tbody>
-        </table>
+    <!-- Latest Route Observation Detail Table -->
+    <section class="panel">
+      <div class="panel-head">
+        <h2><span>■</span> SPOT RATE & PERIODIC DELTA BREAKDOWN</h2>
+        <span class="panel-desc mono">LATEST OBSERVED BENCHMARKS</span>
       </div>
-
-      <p class="footnote">
-        주의: 포털의 “Overall Index”는 최신 가용 노선 운임의 단순 평균이며, 공식 TAC 복합지수를 의미하지 않습니다.
-        “Weekly Change” 역시 각 노선의 이전 가용 관측치 대비 변동률 평균으로 계산한 참고 지표입니다.
-      </p>
+      <div class="panel-body" style="padding: 0;">
+        <div class="data-table-wrap">
+          <table class="terminal-tbl mono">
+            <thead>
+              <tr>
+                <th>ROUTE CODE</th>
+                <th>ORIGIN</th>
+                <th>DESTINATION</th>
+                <th class="text-right">LATEST SPOT (USD/KG)</th>
+                <th class="text-right">PERIOD CHANGE (%)</th>
+                <th class="text-right">OBSERVATION DATE</th>
+              </tr>
+            </thead>
+            <tbody id="detail-table-body"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
+
+    <!-- Terminal Operational Notes & Disclaimers -->
+    <footer class="terminal-footer mono">
+      <strong>[TERMINAL NOTE]</strong><br>
+      1. <strong>Overall Index</strong>는 원천 차트에서 식별된 주요 개별 노선 스팟 운임의 단순 산술 평균치이며 공식 TAC Composite Benchmark를 대변하지 않습니다.<br>
+      2. <strong>Change vs. Prev</strong>는 결측치를 제외한 직전 가용 관측치와의 노선별 변동률 평균을 산출한 지표입니다.<br>
+      3. 데이터 파이프라인은 Air Cargo News 공식 Infogram 임베드 소스로부터 실시간 동기화됩니다.
+    </footer>
   </main>
 
+  <!-- Embedded JSON Data Payload -->
   <script type="application/json" id="tac-data">
 __JSON_PAYLOAD__
   </script>
@@ -1390,20 +1429,20 @@ __JSON_PAYLOAD__
       var chart = null;
       var selectedRoutes = {};
 
-      var colors = [
-        "#0284c7",
-        "#dc2626",
-        "#059669",
-        "#d97706",
-        "#7c3aed",
-        "#0891b2"
+      // Bloomberg Terminal Vibrant Line Color Map
+      var terminalColors = [
+        "#00e5ff", // Cyan
+        "#ff9900", // Amber
+        "#00e676", // Green
+        "#ff334b", // Red
+        "#bb86fc", // Purple
+        "#ffd600"  // Yellow
       ];
 
       function formatNumber(value, digits) {
         if (value === null || value === undefined || Number.isNaN(Number(value))) {
-          return "-";
+          return "--";
         }
-
         return Number(value).toLocaleString("en-US", {
           minimumFractionDigits: digits,
           maximumFractionDigits: digits
@@ -1412,41 +1451,43 @@ __JSON_PAYLOAD__
 
       function formatPercent(value) {
         if (value === null || value === undefined || Number.isNaN(Number(value))) {
-          return "-";
+          return "--";
         }
-
-        var number = Number(value);
-        return (number >= 0 ? "+" : "") + number.toFixed(2) + "%";
+        var num = Number(value);
+        return (num >= 0 ? "+" : "") + num.toFixed(2) + "%";
       }
 
-      function getChangeClass(value) {
-        if (value === null || value === undefined) {
-          return "muted";
-        }
+      function getDeltaClass(value) {
+        if (value === null || value === undefined) return "delta-flat";
+        var num = Number(value);
+        if (num > 0) return "delta-up";
+        if (num < 0) return "delta-down";
+        return "delta-flat";
+      }
 
-        return Number(value) >= 0 ? "positive" : "negative";
+      function getDeltaArrow(value) {
+        if (value === null || value === undefined) return "";
+        var num = Number(value);
+        if (num > 0) return "▲ ";
+        if (num < 0) return "▼ ";
+        return "";
       }
 
       function renderStatus() {
         var lastSync = DATA.last_sync || {};
-        var target = document.getElementById("sync-status");
+        var target = document.getElementById("sync-banner");
+        var dot = document.querySelector(".status-dot");
 
-        if (!lastSync.status) {
-          target.innerHTML =
-            '<div class="status warning">수집 이력이 아직 없습니다.</div>';
-          return;
+        if (!lastSync.status || lastSync.status !== "SUCCESS") {
+          if (dot) dot.className = "status-dot warn";
+          if (target) {
+            target.innerHTML =
+              '<div style="background: rgba(255, 153, 0, 0.1); border: 1px solid var(--bb-amber); color: var(--bb-amber); padding: 8px 12px; margin-bottom: 14px; font-size: 11px;" class="mono">' +
+              '<strong>[WARN]</strong> Pipeline sync status: ' + (lastSync.status || "NO_AUDIT_LOG") +
+              ' | Message: ' + (lastSync.message || "Historical cache in use.") +
+              '</div>';
+          }
         }
-
-        var isSuccess = lastSync.status === "SUCCESS";
-        var message = lastSync.message || "-";
-        var finishedAt = lastSync.finished_at || "-";
-
-        target.innerHTML =
-          '<div class="status ' + (isSuccess ? "success" : "warning") + '">' +
-          '<strong>Last Sync Status: ' + (isSuccess ? "SUCCESS" : "WARNING") + '</strong>' +
-          '<br>Finished: ' + finishedAt +
-          '<br>Message: ' + message +
-          "</div>";
       }
 
       function renderKpis() {
@@ -1456,45 +1497,49 @@ __JSON_PAYLOAD__
 
         var cards = [
           {
-            label: "Latest Data Date",
-            value: latest ? latest.data_date : "-",
-            note: "원천 차트의 최신 관측 시점"
+            tag: "LATEST DATE",
+            val: latest ? latest.data_date : "--",
+            sub: "Latest Chart Period",
+            cls: "cyan"
           },
           {
-            label: "Overall Index",
-            value: latest ? formatNumber(latest.overall_index, 2) : "-",
-            note: "최신 노선 운임의 단순 평균"
+            tag: "OVERALL INDEX",
+            val: (latest ? "$" + formatNumber(latest.overall_index, 2) : "--") + " <span style='font-size:12px; color:var(--text-muted);'>USD/kg</span>",
+            sub: "Arithmetic Route Avg",
+            cls: "amber"
           },
           {
-            label: "Change vs. Previous",
-            value: latest ? formatPercent(latest.weekly_change) : "-",
-            note: "노선별 이전 가용 시점 대비 평균"
+            tag: "CHANGE VS PREV",
+            val: (latest && latest.weekly_change !== null)
+                 ? "<span class='" + getDeltaClass(latest.weekly_change) + "'>" + getDeltaArrow(latest.weekly_change) + formatPercent(latest.weekly_change) + "</span>"
+                 : "--",
+            sub: "Period-over-Period Delta",
+            cls: latest && latest.weekly_change >= 0 ? "green" : "purple"
           },
           {
-            label: "Route Count",
-            value: latest ? latest.route_count : latestDetails.length,
-            note: "최신 데이터가 있는 노선 수"
+            tag: "ACTIVE ROUTES",
+            val: (latest ? latest.route_count : latestDetails.length) + " <span style='font-size:12px; color:var(--text-muted);'>PAIRS</span>",
+            sub: "Tracked O-D Air Corridors",
+            cls: "cyan"
           }
         ];
 
-        document.getElementById("kpi-area").innerHTML = cards.map(function (card) {
+        document.getElementById("kpi-area").innerHTML = cards.map(function (c) {
           return (
-            '<article class="kpi">' +
-              '<div class="kpi-label">' + card.label + "</div>" +
-              '<div class="kpi-value">' + card.value + "</div>" +
-              '<div class="kpi-note">' + card.note + "</div>" +
-            "</article>"
+            '<div class="kpi-box ' + c.cls + '">' +
+              '<div class="kpi-tag"><span>' + c.tag + '</span></div>' +
+              '<div class="kpi-val">' + c.val + '</div>' +
+              '<div class="kpi-sub mono">' + c.sub + '</div>' +
+            '</div>'
           );
         }).join("");
       }
 
       function getRouteSeries() {
         var routeMap = {};
-
         (DATA.raw_dataset && DATA.raw_dataset.series || []).forEach(function (series) {
           routeMap[series.name] = series;
         });
-
         return routeMap;
       }
 
@@ -1504,7 +1549,7 @@ __JSON_PAYLOAD__
         var target = document.getElementById("route-buttons");
 
         if (!routes.length) {
-          target.innerHTML = '<span class="muted">No historical route series available.</span>';
+          target.innerHTML = '<span class="mono" style="color:var(--text-dim);">No series available</span>';
           return;
         }
 
@@ -1517,19 +1562,19 @@ __JSON_PAYLOAD__
         target.innerHTML = routes.map(function (route) {
           var active = selectedRoutes[route] ? " active" : "";
           return (
-            '<button class="route-button' + active + '" data-route="' + route + '">' +
+            '<button class="term-btn' + active + '" data-route="' + route + '">' +
             route +
-            "</button>"
+            '</button>'
           );
         }).join("");
 
-        target.querySelectorAll(".route-button").forEach(function (button) {
+        target.querySelectorAll(".term-btn").forEach(function (button) {
           button.addEventListener("click", function () {
             var route = button.getAttribute("data-route");
             selectedRoutes[route] = !selectedRoutes[route];
 
-            var activeCount = Object.keys(selectedRoutes).filter(function (key) {
-              return selectedRoutes[key];
+            var activeCount = Object.keys(selectedRoutes).filter(function (k) {
+              return selectedRoutes[k];
             }).length;
 
             if (activeCount === 0) {
@@ -1549,22 +1594,23 @@ __JSON_PAYLOAD__
           return selectedRoutes[route];
         });
 
-        if (typeof Chart === "undefined") {
-          return;
-        }
+        if (typeof Chart === "undefined") return;
 
         var datasets = routes.map(function (route, index) {
           var series = routeMap[route];
+          var col = terminalColors[index % terminalColors.length];
 
           return {
             label: route,
             data: series.values,
-            borderColor: colors[index % colors.length],
-            backgroundColor: colors[index % colors.length] + "22",
-            borderWidth: 2.5,
-            tension: 0.25,
-            pointRadius: 1.8,
+            borderColor: col,
+            backgroundColor: col + "15",
+            borderWidth: 2,
+            tension: 0.2,
+            pointRadius: 2,
             pointHoverRadius: 5,
+            pointBackgroundColor: col,
+            pointBorderColor: "#0a0b0e",
             spanGaps: true
           };
         });
@@ -1593,14 +1639,32 @@ __JSON_PAYLOAD__
             },
             plugins: {
               legend: {
-                position: "top"
+                position: "top",
+                align: "end",
+                labels: {
+                  boxWidth: 10,
+                  boxHeight: 10,
+                  color: "#a0aec0",
+                  font: {
+                    family: "'JetBrains Mono', Consolas, monospace",
+                    size: 11
+                  }
+                }
               },
               tooltip: {
+                backgroundColor: "#171a22",
+                titleColor: "#ff9900",
+                bodyColor: "#f0f3f6",
+                borderColor: "#2a303f",
+                borderWidth: 1,
+                padding: 10,
+                titleFont: { family: "'JetBrains Mono', monospace", size: 12 },
+                bodyFont: { family: "'JetBrains Mono', monospace", size: 11 },
                 callbacks: {
                   label: function (context) {
-                    var value = context.parsed.y;
-                    return context.dataset.label + ": " +
-                      (value === null ? "-" : Number(value).toFixed(2) + " USD/kg");
+                    var val = context.parsed.y;
+                    return " " + context.dataset.label + ": " +
+                      (val === null ? "--" : "$" + Number(val).toFixed(2) + " / kg");
                   }
                 }
               }
@@ -1608,21 +1672,32 @@ __JSON_PAYLOAD__
             scales: {
               x: {
                 ticks: {
-                  maxTicksLimit: 16
+                  color: "#64748b",
+                  font: { family: "'JetBrains Mono', monospace", size: 10.5 },
+                  maxTicksLimit: 14
                 },
                 grid: {
-                  display: false
+                  color: "#1e222d",
+                  drawBorder: false
                 }
               },
               y: {
                 title: {
                   display: true,
-                  text: "USD / kg"
+                  text: "USD / KG",
+                  color: "#737c8e",
+                  font: { family: "'JetBrains Mono', monospace", size: 10 }
                 },
                 ticks: {
-                  callback: function (value) {
-                    return Number(value).toFixed(2);
+                  color: "#64748b",
+                  font: { family: "'JetBrains Mono', monospace", size: 10.5 },
+                  callback: function (val) {
+                    return "$" + Number(val).toFixed(2);
                   }
+                },
+                grid: {
+                  color: "#1e222d",
+                  drawBorder: false
                 }
               }
             }
@@ -1636,21 +1711,22 @@ __JSON_PAYLOAD__
 
         if (!rows.length) {
           target.innerHTML =
-            '<tr><td colspan="6" class="muted">No latest route data available.</td></tr>';
+            '<tr><td colspan="6" style="text-align:center; color:var(--text-dim); padding:20px;">No latest route data available.</td></tr>';
           return;
         }
 
         target.innerHTML = rows.map(function (row) {
+          var deltaCls = getDeltaClass(row.weekly_change);
+          var arrow = getDeltaArrow(row.weekly_change);
+
           return (
             "<tr>" +
-              "<td>" + (row.route_code || "-") + "</td>" +
-              "<td>" + (row.origin || "-") + "</td>" +
-              "<td>" + (row.destination || "-") + "</td>" +
-              "<td>" + formatNumber(row.index_value, 2) + "</td>" +
-              '<td class="' + getChangeClass(row.weekly_change) + '">' +
-                formatPercent(row.weekly_change) +
-              "</td>" +
-              "<td>" + (row.data_date || "-") + "</td>" +
+              '<td><span class="badge-route">' + (row.route_code || "--") + "</span></td>" +
+              "<td>" + (row.origin || "--") + "</td>" +
+              "<td>" + (row.destination || "--") + "</td>" +
+              '<td class="text-right" style="font-weight:700; color:#fff;">$' + formatNumber(row.index_value, 2) + "</td>" +
+              '<td class="text-right ' + deltaCls + '">' + arrow + formatPercent(row.weekly_change) + "</td>" +
+              '<td class="text-right" style="color:var(--text-muted);">' + (row.data_date || "--") + "</td>" +
             "</tr>"
           );
         }).join("");
@@ -1671,20 +1747,12 @@ def build_static_html(
     json_payload: Dict[str, Any],
     raw_dataset: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """
-    Build the GitHub Pages dashboard.
-
-    raw_dataset is included when a fresh crawl succeeds. If a crawl fails,
-    the HTML is still generated from existing DB history and latest details.
-    """
     payload = dict(json_payload)
     payload["raw_dataset"] = raw_dataset or {
         "labels": [],
         "series": [],
     }
 
-    # Reconstruct chart data from existing database history when the fresh
-    # source request did not succeed.
     if not raw_dataset:
         payload["raw_dataset"] = build_raw_dataset_from_db()
 
@@ -1705,10 +1773,6 @@ def build_static_html(
     log_info(f"[STATIC] HTML generated: {HTML_PATH.name}")
 
 def build_raw_dataset_from_db() -> Dict[str, Any]:
-    """
-    Recreate route series from snapshots for dashboard rendering when
-    no fresh Infogram dataset is available in the current execution.
-    """
     conn = get_db_connection()
 
     try:
@@ -1773,11 +1837,6 @@ def build_raw_dataset_from_db() -> Dict[str, Any]:
 # 10. Main crawling process
 # =============================================================================
 def run_tac_sync() -> Dict[str, Any]:
-    """
-    Fetch, parse and save a fresh TAC snapshot.
-
-    No synthetic fallback values are created when the source cannot be read.
-    """
     started_at = get_now_string()
 
     try:
@@ -1869,19 +1928,15 @@ def parse_arguments() -> argparse.Namespace:
 def main() -> int:
     args = parse_arguments()
 
-    # Default behavior is cron/static mode for GitHub Actions.
     log_info("=" * 72)
     log_info("[CRON] TAC Index Dashboard update started")
     log_info("=" * 72)
 
-    # Ensure database/tables are initialized before the crawl.
     conn = get_db_connection()
     conn.close()
 
     result = run_tac_sync()
 
-    # Build static files even if source collection failed.
-    # This preserves any pre-existing snapshot history in GitHub Pages.
     payload = build_static_json()
 
     raw_dataset = result.get("dataset") if result.get("ok") else None
