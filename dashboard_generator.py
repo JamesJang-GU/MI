@@ -1008,6 +1008,11 @@ def get_tac_route_rows(cursor):
         (period_value, corridor_name, rate),
         ...
     ]
+
+    원칙:
+    - 상세 테이블의 실제 period/month/date 컬럼을 최우선 사용한다.
+    - 동일 기간 내 복수 행이 있어도 SQL에서 기간 기준 정렬을 적용해
+      Python 단계의 중복 제거 결과를 재현 가능하게 만든다.
     """
     route_table_info = find_tac_route_table(cursor)
 
@@ -1047,7 +1052,7 @@ def get_tac_route_rows(cursor):
             f"TRIM(COALESCE(detail.{quote_identifier(destination_col)}, ''))"
         )
 
-    # 상세 테이블에 period/month/date가 있으면 해당 값이 최우선이다.
+    # 상세 테이블 자체에 period/month/date 컬럼이 존재하는 경우
     if date_col:
         query = f"""
             SELECT
@@ -1057,6 +1062,9 @@ def get_tac_route_rows(cursor):
             FROM {quote_identifier(table_name)} AS detail
             WHERE detail.{quote_identifier(rate_col)} IS NOT NULL
               AND TRIM(COALESCE(detail.{quote_identifier(date_col)}, '')) <> ''
+            ORDER BY
+                detail.{quote_identifier(date_col)} ASC,
+                detail.rowid ASC
         """
 
         rows = cursor.execute(query).fetchall()
@@ -1069,7 +1077,7 @@ def get_tac_route_rows(cursor):
 
         return rows
 
-    # period/date 컬럼이 없고 snapshot_id만 있을 때만 tac_master 기준일을 사용한다.
+    # 상세 테이블에 period가 없고 snapshot_id만 있는 경우에만 master를 연결한다.
     if not snapshot_col or not table_exists(cursor, "tac_master"):
         logger.warning(
             "TAC period column 및 tac_master 연결을 모두 사용할 수 없습니다. table=%s",
@@ -1110,6 +1118,9 @@ def get_tac_route_rows(cursor):
             ON detail.{quote_identifier(snapshot_col)}
              = master.{quote_identifier(master_snapshot_col)}
         WHERE detail.{quote_identifier(rate_col)} IS NOT NULL
+        ORDER BY
+            master.{quote_identifier(master_date_col)} ASC,
+            detail.rowid ASC
     """
 
     rows = cursor.execute(query).fetchall()
@@ -1122,13 +1133,19 @@ def get_tac_route_rows(cursor):
 
     return rows
 
+
 def get_tac_summary():
     """
     루트 포털 Air 카드용 TAC Route 요약 데이터를 반환한다.
 
     비교 기준:
-    - 최신 월의 Rate
-    - 직전 월의 Rate
+    - 최신 월의 USD/kg Rate
+    - 직전의 서로 다른 월 Rate
+    - 동일 월에 중복 데이터가 존재하면 마지막 레코드를 우선한다.
+
+    주의:
+    - 직전 월 데이터가 실제 DB에 존재하지 않으면 MoM은 '-'로 표시한다.
+    - 임의로 이전 값을 추정하거나 생성하지 않는다.
     """
     target_corridors = [
         "Frankfurt-North America",
@@ -1160,6 +1177,21 @@ def get_tac_summary():
         "status": "No Data",
     }
 
+    summary_mapping = {
+        "Frankfurt-North America": {
+            "rate_key": "frankfurt_north_america_rate",
+            "mom_key": "frankfurt_north_america_mom_html",
+        },
+        "Hong Kong-Europe": {
+            "rate_key": "hong_kong_europe_rate",
+            "mom_key": "hong_kong_europe_mom_html",
+        },
+        "Hong Kong-North America": {
+            "rate_key": "hong_kong_north_america_rate",
+            "mom_key": "hong_kong_north_america_mom_html",
+        },
+    }
+
     db_path = DB_PATHS["tac"]
 
     if not db_path.exists():
@@ -1176,28 +1208,45 @@ def get_tac_summary():
             return summary
 
         corridor_history = {
-            corridor: []
-            for corridor in target_corridors
+            corridor_name: []
+            for corridor_name in target_corridors
         }
 
-        for raw_period, raw_corridor, raw_rate in corridor_rows:
+        unmatched_corridors = set()
+        invalid_period_rows = []
+        invalid_rate_rows = []
+
+        for row_order, (raw_period, raw_corridor, raw_rate) in enumerate(
+            corridor_rows,
+            start=1,
+        ):
             normalized_corridor = normalize_tac_corridor_name(raw_corridor)
 
             if normalized_corridor not in corridor_history:
-                continue
-
-            try:
-                rate = float(raw_rate)
-            except (TypeError, ValueError):
+                unmatched_corridors.add(str(raw_corridor))
                 continue
 
             period_info = normalize_tac_period(raw_period)
 
             if not period_info:
-                logger.warning(
-                    "TAC 기간 값을 해석하지 못했습니다 | corridor=%s | raw_period=%s",
-                    normalized_corridor,
-                    raw_period,
+                invalid_period_rows.append(
+                    {
+                        "corridor": normalized_corridor,
+                        "raw_period": raw_period,
+                        "raw_rate": raw_rate,
+                    }
+                )
+                continue
+
+            try:
+                rate = float(raw_rate)
+            except (TypeError, ValueError):
+                invalid_rate_rows.append(
+                    {
+                        "corridor": normalized_corridor,
+                        "raw_period": raw_period,
+                        "raw_rate": raw_rate,
+                    }
                 )
                 continue
 
@@ -1207,27 +1256,38 @@ def get_tac_summary():
                     "month": period_info["month"],
                     "sort_key": period_info["sort_key"],
                     "rate": rate,
+                    # 동일 월 중복 시 마지막 원본 행을 선택하기 위한 순서값
+                    "row_order": row_order,
+                    "raw_period": str(raw_period),
                 }
             )
 
-        summary_mapping = {
-            "Frankfurt-North America": {
-                "rate_key": "frankfurt_north_america_rate",
-                "mom_key": "frankfurt_north_america_mom_html",
-            },
-            "Hong Kong-Europe": {
-                "rate_key": "hong_kong_europe_rate",
-                "mom_key": "hong_kong_europe_mom_html",
-            },
-            "Hong Kong-North America": {
-                "rate_key": "hong_kong_north_america_rate",
-                "mom_key": "hong_kong_north_america_mom_html",
-            },
-        }
+        if unmatched_corridors:
+            logger.info(
+                "TAC unmatched corridor labels ignored: %s",
+                sorted(unmatched_corridors),
+            )
+
+        if invalid_period_rows:
+            logger.warning(
+                "TAC invalid period rows=%s | samples=%s",
+                len(invalid_period_rows),
+                invalid_period_rows[:5],
+            )
+
+        if invalid_rate_rows:
+            logger.warning(
+                "TAC invalid rate rows=%s | samples=%s",
+                len(invalid_rate_rows),
+                invalid_rate_rows[:5],
+            )
 
         latest_dates = []
 
-        for corridor_name, rows in corridor_history.items():
+        for corridor_name in target_corridors:
+            rows = corridor_history[corridor_name]
+            config = summary_mapping[corridor_name]
+
             if not rows:
                 logger.warning(
                     "TAC 대상 Route 데이터를 찾지 못했습니다: %s",
@@ -1235,21 +1295,21 @@ def get_tac_summary():
                 )
                 continue
 
-            # 동일 월 중복 데이터가 존재할 수 있으므로,
-            # 월별로 1개만 보관한다.
-            #
-            # 데이터가 여러 개일 경우 마지막 행을 우선하되,
-            # TAC 차트용 역사 데이터 구조에서는 일반적으로 월별 1행이다.
+            # 동일 월의 중복 행은 SQL rowid 기준 마지막 레코드로 갱신한다.
+            # 기존 코드의 `if month_key not in rate_by_month`는 첫 행을 유지하므로,
+            # 주석의 '마지막 행 우선' 원칙과 불일치했다.
             rate_by_month = {}
 
             for row in rows:
                 month_key = row["month"]
+                existing_row = rate_by_month.get(month_key)
 
-                if month_key not in rate_by_month:
+                if (
+                    existing_row is None
+                    or row["row_order"] >= existing_row["row_order"]
+                ):
                     rate_by_month[month_key] = row
 
-            # 실제 연월 sort_key 기준 내림차순.
-            # 문자열 기준 정렬이 아니라 Sep-26, Oct-25 등의 형식도 안전하게 처리한다.
             distinct_month_rows = sorted(
                 rate_by_month.values(),
                 key=lambda item: item["sort_key"],
@@ -1257,14 +1317,11 @@ def get_tac_summary():
             )
 
             latest_row = distinct_month_rows[0]
-
             previous_row = (
                 distinct_month_rows[1]
                 if len(distinct_month_rows) >= 2
                 else None
             )
-
-            config = summary_mapping[corridor_name]
 
             summary[config["rate_key"]] = (
                 f"${latest_row['rate']:,.2f} USD/kg"
@@ -1279,18 +1336,33 @@ def get_tac_summary():
             latest_dates.append(latest_row["date"])
 
             logger.info(
-                "TAC corridor summary | corridor=%s | available_months=%s | "
-                "latest=%s (%s) | previous=%s (%s)",
+                "TAC corridor summary | corridor=%s | distinct_months=%s | "
+                "latest=%s (%s, raw=%s) | previous=%s (%s, raw=%s) | mom=%s",
                 corridor_name,
                 [
-                    (item["month"], item["rate"])
+                    {
+                        "month": item["month"],
+                        "rate": item["rate"],
+                        "raw_period": item["raw_period"],
+                    }
                     for item in distinct_month_rows[:5]
                 ],
                 latest_row["rate"],
                 latest_row["month"],
+                latest_row["raw_period"],
                 previous_row["rate"] if previous_row else None,
                 previous_row["month"] if previous_row else None,
+                previous_row["raw_period"] if previous_row else None,
+                summary[config["mom_key"]],
             )
+
+            if previous_row is None:
+                logger.warning(
+                    "TAC MoM unavailable | corridor=%s | "
+                    "reason=only_one_distinct_month | months=%s",
+                    corridor_name,
+                    [item["month"] for item in distinct_month_rows],
+                )
 
         if latest_dates:
             summary["latest_date"] = max(latest_dates)
@@ -1302,6 +1374,7 @@ def get_tac_summary():
         logger.exception("Failed to read TAC DB: %s", error)
 
     return summary
+
 
 
 # =============================================================================
