@@ -724,18 +724,19 @@ def calculate_rate_delta_display(current_value, previous_value, decimals=2):
     최신 항공운임과 전월 최신 항공운임을 비교하여
     절대 증감, 증감률, 방향 화살표를 HTML 형태로 반환한다.
 
-    예:
-    MoM +0.12 (+2.60%) ↗
-    MoM -0.08 (-1.45%) ↘
+    표시 예:
+    +0.12 (+2.60%) ↗
+    -0.08 (-1.45%) ↘
+    ±0.00 (±0.00%) →
     """
     if current_value is None or previous_value is None:
-        return '<span class="delta-neutral">MoM -</span>'
+        return '<span class="delta-neutral">-</span>'
 
     try:
         current = float(current_value)
         previous = float(previous_value)
     except (TypeError, ValueError):
-        return '<span class="delta-neutral">MoM -</span>'
+        return '<span class="delta-neutral">-</span>'
 
     difference = current - previous
     percentage = (difference / previous * 100.0) if previous != 0 else 0.0
@@ -743,20 +744,20 @@ def calculate_rate_delta_display(current_value, previous_value, decimals=2):
     if difference > 0:
         return (
             f'<span class="delta-up">'
-            f'MoM +{difference:,.{decimals}f} (+{percentage:.2f}%) ↗'
+            f'+{difference:,.{decimals}f} (+{percentage:.2f}%) ↗'
             f'</span>'
         )
 
     if difference < 0:
         return (
             f'<span class="delta-down">'
-            f'MoM {difference:,.{decimals}f} ({percentage:.2f}%) ↘'
+            f'{difference:,.{decimals}f} ({percentage:.2f}%) ↘'
             f'</span>'
         )
 
     return (
         f'<span class="delta-neutral">'
-        f'MoM {difference:,.{decimals}f} (0.00%) →'
+        f'±0.00 (±0.00%) →'
         f'</span>'
     )
 
@@ -1785,58 +1786,46 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </section>
 
     <div class="grid-2">
-      <!-- Air Section -->
-      <section class="section-group">
-        <div class="section-title">Air</div>
+     <!-- Air Section -->
+<section class="section-group">
+  <div class="section-title">Air</div>
 
-        <a href="__TAC_PATH__" class="card tac-card">
-          <div>
-            <div class="card-header">
-              <span class="card-title">Air Freight (TAC Index)</span>
-              <span class="badge __TAC_STATUS_CLASS__">__TAC_STATUS__</span>
-            </div>
+  <a href="__TAC_PATH__" class="card tac-card">
+    <div>
+      <div class="card-header">
+        <span class="card-title">Air Freight (TAC Index)</span>
+        <span class="badge __TAC_STATUS_CLASS__">__TAC_STATUS__</span>
+      </div>
 
-            <div class="kpi-group">
-              <div class="kpi-item">
-                <div class="kpi-label">Overall Index</div>
-                <div class="kpi-val highlight">__TAC_INDEX__</div>
-                <div class="delta-sub">__TAC_WEEKLY_DELTA__</div>
-              </div>
-              <div class="kpi-item">
-                <div class="kpi-label">Corridors</div>
-                <div class="kpi-val amber">__TAC_ROUTES__</div>
-                <div class="delta-sub"><span class="delta-neutral">O-D Tracked</span></div>
-              </div>
-            </div>
+      <div class="tac-corridor-label">LATEST RATE / MONTH-ON-MONTH CHANGE</div>
 
-            <div class="tac-corridor-label">LATEST RATE / MONTH-ON-MONTH CHANGE</div>
-            <div class="tac-corridor-grid">
-              <div class="kpi-item">
-                <div class="kpi-label">Frankfurt-North America</div>
-                <div class="kpi-val highlight">__TAC_FRA_NA_RATE__</div>
-                <div class="delta-sub">__TAC_FRA_NA_MOM__</div>
-              </div>
+      <div class="tac-corridor-grid">
+        <div class="kpi-item">
+          <div class="kpi-label">Frankfurt-North America</div>
+          <div class="kpi-val highlight">__TAC_FRA_NA_RATE__</div>
+          <div class="delta-sub">__TAC_FRA_NA_MOM__</div>
+        </div>
 
-              <div class="kpi-item">
-                <div class="kpi-label">Hong Kong-Europe</div>
-                <div class="kpi-val">__TAC_HKG_EU_RATE__</div>
-                <div class="delta-sub">__TAC_HKG_EU_MOM__</div>
-              </div>
+        <div class="kpi-item">
+          <div class="kpi-label">Hong Kong-Europe</div>
+          <div class="kpi-val">__TAC_HKG_EU_RATE__</div>
+          <div class="delta-sub">__TAC_HKG_EU_MOM__</div>
+        </div>
 
-              <div class="kpi-item">
-                <div class="kpi-label">Hong Kong-North America</div>
-                <div class="kpi-val amber">__TAC_HKG_NA_RATE__</div>
-                <div class="delta-sub">__TAC_HKG_NA_MOM__</div>
-              </div>
-            </div>
-          </div>
+        <div class="kpi-item">
+          <div class="kpi-label">Hong Kong-North America</div>
+          <div class="kpi-val amber">__TAC_HKG_NA_RATE__</div>
+          <div class="delta-sub">__TAC_HKG_NA_MOM__</div>
+        </div>
+      </div>
+    </div>
 
-          <div class="card-footer">
-            <span>Date: __TAC_DATE__</span>
-            <span class="arrow">OPEN &rarr;</span>
-          </div>
-        </a>
-      </section>
+    <div class="card-footer">
+      <span>Date: __TAC_DATE__</span>
+      <span class="arrow">OPEN &rarr;</span>
+    </div>
+  </a>
+</section>
 
       <!-- Global Section -->
       <section class="section-group">
