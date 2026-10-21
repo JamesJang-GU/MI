@@ -1,107 +1,123 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Forwarder Dashboard</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 30px;
-      background: #07111c;
-      color: #e8f1f8;
-      font-family: Arial, "Noto Sans KR", sans-serif;
-    }
-
-    h1 { color: #ff8a00; }
-
-    .box {
-      max-width: 900px;
-      padding: 24px;
-      background: #0d1b29;
-      border: 1px solid #29455e;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 20px;
-    }
-
-    th, td {
-      padding: 10px;
-      border: 1px solid #29455e;
-      text-align: left;
-    }
-
-    th {
-      color: #ffb04a;
-      background: #13283a;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <title>FORWARDER MONITOR | MI Terminal</title>
+    <style>
+        :root {
+            --bg: #0a0e14;
+            --panel: #111822;
+            --border: #1e293b;
+            --text: #e2e8f0;
+            --muted: #64748b;
+            --accent: #38bdf8;
+            --green: #22c55e;
+            --red: #ef4444;
+        }
+        body {
+            margin: 0;
+            padding: 24px;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        .page { max-width: 1200px; margin: 0 auto; }
+        .terminal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--accent);
+            padding-bottom: 12px;
+            margin-bottom: 24px;
+        }
+        .terminal-header h1 { margin: 0; font-size: 20px; letter-spacing: 1px; color: var(--accent); }
+        .reference { font-size: 13px; color: var(--muted); }
+        .kpi-strip {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .kpi {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            padding: 16px;
+            border-radius: 6px;
+        }
+        .kpi .stat { display: block; font-size: 22px; font-weight: bold; color: var(--accent); }
+        .kpi .label { display: block; font-size: 12px; color: var(--muted); margin-top: 4px; }
+        .table-wrap {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; text-align: left; }
+        th { background: rgba(0,0,0,0.2); padding: 12px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--border); }
+        td { padding: 12px; border-bottom: 1px solid var(--border); }
+        .rank-cell { font-weight: bold; color: var(--accent); }
+        .provider { font-weight: 600; }
+        .hq { font-size: 12px; color: var(--muted); }
+        .num-cell { text-align: right; font-variant-numeric: tabular-nums; }
+        .delta-cell { text-align: right; font-weight: bold; font-variant-numeric: tabular-nums; }
+        .delta-up { color: var(--green); }
+        .delta-down { color: var(--red); }
+        .delta-neutral { color: var(--muted); }
+    </style>
 </head>
 <body>
-  <div class="box">
-    <h1>A&A Top 25 Global Freight Forwarders</h1>
-
-    <p>
-      Last run: 2026-10-20 08:08:45
-      / Status: SUCCESS
-      / Rows: 25
-    </p>
-
-    
-      <p>Latest Date: <strong>2026-10-20</strong></p>
-      <p>Total Revenue: <strong>$289,112M</strong></p>
-      <p>Total Ocean TEU: <strong>36,630,328</strong></p>
-      <p>Total Air Tons: <strong>15,670,405</strong></p>
-
-      <table>
-        <thead>
-          <tr>
-            <th>Rank</th>
-            <th>Provider</th>
-            <th>HQ</th>
-            <th>Revenue ($M)</th>
-            <th>Ocean TEU</th>
-            <th>Air Tons</th>
-          </tr>
-        </thead>
-        <tbody id="rankingTableBody"></tbody>
-      </table>
-    
-  </div>
-
-  
-  <script>
-    const dataByDate = {"2026-10-20": [{"rank": 1, "provider": "DSV", "hq": "Denmark", "revenue": 37379.0, "teu": 3695424.0, "air_tons": 2013127.0}, {"rank": 1, "provider": "Kuehne + Nagel", "hq": "Switzerland", "revenue": 33836.0, "teu": 4325000.0, "air_tons": 2030280.0}, {"rank": 2, "provider": "DHL Supply Chain & Global Forwarding", "hq": "Germany", "revenue": 35538.0, "teu": 3274000.0, "air_tons": 1767000.0}, {"rank": 3, "provider": "Sinotrans", "hq": "China", "revenue": 13580.0, "teu": 4925154.0, "air_tons": 912000.0}, {"rank": 4, "provider": "NIPPON EXPRESS", "hq": "Japan", "revenue": 17199.0, "teu": 1806197.0, "air_tons": 933201.0}, {"rank": 5, "provider": "CEVA Logistics", "hq": "France", "revenue": 18300.0, "teu": 1730000.0, "air_tons": 680000.0}, {"rank": 6, "provider": "Expeditors", "hq": "United States", "revenue": 11069.0, "teu": 855200.0, "air_tons": 928000.0}, {"rank": 7, "provider": "C.H. Robinson", "hq": "United States", "revenue": 14768.0, "teu": 1256000.0, "air_tons": 280000.0}, {"rank": 7, "provider": "KLN", "hq": "Hong Kong SAR", "revenue": 7471.0, "teu": 1149956.0, "air_tons": 840508.0}, {"rank": 8, "provider": "GEODIS", "hq": "France", "revenue": 11700.0, "teu": 962000.0, "air_tons": 267056.0}, {"rank": 9, "provider": "Cosco Shipping Logistics", "hq": "China", "revenue": 8989.0, "teu": 1961791.0, "air_tons": 207656.0}, {"rank": 10, "provider": "Maersk Logistics", "hq": "Denmark", "revenue": 15103.0, "teu": 635000.0, "air_tons": 318000.0}, {"rank": 11, "provider": "Hellmann Worldwide Logistics", "hq": "Germany", "revenue": 3952.0, "teu": 955000.0, "air_tons": 595000.0}, {"rank": 12, "provider": "Kintetsu World Express", "hq": "Japan", "revenue": 5018.0, "teu": 738003.0, "air_tons": 546095.0}, {"rank": 13, "provider": "UPS Supply Chain Solutions", "hq": "United States", "revenue": 8771.0, "teu": 530000.0, "air_tons": 790000.0}, {"rank": 14, "provider": "Yusen Logistics", "hq": "Japan", "revenue": 5157.0, "teu": 632000.0, "air_tons": 280320.0}, {"rank": 15, "provider": "DACHSER", "hq": "Germany", "revenue": 9349.0, "teu": 544196.0, "air_tons": 238613.0}, {"rank": 15, "provider": "LX Pantos", "hq": "South Korea", "revenue": 5624.0, "teu": 1633000.0, "air_tons": 126000.0}, {"rank": 16, "provider": "CTS International Logistics", "hq": "China", "revenue": 2401.0, "teu": 842700.0, "air_tons": 331900.0}, {"rank": 17, "provider": "Rhenus Logistics", "hq": "Germany", "revenue": 8869.0, "teu": 588510.0, "air_tons": 193649.0}, {"rank": 18, "provider": "AWOT Group", "hq": "China", "revenue": 3350.0, "teu": 402000.0, "air_tons": 785000.0}, {"rank": 19, "provider": "Scan Global Logistics", "hq": "Denmark", "revenue": 2851.0, "teu": 691000.0, "air_tons": 212000.0}, {"rank": 20, "provider": "CIMC Wetrans Logistics", "hq": "China", "revenue": 3808.0, "teu": 961197.0, "air_tons": 114000.0}, {"rank": 21, "provider": "Savino Del Bene", "hq": "Italy", "revenue": 3500.0, "teu": 852000.0, "air_tons": 93000.0}, {"rank": 22, "provider": "Logwin", "hq": "Luxembourg", "revenue": 1530.0, "teu": 685000.0, "air_tons": 188000.0}], "2026-10-19": [{"rank": 1, "provider": "DSV", "hq": "Denmark", "revenue": 37379.0, "teu": 3695424.0, "air_tons": 2013127.0}, {"rank": 1, "provider": "Kuehne + Nagel", "hq": "Switzerland", "revenue": 33836.0, "teu": 4325000.0, "air_tons": 2030280.0}, {"rank": 2, "provider": "DHL Supply Chain & Global Forwarding", "hq": "Germany", "revenue": 35538.0, "teu": 3274000.0, "air_tons": 1767000.0}, {"rank": 3, "provider": "Sinotrans", "hq": "China", "revenue": 13580.0, "teu": 4925154.0, "air_tons": 912000.0}, {"rank": 4, "provider": "NIPPON EXPRESS", "hq": "Japan", "revenue": 17199.0, "teu": 1806197.0, "air_tons": 933201.0}, {"rank": 5, "provider": "CEVA Logistics", "hq": "France", "revenue": 18300.0, "teu": 1730000.0, "air_tons": 680000.0}, {"rank": 6, "provider": "Expeditors", "hq": "United States", "revenue": 11069.0, "teu": 855200.0, "air_tons": 928000.0}, {"rank": 7, "provider": "C.H. Robinson", "hq": "United States", "revenue": 14768.0, "teu": 1256000.0, "air_tons": 280000.0}, {"rank": 7, "provider": "KLN", "hq": "Hong Kong SAR", "revenue": 7471.0, "teu": 1149956.0, "air_tons": 840508.0}, {"rank": 8, "provider": "GEODIS", "hq": "France", "revenue": 11700.0, "teu": 962000.0, "air_tons": 267056.0}, {"rank": 9, "provider": "Cosco Shipping Logistics", "hq": "China", "revenue": 8989.0, "teu": 1961791.0, "air_tons": 207656.0}, {"rank": 10, "provider": "Maersk Logistics", "hq": "Denmark", "revenue": 15103.0, "teu": 635000.0, "air_tons": 318000.0}, {"rank": 11, "provider": "Hellmann Worldwide Logistics", "hq": "Germany", "revenue": 3952.0, "teu": 955000.0, "air_tons": 595000.0}, {"rank": 12, "provider": "Kintetsu World Express", "hq": "Japan", "revenue": 5018.0, "teu": 738003.0, "air_tons": 546095.0}, {"rank": 13, "provider": "UPS Supply Chain Solutions", "hq": "United States", "revenue": 8771.0, "teu": 530000.0, "air_tons": 790000.0}, {"rank": 14, "provider": "Yusen Logistics", "hq": "Japan", "revenue": 5157.0, "teu": 632000.0, "air_tons": 280320.0}, {"rank": 15, "provider": "DACHSER", "hq": "Germany", "revenue": 9349.0, "teu": 544196.0, "air_tons": 238613.0}, {"rank": 15, "provider": "LX Pantos", "hq": "South Korea", "revenue": 5624.0, "teu": 1633000.0, "air_tons": 126000.0}, {"rank": 16, "provider": "CTS International Logistics", "hq": "China", "revenue": 2401.0, "teu": 842700.0, "air_tons": 331900.0}, {"rank": 17, "provider": "Rhenus Logistics", "hq": "Germany", "revenue": 8869.0, "teu": 588510.0, "air_tons": 193649.0}, {"rank": 18, "provider": "AWOT Group", "hq": "China", "revenue": 3350.0, "teu": 402000.0, "air_tons": 785000.0}, {"rank": 19, "provider": "Scan Global Logistics", "hq": "Denmark", "revenue": 2851.0, "teu": 691000.0, "air_tons": 212000.0}, {"rank": 20, "provider": "CIMC Wetrans Logistics", "hq": "China", "revenue": 3808.0, "teu": 961197.0, "air_tons": 114000.0}, {"rank": 21, "provider": "Savino Del Bene", "hq": "Italy", "revenue": 3500.0, "teu": 852000.0, "air_tons": 93000.0}, {"rank": 22, "provider": "Logwin", "hq": "Luxembourg", "revenue": 1530.0, "teu": 685000.0, "air_tons": 188000.0}], "2026-10-18": [{"rank": 1, "provider": "DSV", "hq": "Denmark", "revenue": 37379.0, "teu": 3695424.0, "air_tons": 2013127.0}, {"rank": 1, "provider": "Kuehne + Nagel", "hq": "Switzerland", "revenue": 33836.0, "teu": 4325000.0, "air_tons": 2030280.0}, {"rank": 2, "provider": "DHL Supply Chain & Global Forwarding", "hq": "Germany", "revenue": 35538.0, "teu": 3274000.0, "air_tons": 1767000.0}, {"rank": 3, "provider": "Sinotrans", "hq": "China", "revenue": 13580.0, "teu": 4925154.0, "air_tons": 912000.0}, {"rank": 4, "provider": "NIPPON EXPRESS", "hq": "Japan", "revenue": 17199.0, "teu": 1806197.0, "air_tons": 933201.0}, {"rank": 5, "provider": "CEVA Logistics", "hq": "France", "revenue": 18300.0, "teu": 1730000.0, "air_tons": 680000.0}, {"rank": 6, "provider": "Expeditors", "hq": "United States", "revenue": 11069.0, "teu": 855200.0, "air_tons": 928000.0}, {"rank": 7, "provider": "C.H. Robinson", "hq": "United States", "revenue": 14768.0, "teu": 1256000.0, "air_tons": 280000.0}, {"rank": 7, "provider": "KLN", "hq": "Hong Kong SAR", "revenue": 7471.0, "teu": 1149956.0, "air_tons": 840508.0}, {"rank": 8, "provider": "GEODIS", "hq": "France", "revenue": 11700.0, "teu": 962000.0, "air_tons": 267056.0}, {"rank": 9, "provider": "Cosco Shipping Logistics", "hq": "China", "revenue": 8989.0, "teu": 1961791.0, "air_tons": 207656.0}, {"rank": 10, "provider": "Maersk Logistics", "hq": "Denmark", "revenue": 15103.0, "teu": 635000.0, "air_tons": 318000.0}, {"rank": 11, "provider": "Hellmann Worldwide Logistics", "hq": "Germany", "revenue": 3952.0, "teu": 955000.0, "air_tons": 595000.0}, {"rank": 12, "provider": "Kintetsu World Express", "hq": "Japan", "revenue": 5018.0, "teu": 738003.0, "air_tons": 546095.0}, {"rank": 13, "provider": "UPS Supply Chain Solutions", "hq": "United States", "revenue": 8771.0, "teu": 530000.0, "air_tons": 790000.0}, {"rank": 14, "provider": "Yusen Logistics", "hq": "Japan", "revenue": 5157.0, "teu": 632000.0, "air_tons": 280320.0}, {"rank": 15, "provider": "DACHSER", "hq": "Germany", "revenue": 9349.0, "teu": 544196.0, "air_tons": 238613.0}, {"rank": 15, "provider": "LX Pantos", "hq": "South Korea", "revenue": 5624.0, "teu": 1633000.0, "air_tons": 126000.0}, {"rank": 16, "provider": "CTS International Logistics", "hq": "China", "revenue": 2401.0, "teu": 842700.0, "air_tons": 331900.0}, {"rank": 17, "provider": "Rhenus Logistics", "hq": "Germany", "revenue": 8869.0, "teu": 588510.0, "air_tons": 193649.0}, {"rank": 18, "provider": "AWOT Group", "hq": "China", "revenue": 3350.0, "teu": 402000.0, "air_tons": 785000.0}, {"rank": 19, "provider": "Scan Global Logistics", "hq": "Denmark", "revenue": 2851.0, "teu": 691000.0, "air_tons": 212000.0}, {"rank": 20, "provider": "CIMC Wetrans Logistics", "hq": "China", "revenue": 3808.0, "teu": 961197.0, "air_tons": 114000.0}, {"rank": 21, "provider": "Savino Del Bene", "hq": "Italy", "revenue": 3500.0, "teu": 852000.0, "air_tons": 93000.0}, {"rank": 22, "provider": "Logwin", "hq": "Luxembourg", "revenue": 1530.0, "teu": 685000.0, "air_tons": 188000.0}], "2026-09-29": [{"rank": 1, "provider": "DSV", "hq": "Denmark", "revenue": 37379.0, "teu": 3695424.0, "air_tons": 2013127.0}, {"rank": 1, "provider": "Kuehne + Nagel", "hq": "Switzerland", "revenue": 33836.0, "teu": 4325000.0, "air_tons": 2030280.0}, {"rank": 2, "provider": "DHL Supply Chain & Global Forwarding", "hq": "Germany", "revenue": 35538.0, "teu": 3274000.0, "air_tons": 1767000.0}, {"rank": 3, "provider": "Sinotrans", "hq": "China", "revenue": 13580.0, "teu": 4925154.0, "air_tons": 912000.0}, {"rank": 4, "provider": "NIPPON EXPRESS", "hq": "Japan", "revenue": 17199.0, "teu": 1806197.0, "air_tons": 933201.0}, {"rank": 5, "provider": "CEVA Logistics", "hq": "France", "revenue": 18300.0, "teu": 1730000.0, "air_tons": 680000.0}, {"rank": 6, "provider": "Expeditors", "hq": "United States", "revenue": 11069.0, "teu": 855200.0, "air_tons": 928000.0}, {"rank": 7, "provider": "C.H. Robinson", "hq": "United States", "revenue": 14768.0, "teu": 1256000.0, "air_tons": 280000.0}, {"rank": 7, "provider": "KLN", "hq": "Hong Kong SAR", "revenue": 7471.0, "teu": 1149956.0, "air_tons": 840508.0}, {"rank": 8, "provider": "GEODIS", "hq": "France", "revenue": 11700.0, "teu": 962000.0, "air_tons": 267056.0}, {"rank": 9, "provider": "Cosco Shipping Logistics", "hq": "China", "revenue": 8989.0, "teu": 1961791.0, "air_tons": 207656.0}, {"rank": 10, "provider": "Maersk Logistics", "hq": "Denmark", "revenue": 15103.0, "teu": 635000.0, "air_tons": 318000.0}, {"rank": 11, "provider": "Hellmann Worldwide Logistics", "hq": "Germany", "revenue": 3952.0, "teu": 955000.0, "air_tons": 595000.0}, {"rank": 12, "provider": "Kintetsu World Express", "hq": "Japan", "revenue": 5018.0, "teu": 738003.0, "air_tons": 546095.0}, {"rank": 13, "provider": "UPS Supply Chain Solutions", "hq": "United States", "revenue": 8771.0, "teu": 530000.0, "air_tons": 790000.0}, {"rank": 14, "provider": "Yusen Logistics", "hq": "Japan", "revenue": 5157.0, "teu": 632000.0, "air_tons": 280320.0}, {"rank": 15, "provider": "DACHSER", "hq": "Germany", "revenue": 9349.0, "teu": 544196.0, "air_tons": 238613.0}, {"rank": 15, "provider": "LX Pantos", "hq": "South Korea", "revenue": 5624.0, "teu": 1633000.0, "air_tons": 126000.0}, {"rank": 16, "provider": "CTS International Logistics", "hq": "China", "revenue": 2401.0, "teu": 842700.0, "air_tons": 331900.0}, {"rank": 17, "provider": "Rhenus Logistics", "hq": "Germany", "revenue": 8869.0, "teu": 588510.0, "air_tons": 193649.0}, {"rank": 18, "provider": "AWOT Group", "hq": "China", "revenue": 3350.0, "teu": 402000.0, "air_tons": 785000.0}, {"rank": 19, "provider": "Scan Global Logistics", "hq": "Denmark", "revenue": 2851.0, "teu": 691000.0, "air_tons": 212000.0}, {"rank": 20, "provider": "CIMC Wetrans Logistics", "hq": "China", "revenue": 3808.0, "teu": 961197.0, "air_tons": 114000.0}, {"rank": 21, "provider": "Savino Del Bene", "hq": "Italy", "revenue": 3500.0, "teu": 852000.0, "air_tons": 93000.0}, {"rank": 22, "provider": "Logwin", "hq": "Luxembourg", "revenue": 1530.0, "teu": 685000.0, "air_tons": 188000.0}], "2026-09-22": [{"rank": 1, "provider": "DSV", "hq": "Denmark", "revenue": 37379.0, "teu": 3695424.0, "air_tons": 2013127.0}, {"rank": 1, "provider": "Kuehne + Nagel", "hq": "Switzerland", "revenue": 33836.0, "teu": 4325000.0, "air_tons": 2030280.0}, {"rank": 2, "provider": "DHL Supply Chain & Global Forwarding", "hq": "Germany", "revenue": 35538.0, "teu": 3274000.0, "air_tons": 1767000.0}, {"rank": 3, "provider": "Sinotrans", "hq": "China", "revenue": 13580.0, "teu": 4925154.0, "air_tons": 912000.0}, {"rank": 4, "provider": "NIPPON EXPRESS", "hq": "Japan", "revenue": 17199.0, "teu": 1806197.0, "air_tons": 933201.0}, {"rank": 5, "provider": "CEVA Logistics", "hq": "France", "revenue": 18300.0, "teu": 1730000.0, "air_tons": 680000.0}, {"rank": 6, "provider": "Expeditors", "hq": "United States", "revenue": 11069.0, "teu": 855200.0, "air_tons": 928000.0}, {"rank": 7, "provider": "C.H. Robinson", "hq": "United States", "revenue": 14768.0, "teu": 1256000.0, "air_tons": 280000.0}, {"rank": 7, "provider": "KLN", "hq": "Hong Kong SAR", "revenue": 7471.0, "teu": 1149956.0, "air_tons": 840508.0}, {"rank": 8, "provider": "GEODIS", "hq": "France", "revenue": 11700.0, "teu": 962000.0, "air_tons": 267056.0}, {"rank": 9, "provider": "Cosco Shipping Logistics", "hq": "China", "revenue": 8989.0, "teu": 1961791.0, "air_tons": 207656.0}, {"rank": 10, "provider": "Maersk Logistics", "hq": "Denmark", "revenue": 15103.0, "teu": 635000.0, "air_tons": 318000.0}, {"rank": 11, "provider": "Hellmann Worldwide Logistics", "hq": "Germany", "revenue": 3952.0, "teu": 955000.0, "air_tons": 595000.0}, {"rank": 12, "provider": "Kintetsu World Express", "hq": "Japan", "revenue": 5018.0, "teu": 738003.0, "air_tons": 546095.0}, {"rank": 13, "provider": "UPS Supply Chain Solutions", "hq": "United States", "revenue": 8771.0, "teu": 530000.0, "air_tons": 790000.0}, {"rank": 14, "provider": "Yusen Logistics", "hq": "Japan", "revenue": 5157.0, "teu": 632000.0, "air_tons": 280320.0}, {"rank": 15, "provider": "DACHSER", "hq": "Germany", "revenue": 9349.0, "teu": 544196.0, "air_tons": 238613.0}, {"rank": 15, "provider": "LX Pantos", "hq": "South Korea", "revenue": 5624.0, "teu": 1633000.0, "air_tons": 126000.0}, {"rank": 16, "provider": "CTS International Logistics", "hq": "China", "revenue": 2401.0, "teu": 842700.0, "air_tons": 331900.0}, {"rank": 17, "provider": "Rhenus Logistics", "hq": "Germany", "revenue": 8869.0, "teu": 588510.0, "air_tons": 193649.0}, {"rank": 18, "provider": "AWOT Group", "hq": "China", "revenue": 3350.0, "teu": 402000.0, "air_tons": 785000.0}, {"rank": 19, "provider": "Scan Global Logistics", "hq": "Denmark", "revenue": 2851.0, "teu": 691000.0, "air_tons": 212000.0}, {"rank": 20, "provider": "CIMC Wetrans Logistics", "hq": "China", "revenue": 3808.0, "teu": 961197.0, "air_tons": 114000.0}, {"rank": 21, "provider": "Savino Del Bene", "hq": "Italy", "revenue": 3500.0, "teu": 852000.0, "air_tons": 93000.0}, {"rank": 22, "provider": "Logwin", "hq": "Luxembourg", "revenue": 1530.0, "teu": 685000.0, "air_tons": 188000.0}], "2026-09-15": [{"rank": 1, "provider": "DSV", "hq": "Denmark", "revenue": 37379.0, "teu": 3695424.0, "air_tons": 2013127.0}, {"rank": 1, "provider": "Kuehne + Nagel", "hq": "Switzerland", "revenue": 33836.0, "teu": 4325000.0, "air_tons": 2030280.0}, {"rank": 2, "provider": "DHL Supply Chain & Global Forwarding", "hq": "Germany", "revenue": 35538.0, "teu": 3274000.0, "air_tons": 1767000.0}, {"rank": 3, "provider": "Sinotrans", "hq": "China", "revenue": 13580.0, "teu": 4925154.0, "air_tons": 912000.0}, {"rank": 4, "provider": "NIPPON EXPRESS", "hq": "Japan", "revenue": 17199.0, "teu": 1806197.0, "air_tons": 933201.0}, {"rank": 5, "provider": "CEVA Logistics", "hq": "France", "revenue": 18300.0, "teu": 1730000.0, "air_tons": 680000.0}, {"rank": 6, "provider": "Expeditors", "hq": "United States", "revenue": 11069.0, "teu": 855200.0, "air_tons": 928000.0}, {"rank": 7, "provider": "C.H. Robinson", "hq": "United States", "revenue": 14768.0, "teu": 1256000.0, "air_tons": 280000.0}, {"rank": 7, "provider": "KLN", "hq": "Hong Kong SAR", "revenue": 7471.0, "teu": 1149956.0, "air_tons": 840508.0}, {"rank": 8, "provider": "GEODIS", "hq": "France", "revenue": 11700.0, "teu": 962000.0, "air_tons": 267056.0}, {"rank": 9, "provider": "Cosco Shipping Logistics", "hq": "China", "revenue": 8989.0, "teu": 1961791.0, "air_tons": 207656.0}, {"rank": 10, "provider": "Maersk Logistics", "hq": "Denmark", "revenue": 15103.0, "teu": 635000.0, "air_tons": 318000.0}, {"rank": 11, "provider": "Hellmann Worldwide Logistics", "hq": "Germany", "revenue": 3952.0, "teu": 955000.0, "air_tons": 595000.0}, {"rank": 12, "provider": "Kintetsu World Express", "hq": "Japan", "revenue": 5018.0, "teu": 738003.0, "air_tons": 546095.0}, {"rank": 13, "provider": "UPS Supply Chain Solutions", "hq": "United States", "revenue": 8771.0, "teu": 530000.0, "air_tons": 790000.0}, {"rank": 14, "provider": "Yusen Logistics", "hq": "Japan", "revenue": 5157.0, "teu": 632000.0, "air_tons": 280320.0}, {"rank": 15, "provider": "DACHSER", "hq": "Germany", "revenue": 9349.0, "teu": 544196.0, "air_tons": 238613.0}, {"rank": 15, "provider": "LX Pantos", "hq": "South Korea", "revenue": 5624.0, "teu": 1633000.0, "air_tons": 126000.0}, {"rank": 16, "provider": "CTS International Logistics", "hq": "China", "revenue": 2401.0, "teu": 842700.0, "air_tons": 331900.0}, {"rank": 17, "provider": "Rhenus Logistics", "hq": "Germany", "revenue": 8869.0, "teu": 588510.0, "air_tons": 193649.0}, {"rank": 18, "provider": "AWOT Group", "hq": "China", "revenue": 3350.0, "teu": 402000.0, "air_tons": 785000.0}, {"rank": 19, "provider": "Scan Global Logistics", "hq": "Denmark", "revenue": 2851.0, "teu": 691000.0, "air_tons": 212000.0}, {"rank": 20, "provider": "CIMC Wetrans Logistics", "hq": "China", "revenue": 3808.0, "teu": 961197.0, "air_tons": 114000.0}, {"rank": 21, "provider": "Savino Del Bene", "hq": "Italy", "revenue": 3500.0, "teu": 852000.0, "air_tons": 93000.0}, {"rank": 22, "provider": "Logwin", "hq": "Luxembourg", "revenue": 1530.0, "teu": 685000.0, "air_tons": 188000.0}], "2026-06-23": [{"rank": 1, "provider": "DSV", "hq": "Denmark", "revenue": 37379.0, "teu": 3695424.0, "air_tons": 2013127.0}, {"rank": 1, "provider": "Kuehne + Nagel", "hq": "Switzerland", "revenue": 33836.0, "teu": 4325000.0, "air_tons": 2030280.0}, {"rank": 2, "provider": "DHL Supply Chain & Global Forwarding", "hq": "Germany", "revenue": 35538.0, "teu": 3274000.0, "air_tons": 1767000.0}, {"rank": 3, "provider": "Sinotrans", "hq": "China", "revenue": 13580.0, "teu": 4925154.0, "air_tons": 912000.0}, {"rank": 4, "provider": "NIPPON EXPRESS", "hq": "Japan", "revenue": 17199.0, "teu": 1806197.0, "air_tons": 933201.0}, {"rank": 5, "provider": "CEVA Logistics", "hq": "France", "revenue": 18300.0, "teu": 1730000.0, "air_tons": 680000.0}, {"rank": 6, "provider": "Expeditors", "hq": "United States", "revenue": 11069.0, "teu": 855200.0, "air_tons": 928000.0}, {"rank": 7, "provider": "C.H. Robinson", "hq": "United States", "revenue": 14768.0, "teu": 1256000.0, "air_tons": 280000.0}, {"rank": 7, "provider": "KLN", "hq": "Hong Kong SAR", "revenue": 7471.0, "teu": 1149956.0, "air_tons": 840508.0}, {"rank": 8, "provider": "GEODIS", "hq": "France", "revenue": 11700.0, "teu": 962000.0, "air_tons": 267056.0}, {"rank": 9, "provider": "Cosco Shipping Logistics", "hq": "China", "revenue": 8989.0, "teu": 1961791.0, "air_tons": 207656.0}, {"rank": 10, "provider": "Maersk Logistics", "hq": "Denmark", "revenue": 15103.0, "teu": 635000.0, "air_tons": 318000.0}, {"rank": 11, "provider": "Hellmann Worldwide Logistics", "hq": "Germany", "revenue": 3952.0, "teu": 955000.0, "air_tons": 595000.0}, {"rank": 12, "provider": "Kintetsu World Express", "hq": "Japan", "revenue": 5018.0, "teu": 738003.0, "air_tons": 546095.0}, {"rank": 13, "provider": "UPS Supply Chain Solutions", "hq": "United States", "revenue": 8771.0, "teu": 530000.0, "air_tons": 790000.0}, {"rank": 14, "provider": "Yusen Logistics", "hq": "Japan", "revenue": 5157.0, "teu": 632000.0, "air_tons": 280320.0}, {"rank": 15, "provider": "LX Pantos", "hq": "South Korea", "revenue": 5624.0, "teu": 1633000.0, "air_tons": 126000.0}, {"rank": 16, "provider": "DACHSER", "hq": "Germany", "revenue": 9349.0, "teu": 544196.0, "air_tons": 238613.0}, {"rank": 17, "provider": "CTS International Logistics", "hq": "China", "revenue": 2401.0, "teu": 842700.0, "air_tons": 331900.0}, {"rank": 18, "provider": "AWOT Group", "hq": "China", "revenue": 3350.0, "teu": 402000.0, "air_tons": 785000.0}, {"rank": 19, "provider": "CIMC Wetrans Logistics", "hq": "China", "revenue": 3808.0, "teu": 961197.0, "air_tons": 114000.0}, {"rank": 19, "provider": "Scan Global Logistics", "hq": "Denmark", "revenue": 2851.0, "teu": 691000.0, "air_tons": 212000.0}, {"rank": 20, "provider": "Rhenus Logistics", "hq": "Germany", "revenue": 8869.0, "teu": 567089.0, "air_tons": 110595.0}, {"rank": 21, "provider": "Logwin", "hq": "Luxembourg", "revenue": 1530.0, "teu": 685000.0, "air_tons": 188000.0}, {"rank": 21, "provider": "Savino Del Bene", "hq": "Italy", "revenue": 3500.0, "teu": 852000.0, "air_tons": 93000.0}]};
-    const latestDate = "2026-10-20";
-    const rows = dataByDate[latestDate] || [];
-
-    function escapeHtml(value) {
-      return String(value ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-    }
-
-    function formatNumber(value) {
-      return new Intl.NumberFormat("en-US").format(Number(value || 0));
-    }
-
-    document.getElementById("rankingTableBody").innerHTML = rows.map(row => `
-      <tr>
-        <td>${formatNumber(row.rank)}</td>
-        <td>${escapeHtml(row.provider)}</td>
-        <td>${escapeHtml(row.hq)}</td>
-        <td>${formatNumber(row.revenue)}</td>
-        <td>${formatNumber(row.teu)}</td>
-        <td>${formatNumber(row.air_tons)}</td>
-      </tr>
-    `).join("");
-  </script>
-  
+    <div class="page">
+        <div class="terminal-header">
+            <h1>FORWARDER MONITOR</h1>
+            <div class="reference">DATA DATE: 2026-10-21 | VS 2026-10-20</div>
+        </div>
+        <div class="kpi-strip">
+            <div class="kpi"><span class="stat">289.1K</span><span class="label">Total Revenue</span></div>
+            <div class="kpi"><span class="stat">36.63M</span><span class="label">Total Ocean TEU</span></div>
+            <div class="kpi"><span class="stat">15.67M</span><span class="label">Total Air Tons</span></div>
+            <div class="kpi"><span class="stat">25</span><span class="label">Providers</span></div>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Provider / HQ</th>
+                        <th style="text-align: right;">Revenue (USD)</th>
+                        <th style="text-align: right;">Ocean (TEU)</th>
+                        <th style="text-align: right;">Air (Tons)</th>
+                        <th style="text-align: right;">Rev Delta</th>
+                    </tr>
+                </thead>
+                <tbody>
+<tr><td class="rank-cell">01</td><td><div class="provider">DSV</div><div class="hq">Denmark</div></td><td class="num-cell">37.4K</td><td class="num-cell">3.70M</td><td class="num-cell">2.01M</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">01</td><td><div class="provider">Kuehne + Nagel</div><div class="hq">Switzerland</div></td><td class="num-cell">33.8K</td><td class="num-cell">4.33M</td><td class="num-cell">2.03M</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">02</td><td><div class="provider">DHL Supply Chain &amp; Global Forwarding</div><div class="hq">Germany</div></td><td class="num-cell">35.5K</td><td class="num-cell">3.27M</td><td class="num-cell">1.77M</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">03</td><td><div class="provider">Sinotrans</div><div class="hq">China</div></td><td class="num-cell">13.6K</td><td class="num-cell">4.93M</td><td class="num-cell">912.0K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">04</td><td><div class="provider">NIPPON EXPRESS</div><div class="hq">Japan</div></td><td class="num-cell">17.2K</td><td class="num-cell">1.81M</td><td class="num-cell">933.2K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">05</td><td><div class="provider">CEVA Logistics</div><div class="hq">France</div></td><td class="num-cell">18.3K</td><td class="num-cell">1.73M</td><td class="num-cell">680.0K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">06</td><td><div class="provider">Expeditors</div><div class="hq">United States</div></td><td class="num-cell">11.1K</td><td class="num-cell">855.2K</td><td class="num-cell">928.0K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">07</td><td><div class="provider">C.H. Robinson</div><div class="hq">United States</div></td><td class="num-cell">14.8K</td><td class="num-cell">1.26M</td><td class="num-cell">280.0K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">07</td><td><div class="provider">KLN</div><div class="hq">Hong Kong SAR</div></td><td class="num-cell">7.5K</td><td class="num-cell">1.15M</td><td class="num-cell">840.5K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">08</td><td><div class="provider">GEODIS</div><div class="hq">France</div></td><td class="num-cell">11.7K</td><td class="num-cell">962.0K</td><td class="num-cell">267.1K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">09</td><td><div class="provider">Cosco Shipping Logistics</div><div class="hq">China</div></td><td class="num-cell">9.0K</td><td class="num-cell">1.96M</td><td class="num-cell">207.7K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">10</td><td><div class="provider">Maersk Logistics</div><div class="hq">Denmark</div></td><td class="num-cell">15.1K</td><td class="num-cell">635.0K</td><td class="num-cell">318.0K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">11</td><td><div class="provider">Hellmann Worldwide Logistics</div><div class="hq">Germany</div></td><td class="num-cell">4.0K</td><td class="num-cell">955.0K</td><td class="num-cell">595.0K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">12</td><td><div class="provider">Kintetsu World Express</div><div class="hq">Japan</div></td><td class="num-cell">5.0K</td><td class="num-cell">738.0K</td><td class="num-cell">546.1K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">13</td><td><div class="provider">UPS Supply Chain Solutions</div><div class="hq">United States</div></td><td class="num-cell">8.8K</td><td class="num-cell">530.0K</td><td class="num-cell">790.0K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">14</td><td><div class="provider">Yusen Logistics</div><div class="hq">Japan</div></td><td class="num-cell">5.2K</td><td class="num-cell">632.0K</td><td class="num-cell">280.3K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">15</td><td><div class="provider">DACHSER</div><div class="hq">Germany</div></td><td class="num-cell">9.3K</td><td class="num-cell">544.2K</td><td class="num-cell">238.6K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">15</td><td><div class="provider">LX Pantos</div><div class="hq">South Korea</div></td><td class="num-cell">5.6K</td><td class="num-cell">1.63M</td><td class="num-cell">126.0K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">16</td><td><div class="provider">CTS International Logistics</div><div class="hq">China</div></td><td class="num-cell">2.4K</td><td class="num-cell">842.7K</td><td class="num-cell">331.9K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">17</td><td><div class="provider">Rhenus Logistics</div><div class="hq">Germany</div></td><td class="num-cell">8.9K</td><td class="num-cell">588.5K</td><td class="num-cell">193.6K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">18</td><td><div class="provider">AWOT Group</div><div class="hq">China</div></td><td class="num-cell">3.4K</td><td class="num-cell">402.0K</td><td class="num-cell">785.0K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">19</td><td><div class="provider">Scan Global Logistics</div><div class="hq">Denmark</div></td><td class="num-cell">2.9K</td><td class="num-cell">691.0K</td><td class="num-cell">212.0K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">20</td><td><div class="provider">CIMC Wetrans Logistics</div><div class="hq">China</div></td><td class="num-cell">3.8K</td><td class="num-cell">961.2K</td><td class="num-cell">114.0K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">21</td><td><div class="provider">Savino Del Bene</div><div class="hq">Italy</div></td><td class="num-cell">3.5K</td><td class="num-cell">852.0K</td><td class="num-cell">93.0K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+<tr><td class="rank-cell">22</td><td><div class="provider">Logwin</div><div class="hq">Luxembourg</div></td><td class="num-cell">1.5K</td><td class="num-cell">685.0K</td><td class="num-cell">188.0K</td><td class="delta-cell delta-neutral">0.0%</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
 </body>
 </html>
