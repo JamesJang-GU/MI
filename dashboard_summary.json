@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-21 05:27:11",
+  "generated_at": "2026-10-21 05:46:36",
   "shipping": {
     "title": "Shipping Index (SCFI / BDI)",
     "path": "Shipping Index/index.html",
@@ -66,14 +66,11 @@
     "path": "TAC Index/index.html",
     "category": "Air",
     "latest_date": "2026-09-01",
-    "overall_index": "$4.74 USD/kg",
-    "weekly_change_html": "<span class=\"delta-up\">+2.07% ↗</span>",
-    "route_count": "3 Routes",
-    "frankfurt_north_america_rate": "-",
+    "frankfurt_north_america_rate": "$2.40 USD/kg",
     "frankfurt_north_america_mom_html": "<span class=\"delta-neutral\">MoM -</span>",
-    "hong_kong_europe_rate": "-",
+    "hong_kong_europe_rate": "$4.80 USD/kg",
     "hong_kong_europe_mom_html": "<span class=\"delta-neutral\">MoM -</span>",
-    "hong_kong_north_america_rate": "-",
+    "hong_kong_north_america_rate": "$7.02 USD/kg",
     "hong_kong_north_america_mom_html": "<span class=\"delta-neutral\">MoM -</span>",
     "status": "Active"
   },
