@@ -1,13 +1,15 @@
 {
-  "generated_at": "2026-10-21 02:24:16",
+  "generated_at": "2026-10-21 04:07:44",
   "shipping": {
     "title": "Shipping Index (SCFI / BDI)",
     "path": "Shipping Index/index.html",
     "category": "Sea",
     "scfi_latest": "3,679.6",
     "scfi_date": "2026-10-16",
+    "scfi_delta_html": "<span class=\"delta-up\">WoW +15.5 (+0.4%) ↗</span>",
     "bdi_latest": "2,546",
     "bdi_date": "2026-10-19",
+    "bdi_delta_html": "<span class=\"delta-up\">WoW +35 (+1.4%) ↗</span>",
     "status": "Active"
   },
   "alphaliner": {
@@ -15,9 +17,10 @@
     "path": "Alphaliner/index.html",
     "category": "Sea",
     "latest_date": "2026-10-19",
-    "total_teu": "34,113,905",
-    "total_ships": "6,616",
-    "top1_operator": "Mediterranean Shg Co (21.50%)",
+    "total_ships": "6,616 Ships",
+    "total_teu": "34,113,905 TEU",
+    "top10_share": "85.00%",
+    "top1_operator": "Mediterranean Shg Co (21.5%)",
     "status": "Active"
   },
   "bunker": {

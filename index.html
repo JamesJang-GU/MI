@@ -2,10 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  >
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MARKET INTELLIGENCE // TERMINAL PORTAL</title>
 
   <style>
@@ -19,6 +16,7 @@
       --cyan: #42c6e8;
       --cyan-bright: #75daf2;
       --green: #00d26a;
+      --red: #ff5252;
       --text: #e7edf4;
       --text-muted: #8798aa;
       --text-dim: #5d6d7d;
@@ -29,30 +27,19 @@
               Roboto, "Noto Sans KR", Arial, sans-serif;
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    html,
-    body {
+    html, body {
       min-height: 100%;
       background:
-        linear-gradient(
-          180deg,
-          rgba(255, 138, 0, 0.04) 0%,
-          rgba(2, 6, 11, 0) 260px
-        ),
+        linear-gradient(180deg, rgba(255, 138, 0, 0.04) 0%, rgba(2, 6, 11, 0) 260px),
         var(--bg-dark);
       color: var(--text);
       font-family: var(--sans);
       font-size: 12px;
     }
 
-    body {
-      padding: 10px 16px;
-    }
+    body { padding: 10px 16px; }
 
     .container {
       width: 100%;
@@ -102,14 +89,9 @@
       color: var(--text-dim);
       font-size: 10px;
     }
+    .updated-at span { color: var(--amber-bright); }
 
-    .updated-at span {
-      color: var(--amber-bright);
-    }
-
-    .section-group {
-      margin-top: 12px;
-    }
+    .section-group { margin-top: 12px; }
 
     .section-title {
       margin-bottom: 7px;
@@ -120,7 +102,6 @@
       letter-spacing: 0.8px;
       text-transform: uppercase;
     }
-
     .section-title::before {
       content: "// ";
       color: var(--text-dim);
@@ -142,16 +123,12 @@
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      min-height: 158px;
+      min-height: 205px;
       padding: 10px 12px;
       border: 1px solid var(--border);
       border-top: 2px solid var(--border-light);
       background:
-        linear-gradient(
-          135deg,
-          rgba(255, 138, 0, 0.035),
-          transparent 60%
-        ),
+        linear-gradient(135deg, rgba(255, 138, 0, 0.035), transparent 60%),
         var(--bg-panel);
       color: inherit;
       text-decoration: none;
@@ -163,10 +140,6 @@
       border-top-color: var(--amber);
       background: var(--bg-hover);
       transform: translateY(-2px);
-    }
-
-    .bunker-card {
-      min-height: 205px;
     }
 
     .card-header {
@@ -196,13 +169,11 @@
       font-size: 9px;
       font-weight: 800;
     }
-
     .badge.active {
       border-color: var(--green);
       background: rgba(0, 210, 106, 0.08);
       color: var(--green);
     }
-
     .badge.nodata {
       background: rgba(93, 109, 125, 0.08);
       color: var(--text-dim);
@@ -240,18 +211,23 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .kpi-val.highlight { color: var(--cyan-bright); }
+    .kpi-val.amber { color: var(--amber-bright); }
+    .small-value { font-size: 10px; }
 
-    .kpi-val.highlight {
-      color: var(--cyan-bright);
+    /* Delta & Arrow Styles */
+    .delta-sub {
+      margin-top: 4px;
+      font-family: var(--mono);
+      font-size: 9.5px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-
-    .kpi-val.amber {
-      color: var(--amber-bright);
-    }
-
-    .small-value {
-      font-size: 10px;
-    }
+    .delta-up { color: #00e676; }
+    .delta-down { color: #ff5252; }
+    .delta-neutral { color: var(--text-dim); }
 
     .bunker-section-label {
       margin: 8px 0 5px;
@@ -267,19 +243,9 @@
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 5px;
     }
-
-    .bunker-grid .kpi-item {
-      padding: 6px;
-    }
-
-    .bunker-grid .kpi-label {
-      font-size: 8px;
-    }
-
-    .bunker-grid .kpi-val {
-      font-size: 9.5px;
-      letter-spacing: -0.4px;
-    }
+    .bunker-grid .kpi-item { padding: 6px; }
+    .bunker-grid .kpi-label { font-size: 8px; }
+    .bunker-grid .kpi-val { font-size: 9.5px; letter-spacing: -0.4px; }
 
     .card-footer {
       display: flex;
@@ -314,32 +280,19 @@
     }
 
     @media (max-width: 1240px) {
-      .grid-4 {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
+      .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 
     @media (max-width: 760px) {
-      body {
-        padding: 8px;
-      }
-
-      .grid-4,
-      .grid-2 {
-        grid-template-columns: 1fr;
-      }
-
+      body { padding: 8px; }
+      .grid-4, .grid-2 { grid-template-columns: 1fr; }
       .top-bar {
         align-items: flex-start;
         flex-direction: column;
         gap: 6px;
         padding: 8px 10px;
       }
-
-      footer {
-        align-items: flex-start;
-        flex-direction: column;
-      }
+      footer { align-items: flex-start; flex-direction: column; }
     }
   </style>
 </head>
@@ -349,13 +302,10 @@
     <header class="top-bar">
       <div class="top-left">
         <span class="badge-term">MI&lt;GO&gt;</span>
-        <span class="title-main">
-          MARKET INTELLIGENCE // MAIN PORTAL
-        </span>
+        <span class="title-main">MARKET INTELLIGENCE // MAIN PORTAL</span>
       </div>
-
       <div class="updated-at">
-        UPDATED: <span>2026-10-21 02:24:16</span>
+        UPDATED: <span>2026-10-21 04:07:44</span>
       </div>
     </header>
 
@@ -364,24 +314,25 @@
 
       <div class="grid-4">
 
+        <!-- 1. Shipping Index -->
         <a href="Shipping Index/index.html" class="card">
           <div>
             <div class="card-header">
               <span class="card-title">Shipping Index (SCFI / BDI)</span>
-              <span class="badge active">
-                Active
-              </span>
+              <span class="badge active">Active</span>
             </div>
 
             <div class="kpi-group">
               <div class="kpi-item">
                 <div class="kpi-label">SCFI Composite</div>
                 <div class="kpi-val highlight">3,679.6</div>
+                <div class="delta-sub"><span class="delta-up">WoW +15.5 (+0.4%) ↗</span></div>
               </div>
 
               <div class="kpi-item">
                 <div class="kpi-label">BDI Composite</div>
                 <div class="kpi-val amber">2,546</div>
+                <div class="delta-sub"><span class="delta-up">WoW +35 (+1.4%) ↗</span></div>
               </div>
             </div>
           </div>
@@ -392,26 +343,33 @@
           </div>
         </a>
 
+        <!-- 2. Alphaliner TOP 100 -->
         <a href="Alphaliner/index.html" class="card">
           <div>
             <div class="card-header">
               <span class="card-title">Alphaliner TOP 100</span>
-              <span class="badge active">
-                Active
-              </span>
+              <span class="badge active">Active</span>
             </div>
 
             <div class="kpi-group">
               <div class="kpi-item">
-                <div class="kpi-label">Total Fleet Capacity</div>
-                <div class="kpi-val">34,113,905</div>
+                <div class="kpi-label">Total Ships</div>
+                <div class="kpi-val highlight">6,616 Ships</div>
               </div>
 
               <div class="kpi-item">
-                <div class="kpi-label">#01 Operator / Share</div>
-                <div class="kpi-val small-value highlight">
-                  Mediterranean Shg Co (21.50%)
-                </div>
+                <div class="kpi-label">Total TEU</div>
+                <div class="kpi-val highlight">34,113,905 TEU</div>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-label">Top 10 M/S</div>
+                <div class="kpi-val amber">85.00%</div>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-label">#01 Operator</div>
+                <div class="kpi-val small-value">Mediterranean Shg Co (21.5%)</div>
               </div>
             </div>
           </div>
@@ -422,59 +380,39 @@
           </div>
         </a>
 
-        <a href="BunkerPrice/index.html" class="card bunker-card">
+        <!-- 3. Bunker Price -->
+        <a href="BunkerPrice/index.html" class="card">
           <div>
             <div class="card-header">
               <span class="card-title">Bunker Price (VLSFO)</span>
-              <span class="badge active">
-                Active
-              </span>
+              <span class="badge active">Active</span>
             </div>
 
-            <div class="bunker-section-label">
-              SHIP &amp; BUNKER / LATEST VLSFO
-            </div>
-
+            <div class="bunker-section-label">SHIP &amp; BUNKER / LATEST VLSFO</div>
             <div class="bunker-grid">
               <div class="kpi-item">
                 <div class="kpi-label">Rotterdam</div>
-                <div class="kpi-val highlight">
-                  765.00 USD/MT
-                </div>
+                <div class="kpi-val highlight">765.00 USD/MT</div>
               </div>
-
               <div class="kpi-item">
                 <div class="kpi-label">Fujairah</div>
-                <div class="kpi-val">
-                  979.50 USD/MT
-                </div>
+                <div class="kpi-val">979.50 USD/MT</div>
               </div>
-
               <div class="kpi-item">
                 <div class="kpi-label">Singapore</div>
-                <div class="kpi-val amber">
-                  932.50 USD/MT
-                </div>
+                <div class="kpi-val amber">932.50 USD/MT</div>
               </div>
             </div>
 
-            <div class="bunker-section-label">
-              THREE-PORT MARKET INDICATOR
-            </div>
-
+            <div class="bunker-section-label">THREE-PORT MARKET INDICATOR</div>
             <div class="kpi-group">
               <div class="kpi-item">
                 <div class="kpi-label">VLSFO Average</div>
-                <div class="kpi-val highlight">
-                  892.33 USD/MT
-                </div>
+                <div class="kpi-val highlight">892.33 USD/MT</div>
               </div>
-
               <div class="kpi-item">
                 <div class="kpi-label">Available Ports</div>
-                <div class="kpi-val amber">
-                  3 / 3
-                </div>
+                <div class="kpi-val amber">3 / 3</div>
               </div>
             </div>
           </div>
@@ -485,42 +423,30 @@
           </div>
         </a>
 
+        <!-- 4. Top 25 Forwarders -->
         <a href="Forwarder/index.html" class="card">
           <div>
             <div class="card-header">
               <span class="card-title">Global Top 25 Forwarders</span>
-              <span class="badge active">
-                Active
-              </span>
+              <span class="badge active">Active</span>
             </div>
 
             <div class="kpi-group">
               <div class="kpi-item">
                 <div class="kpi-label">#01 Provider</div>
-                <div class="kpi-val small-value highlight">
-                  DSV
-                </div>
+                <div class="kpi-val small-value highlight">DSV</div>
               </div>
-
               <div class="kpi-item">
                 <div class="kpi-label">Revenue</div>
-                <div class="kpi-val amber">
-                  37.4K USD
-                </div>
+                <div class="kpi-val amber">37.4K USD</div>
               </div>
-
               <div class="kpi-item">
                 <div class="kpi-label">Ocean Volume</div>
-                <div class="kpi-val small-value">
-                  3.70M TEU
-                </div>
+                <div class="kpi-val small-value">3.70M TEU</div>
               </div>
-
               <div class="kpi-item">
                 <div class="kpi-label">Air Volume</div>
-                <div class="kpi-val small-value">
-                  2.01M Tons
-                </div>
+                <div class="kpi-val small-value">2.01M Tons</div>
               </div>
             </div>
           </div>
@@ -542,9 +468,7 @@
           <div>
             <div class="card-header">
               <span class="card-title">Air Freight (TAC Index)</span>
-              <span class="badge active">
-                Active
-              </span>
+              <span class="badge active">Active</span>
             </div>
 
             <div class="kpi-group">
@@ -552,7 +476,6 @@
                 <div class="kpi-label">Overall Index</div>
                 <div class="kpi-val highlight">4.74</div>
               </div>
-
               <div class="kpi-item">
                 <div class="kpi-label">Weekly Change</div>
                 <div class="kpi-val amber">+2.07%</div>
@@ -574,9 +497,7 @@
           <div>
             <div class="card-header">
               <span class="card-title">Macro Economies &amp; GSCPI</span>
-              <span class="badge nodata">
-                No Data
-              </span>
+              <span class="badge nodata">No Data</span>
             </div>
 
             <div class="kpi-group">
@@ -584,12 +505,9 @@
                 <div class="kpi-label">Supply Chain Pressure</div>
                 <div class="kpi-val highlight">-</div>
               </div>
-
               <div class="kpi-item">
                 <div class="kpi-label">Macro Coverage</div>
-                <div class="kpi-val small-value">
-                  WorldBank GDP / CPI
-                </div>
+                <div class="kpi-val small-value">WorldBank GDP / CPI</div>
               </div>
             </div>
           </div>
@@ -604,9 +522,7 @@
   </div>
 
   <footer>
-    <div>
-      MARKET INTELLIGENCE PLATFORM // LOGISTICS &amp; MACRO DASHBOARDS
-    </div>
+    <div>MARKET INTELLIGENCE PLATFORM // LOGISTICS &amp; MACRO DASHBOARDS</div>
     <div>TERMINAL FEED: ACTIVE</div>
   </footer>
 </body>
