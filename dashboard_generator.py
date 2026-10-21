@@ -1178,7 +1178,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .grid-triple .kpi-label { font-size: 8px; }
     .grid-triple .kpi-val { font-size: 10px; letter-spacing: -0.3px; }
 
-    /* TAC Corridor 레이아웃 */
+    /* TAC Corridor 전용 그리드 레이아웃 */
     .tac-corridor-label {
       margin: 8px 0 6px;
       color: var(--amber);
