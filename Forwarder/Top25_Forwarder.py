@@ -24,7 +24,7 @@ def setup_environment():
     for import_name, pip_name in required.items():
         if importlib.util.find_spec(import_name) is not None:
             continue
-        print(f"[SETUP] '{pip_name}' 패키지가 없어 설치를 시도합니다...", flush=True)
+        print(f"[SETUP] \'{pip_name}\' 패키지가 없어 설치를 시도합니다...", flush=True)
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "install", pip_name])
         except Exception:
@@ -90,7 +90,7 @@ def calculate_percentage_change(current, previous):
 
 def format_delta(val):
     if val is None: return "N/A"
-    return f"{' +' if val > 0 else ''}{val:.1f}%"
+    return f"{\' +\' if val > 0 else \'\'}{val:.1f}%"
 
 # =====================================================
 # 4. Web Crawling & DB
@@ -145,12 +145,12 @@ def save_today_data(df):
         df["created_at"] = now
         conn.execute("DELETE FROM forwarders WHERE date = ?", (df["date"].iloc[0],))
         df.to_sql("forwarders", conn, if_exists="append", index=False)
-        conn.execute("INSERT INTO run_log (run_at, status, message, row_count) VALUES (?, 'SUCCESS', 'OK', ?)", (now, len(df)))
+        conn.execute("INSERT INTO run_log (run_at, status, message, row_count) VALUES (?, \'SUCCESS\', \'OK\', ?)", (now, len(df)))
         conn.commit()
         hist = pd.read_sql_query("SELECT * FROM forwarders ORDER BY date DESC, rank ASC", conn)
         hist.to_csv(STATIC_CSV_PATH, index=False, encoding="utf-8-sig")
     except Exception as e:
-        conn.execute("INSERT INTO run_log (run_at, status, message, row_count) VALUES (?, 'ERROR', ?, 0)", (now, str(e)))
+        conn.execute("INSERT INTO run_log (run_at, status, message, row_count) VALUES (?, \'ERROR\', ?, 0)", (now, str(e)))
         conn.commit()
         raise
     finally: conn.close()
@@ -184,8 +184,12 @@ def get_dashboard_data():
 # 5. Dashboard Generation
 # =====================================================
 def build_static_dashboard():
+    # [CRITICAL FIX] Ensure variable is named 'data'
     data, ref_date, comp_date = get_dashboard_data()
-    if not data: raise RuntimeError("No data for dashboard.")
+    
+    if not data: 
+        raise RuntimeError("No data for dashboard.")
+        
     rows_html = ""
     for item in data:
         d_val = item["revenue_delta"]
@@ -200,10 +204,15 @@ def build_static_dashboard():
                 <td class="number {d_cls}">{format_delta(d_val)}</td>
             </tr>
         """
+
+    # [CRITICAL FIX] Use 'data' instead of 'data_list'
     total_rev = sum(i["revenue"] for i in data)
     total_teu = sum(i["teu"] for i in data)
     total_air = sum(i["air_tons"] for i in data)
+    total_providers = len(data)
+
     comp_txt = f"VS {comp_date}" if comp_date else "NO PRIOR SNAPSHOT"
+    
     html_template = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -241,48 +250,57 @@ def build_static_dashboard():
             <div><h1>FORWARDER MONITOR</h1><p>A&A TOP 25 GLOBAL FORWARDERS</p></div>
             <div class="reference"><div>DATA REF: {ref_date}</div><div>{comp_txt}</div></div>
         </header>
-        <section class="kpi-strip">
-            <div class="kpi"><span class="stat">{len(data)}</span><span class="label">Total Providers</span></div>
-            <div class="kpi"><span class="stat">{html.escape(data_list[0]["provider"])}</span><span class="label">Market Leader</span></div>
-            <div class="kpi"><span class="stat">{format_compact_number(total_rev)}</span><span class="label">Agg. Revenue</span></div>
-            <div class="kpi"><span class="stat">{format_compact_number(total_teu)} / {format_compact_number(total_air_tons)}</span><span class="label">TEU / Air Tons</span></div>
-        </section>
-        <section class="table-wrap">
+        
+        <div class="kpi-strip">
+            <div class="kpi"><span class="stat">{total_providers}</span><span class="label">Total Providers</span></div>
+            <div class="kpi"><span class="stat">{format_compact_number(total_rev)}</span><span class="label">Total Revenue</span></div>
+            <div class="kpi"><span class="stat">{format_compact_number(total_teu)}</span><span class="label">Total Ocean TEU</span></div>
+            <div class="kpi"><span class="stat">{format_compact_number(total_air)}</span><span class="label">Total Air Tons</span></div>
+        </div>
+
+        <div class="table-wrap">
             <table>
-                <thead><tr><th>Rank</th><th>Provider / HQ</th><th style="text-align:right;">Revenue</th><th style="text-align:right;">Ocean TEU</th><th style="text-align:right;">Air Tons</th><th style="text-align:right;">Rev Δ</th></tr></thead>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Provider / HQ</th>
+                        <th>Revenue</th>
+                        <th>Ocean TEU</th>
+                        <th>Air Tons</th>
+                        <th>Rev Delta</th>
+                    </tr>
+                </thead>
                 <tbody>
                     {rows_html}
                 </tbody>
             </table>
-        </section>
-        <footer class="footer">Source: A&A / 3PL Logistics. Revenue Δ vs latest prior snapshot.</footer>
+        </div>
+        <div class="footer">Generated by MI Terminal Automation System | Source: 3plogistics.com</div>
     </main>
 </body>
 </html>"""
-
-    STATIC_HTML_PATH.write_text(html_template, encoding="utf-8")
-    log(f"[HTML] Dashboard generated: {STATIC_HTML_PATH}")
+    
+    with open(STATIC_HTML_PATH, "w", encoding="utf-8") as f:
+        f.write(html_template)
 
 # =====================================================
 # 6. Main Execution
 # =====================================================
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--once", action="store_true")
-    parser.add_argument("--build-static", action="store_true")
-    parser.add_argument("--crawl-only", action="store_true")
-    parser.add_argument("--url", type=str, default=DEFAULT_URL)
+    parser = argparse.ArgumentParser(description="MI Forwarder Crawler & Dashboard Generator")
+    parser.add_argument("--fetch", action="store_true", help="Fetch new data from web")
+    parser.add_argument("--build", action="store_true", help="Build HTML dashboard")
     args = parser.parse_args()
 
-    try:
-        df = fetch_top_25_data(args.url)
+    if args.fetch:
+        url = DEFAULT_URL
+        df = fetch_top_25_data(url)
         save_today_data(df)
-        if args.build_static or (not args.crawl_only and not args.once):
-            build_static_dashboard()
-        log("[SUCCESS] Process completed.")
-    except Exception as e:
-        log(f"[ERROR] {e}")
-        raise
+        log("[SUCCESS] Data fetched and saved to database.")
+    
+    if args.build or not args.fetch:
+        build_static_dashboard()
+        log(f"[SUCCESS] Dashboard built at {STATIC_HTML_PATH}")
 
 if __name__ == "__main__":
     main()
