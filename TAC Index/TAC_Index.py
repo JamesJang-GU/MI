@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 TAC Index / Baltic Exchange Airfreight Rate Index Crawler
-GitHub Actions + GitHub Pages static dashboard version (Bloomberg Terminal Style)
+GitHub Actions + GitHub Pages static dashboard version
 
 Data source:
 - Air Cargo News Data Hub
@@ -23,7 +23,6 @@ import hashlib
 import html as html_lib
 import json
 import logging
-import os
 import re
 import sqlite3
 import sys
@@ -72,12 +71,6 @@ HEADERS = {
 
 REQUEST_TIMEOUT_SECONDS = 40
 
-ROUTE_KO = {
-    "Frankfurt-North America": "프랑크푸르트-북미",
-    "Hong Kong-Europe": "홍콩-유럽",
-    "Hong Kong-North America": "홍콩-북미",
-}
-
 EXPECTED_ROUTE_KEYWORDS = [
     "frankfurt",
     "hong kong",
@@ -120,11 +113,12 @@ def normalize_text(value: Any) -> str:
     return " ".join(text.replace("\xa0", " ").strip().split())
 
 def safe_float(value: Any) -> Optional[float]:
-    """Convert source values such as '$2.35', '2,345.00', '-1.5%' into float."""
+    """Convert '$2.35', '2,345.00', '-1.5%' etc. to float."""
     if value is None:
         return None
 
     raw = normalize_text(value)
+
     if raw.lower() in {"", "-", "--", "n/a", "na", "null", "none"}:
         return None
 
@@ -132,8 +126,11 @@ def safe_float(value: Any) -> Optional[float]:
         raw.startswith("(") and raw.endswith(")")
     )
 
-    cleaned = raw.replace(",", "").replace("$", "").replace("£", "")
-    cleaned = cleaned.replace("€", "").replace("%", "")
+    cleaned = raw.replace(",", "")
+    cleaned = cleaned.replace("$", "")
+    cleaned = cleaned.replace("£", "")
+    cleaned = cleaned.replace("€", "")
+    cleaned = cleaned.replace("%", "")
     cleaned = re.sub(r"[^0-9.]", "", cleaned)
 
     if not cleaned:
@@ -146,24 +143,75 @@ def safe_float(value: Any) -> Optional[float]:
         return None
 
 def atomic_write_text(path: Path, content: str) -> None:
-    """Write safely to prevent partially generated static files."""
+    """Prevent partially generated static files."""
     temp_path = path.with_suffix(path.suffix + ".tmp")
     temp_path.write_text(content, encoding="utf-8")
     temp_path.replace(path)
-
-def json_default(value: Any) -> Any:
-    if isinstance(value, Path):
-        return str(value)
-    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 def get_now_string() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 # =============================================================================
-# 4. Database management
+# 4. Database management and migration
 # =============================================================================
+def cleanup_duplicate_data_dates(conn: sqlite3.Connection) -> int:
+    """
+    Legacy DB에 동일 data_date가 중복된 경우 가장 최근 snapshot_id만 보존한다.
+
+    정상적인 누적 구조에서는 날짜당 Master 레코드가 하나여야 한다.
+    """
+    duplicate_rows = conn.execute(
+        """
+        SELECT data_date
+        FROM tac_master
+        GROUP BY data_date
+        HAVING COUNT(*) > 1
+        """
+    ).fetchall()
+
+    deleted_count = 0
+
+    for row in duplicate_rows:
+        data_date = row["data_date"]
+
+        snapshots = conn.execute(
+            """
+            SELECT snapshot_id
+            FROM tac_master
+            WHERE data_date = ?
+            ORDER BY snapshot_id DESC
+            """,
+            (data_date,),
+        ).fetchall()
+
+        keep_snapshot_id = int(snapshots[0]["snapshot_id"])
+        delete_snapshot_ids = [
+            int(snapshot["snapshot_id"])
+            for snapshot in snapshots[1:]
+        ]
+
+        for snapshot_id in delete_snapshot_ids:
+            conn.execute(
+                "DELETE FROM tac_master WHERE snapshot_id = ?",
+                (snapshot_id,),
+            )
+            deleted_count += 1
+
+        log_warning(
+            "[DB] Duplicate data_date cleanup completed: "
+            f"date={data_date}, kept_snapshot_id={keep_snapshot_id}, "
+            f"deleted={len(delete_snapshot_ids)}"
+        )
+
+    return deleted_count
+
 def get_db_connection() -> sqlite3.Connection:
-    """Create and migrate the SQLite database."""
+    """
+    Create/migrate SQLite DB.
+
+    data_date는 논리적 Natural Key다.
+    즉 하나의 원천 관측일에는 하나의 TAC Master Snapshot만 존재해야 한다.
+    """
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
 
@@ -176,7 +224,7 @@ def get_db_connection() -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS tac_master (
             snapshot_id    INTEGER PRIMARY KEY AUTOINCREMENT,
             captured_at    TEXT NOT NULL,
-            data_date      TEXT NOT NULL UNIQUE,
+            data_date      TEXT NOT NULL,
             data_hash      TEXT NOT NULL,
             overall_index  REAL,
             weekly_change  REAL,
@@ -209,9 +257,6 @@ def get_db_connection() -> sqlite3.Connection:
             data_date    TEXT
         );
 
-        CREATE INDEX IF NOT EXISTS idx_tac_master_data_date
-            ON tac_master(data_date);
-
         CREATE INDEX IF NOT EXISTS idx_tac_detail_snapshot_id
             ON tac_detail(snapshot_id);
 
@@ -220,7 +265,31 @@ def get_db_connection() -> sqlite3.Connection:
         """
     )
 
-    conn.commit()
+    # 기존 DB 중복 데이터 정리 후 날짜별 유일성 강제
+    with conn:
+        cleanup_duplicate_data_dates(conn)
+
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_tac_master_data_date
+            ON tac_master(data_date)
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_tac_master_data_date
+            ON tac_master(data_date)
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_tac_master_data_hash
+            ON tac_master(data_hash)
+            """
+        )
+
     return conn
 
 def save_crawl_audit(
@@ -233,6 +302,7 @@ def save_crawl_audit(
     data_date: Optional[str] = None,
 ) -> None:
     conn = get_db_connection()
+
     try:
         conn.execute(
             """
@@ -263,14 +333,19 @@ def save_crawl_audit(
 
 def get_total_snapshot_count() -> int:
     conn = get_db_connection()
+
     try:
-        row = conn.execute("SELECT COUNT(*) AS cnt FROM tac_master").fetchone()
+        row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM tac_master"
+        ).fetchone()
+
         return int(row["cnt"]) if row else 0
     finally:
         conn.close()
 
 def get_last_sync_meta() -> Dict[str, Any]:
     conn = get_db_connection()
+
     try:
         row = conn.execute(
             """
@@ -288,10 +363,7 @@ def get_last_sync_meta() -> Dict[str, Any]:
             """
         ).fetchone()
 
-        if row is None:
-            return {}
-
-        return dict(row)
+        return dict(row) if row else {}
     finally:
         conn.close()
 
@@ -309,14 +381,19 @@ def fetch_infogram_html() -> str:
     response.raise_for_status()
 
     log_info(
-        f"[FETCH] Infogram response received: "
+        "[FETCH] Infogram response received: "
         f"HTTP {response.status_code}, size={len(response.text):,} bytes"
     )
 
     return response.text
 
-def extract_balanced_json_object(source_text: str, start_position: int) -> Dict[str, Any]:
+def extract_balanced_json_object(
+    source_text: str,
+    start_position: int,
+) -> Dict[str, Any]:
+    """Extract a balanced JSON object beginning after infographicData assignment."""
     object_start = source_text.find("{", start_position)
+
     if object_start < 0:
         raise RuntimeError("infographicData JSON object start was not found.")
 
@@ -344,11 +421,13 @@ def extract_balanced_json_object(source_text: str, start_position: int) -> Dict[
 
         if char == "{":
             depth += 1
+
         elif char == "}":
             depth -= 1
 
             if depth == 0:
-                json_text = source_text[object_start : index + 1]
+                json_text = source_text[object_start:index + 1]
+
                 try:
                     return json.loads(json_text)
                 except json.JSONDecodeError as exc:
@@ -368,6 +447,7 @@ def extract_infographic_data(embed_html: str) -> Dict[str, Any]:
 
     for pattern in patterns:
         match = re.search(pattern, embed_html)
+
         if match:
             data = extract_balanced_json_object(embed_html, match.end())
             log_info("[PARSE] infographicData extraction completed.")
@@ -383,47 +463,52 @@ def get_cell_value(cell: Any) -> Any:
         for key in ("value", "formattedValue", "label", "text"):
             if key in cell:
                 return cell[key]
+
         return ""
 
     return cell
 
 def normalize_sheet(sheet: Any) -> List[List[Any]]:
-    normalized_rows: List[List[Any]] = []
-
     if not isinstance(sheet, list):
-        return normalized_rows
+        return []
+
+    rows: List[List[Any]] = []
 
     for row in sheet:
         if not isinstance(row, list):
             continue
 
-        normalized_rows.append([get_cell_value(cell) for cell in row])
+        rows.append([get_cell_value(cell) for cell in row])
 
-    return normalized_rows
+    return rows
 
 def get_chart_sheets(entity: Dict[str, Any]) -> List[List[List[Any]]]:
     props = entity.get("props", {})
     chart_data = props.get("chartData", {})
 
-    raw_data = chart_data.get("data", [])
-
     sheets: List[List[List[Any]]] = []
+
+    raw_data = chart_data.get("data", [])
 
     if isinstance(raw_data, list):
         for candidate in raw_data:
             normalized = normalize_sheet(candidate)
+
             if normalized:
                 sheets.append(normalized)
 
     if not sheets and isinstance(chart_data.get("sheets"), list):
         for candidate in chart_data["sheets"]:
             normalized = normalize_sheet(candidate)
+
             if normalized:
                 sheets.append(normalized)
 
     return sheets
 
-def iter_chart_entities(data: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
+def iter_chart_entities(
+    data: Dict[str, Any],
+) -> List[Tuple[str, Dict[str, Any]]]:
     entities = (
         data.get("elements", {})
         .get("content", {})
@@ -437,10 +522,10 @@ def iter_chart_entities(data: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]
     charts: List[Tuple[str, Dict[str, Any]]] = []
 
     for entity_id, entity in entities.items():
-        if not isinstance(entity, dict):
-            continue
-
-        if str(entity.get("type", "")).upper() == "CHART":
+        if (
+            isinstance(entity, dict)
+            and str(entity.get("type", "")).upper() == "CHART"
+        ):
             charts.append((str(entity_id), entity))
 
     return charts
@@ -449,11 +534,15 @@ def score_chart_sheet(rows: List[List[Any]]) -> int:
     if len(rows) < 2:
         return -10000
 
-    header_text = " ".join(normalize_text(v).lower() for v in rows[0])
+    header_text = " ".join(
+        normalize_text(value).lower()
+        for value in rows[0]
+    )
+
     whole_text = " ".join(
-        normalize_text(v).lower()
+        normalize_text(value).lower()
         for row in rows[:10]
-        for v in row
+        for value in row
     )
 
     score = 0
@@ -472,6 +561,7 @@ def score_chart_sheet(rows: List[List[Any]]) -> int:
 
     if "baltic" in whole_text:
         score += 10
+
     if "airfreight" in whole_text or "air freight" in whole_text:
         score += 10
 
@@ -481,6 +571,7 @@ def extract_best_chart_rows(data: Dict[str, Any]) -> List[List[Any]]:
     log_info("[PARSE] Searching BAI route-level chart data...")
 
     chart_entities = iter_chart_entities(data)
+
     if not chart_entities:
         raise RuntimeError("No CHART entity was found in infographicData.")
 
@@ -502,15 +593,15 @@ def extract_best_chart_rows(data: Dict[str, Any]) -> List[List[Any]]:
 
     if best_score < 20:
         preview = []
+
         for score, entity_id, sheet_index, rows in candidates[:5]:
-            first_row = rows[0] if rows else []
             preview.append(
                 f"entity={entity_id}, sheet={sheet_index}, "
-                f"score={score}, header={first_row}"
+                f"score={score}, header={rows[0] if rows else []}"
             )
 
         raise RuntimeError(
-            "Unable to identify the Baltic route-level chart. "
+            "Unable to identify Baltic route-level chart. "
             f"Candidate preview: {' | '.join(preview)}"
         )
 
@@ -543,13 +634,14 @@ def normalize_route_name(route_name: str) -> str:
 def split_route(route_name: str) -> Tuple[str, str]:
     normalized = normalize_route_name(route_name)
 
-    if "-" in normalized:
-        origin, destination = normalized.split("-", 1)
-        return origin.strip(), destination.strip()
+    if "-" not in normalized:
+        return normalized, ""
 
-    return normalized, ""
+    origin, destination = normalized.split("-", 1)
+    return origin.strip(), destination.strip()
 
 def parse_source_date(label: str) -> Optional[str]:
+    """Convert Infogram date labels into ISO-8601 date strings."""
     raw = normalize_text(label)
 
     date_formats = [
@@ -576,10 +668,12 @@ def parse_source_date(label: str) -> Optional[str]:
             continue
 
     matched = re.search(r"(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})", raw)
+
     if matched:
         return parse_source_date(matched.group(1))
 
     matched = re.search(r"(\d{1,2}-[A-Za-z]{3}-\d{4})", raw)
+
     if matched:
         try:
             parsed = datetime.strptime(matched.group(1), "%d-%b-%Y")
@@ -590,6 +684,7 @@ def parse_source_date(label: str) -> Optional[str]:
     return None
 
 def build_dataset(rows: List[List[Any]]) -> Dict[str, Any]:
+    """Convert Infogram chart table into labels, dates and route series."""
     if not rows or len(rows) < 2:
         raise RuntimeError("The selected TAC chart dataset is empty.")
 
@@ -601,33 +696,32 @@ def build_dataset(rows: List[List[Any]]) -> Dict[str, Any]:
 
     labels: List[str] = []
     source_dates: List[Optional[str]] = []
+    valid_body_rows: List[List[Any]] = []
 
     for row in body:
         if not row:
             continue
 
         label = normalize_text(row[0])
+
         if not label:
             continue
 
         labels.append(label)
         source_dates.append(parse_source_date(label))
+        valid_body_rows.append(row)
 
     if not labels:
-        raise RuntimeError("No date labels were found in the TAC chart dataset.")
+        raise RuntimeError("No date labels were found in TAC chart dataset.")
 
     series: List[Dict[str, Any]] = []
 
     for column_index in range(1, len(header)):
         route_name = normalize_route_name(str(header[column_index]))
         values: List[Optional[float]] = []
-
         valid_value_count = 0
 
-        for row in body:
-            if not row or not normalize_text(row[0]):
-                continue
-
+        for row in valid_body_rows:
             raw_value = row[column_index] if column_index < len(row) else None
             numeric_value = safe_float(raw_value)
 
@@ -652,7 +746,7 @@ def build_dataset(rows: List[List[Any]]) -> Dict[str, Any]:
     log_info(
         "[PARSE] Dataset created: "
         f"labels={len(labels)}, routes={len(series)}, "
-        f"route_names={[series_item['name'] for series_item in series]}"
+        f"route_names={[item['name'] for item in series]}"
     )
 
     return {
@@ -665,121 +759,270 @@ def get_previous_valid_value(
     values: List[Optional[float]],
     from_index: int,
 ) -> Optional[float]:
+    """Find the preceding non-null route value."""
     for index in range(from_index - 1, -1, -1):
         if index < len(values) and values[index] is not None:
             return values[index]
+
     return None
 
-def make_snapshot_hash(data_date: str, details: List[Dict[str, Any]]) -> str:
+def make_snapshot_hash(
+    data_date: str,
+    details: List[Dict[str, Any]],
+) -> str:
+    """Create a deterministic hash for source revision detection."""
     normalized_payload = {
         "data_date": data_date,
-        "details": sorted(details, key=lambda row: row["route_code"]),
+        "details": sorted(
+            details,
+            key=lambda row: row["route_code"],
+        ),
     }
+
     raw = json.dumps(
         normalized_payload,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
     )
+
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
-def build_all_snapshot_bundles(dataset: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """모든 과거 시계열 포인트를 순회하며 날짜별 스냅샷 번들을 구축합니다."""
+def build_all_snapshot_bundles(
+    dataset: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """
+    원천 차트의 모든 기간을 날짜별 Snapshot Bundle로 변환한다.
+
+    예:
+    - 121개 날짜
+    - 날짜별 tac_master 1건
+    - 각 날짜의 3개 노선은 tac_detail에 적재
+    """
     labels = dataset["labels"]
     source_dates = dataset["source_dates"]
     series = dataset["series"]
 
     bundles: List[Dict[str, Any]] = []
+    seen_dates = set()
 
-    for idx, raw_label in enumerate(labels):
-        parsed_date = source_dates[idx] or raw_label
+    for index, source_label in enumerate(labels):
+        data_date = source_dates[index]
 
-        detail_rows: List[Dict[str, Any]] = []
-        valid_values: List[float] = []
-        change_values: List[float] = []
+        if not data_date:
+            log_warning(
+                "[PARSE] Skipping row due to unparseable date: "
+                f"label={source_label}"
+            )
+            continue
+
+        if data_date in seen_dates:
+            log_warning(
+                "[PARSE] Duplicate source date skipped: "
+                f"date={data_date}, label={source_label}"
+            )
+            continue
+
+        seen_dates.add(data_date)
+
+        details: List[Dict[str, Any]] = []
+        route_values: List[float] = []
+        route_changes: List[float] = []
 
         for item in series:
             route_name = item["name"]
             values = item["values"]
 
-            val = values[idx] if idx < len(values) else None
-            if val is None:
+            current_value = (
+                values[index]
+                if index < len(values)
+                else None
+            )
+
+            if current_value is None:
                 continue
 
-            prev_val = get_previous_valid_value(values, idx)
-            weekly_change: Optional[float] = None
-            if prev_val not in (None, 0):
-                weekly_change = ((val - prev_val) / prev_val) * 100
-                change_values.append(weekly_change)
+            previous_value = get_previous_valid_value(values, index)
+
+            periodic_change: Optional[float] = None
+
+            if previous_value not in (None, 0):
+                periodic_change = (
+                    (current_value - previous_value)
+                    / previous_value
+                    * 100
+                )
+                route_changes.append(periodic_change)
 
             origin, destination = split_route(route_name)
-            detail_rows.append({
-                "route_code": route_name,
-                "origin": origin,
-                "destination": destination,
-                "index_value": val,
-                "weekly_change": weekly_change,
-                "monthly_change": None,
-                "ytd_change": None,
-            })
-            valid_values.append(val)
 
-        if not detail_rows:
+            details.append(
+                {
+                    "route_code": route_name,
+                    "origin": origin,
+                    "destination": destination,
+                    "index_value": current_value,
+                    "weekly_change": periodic_change,
+                    "monthly_change": None,
+                    "ytd_change": None,
+                }
+            )
+
+            route_values.append(current_value)
+
+        if not details:
             continue
 
-        overall_index = sum(valid_values) / len(valid_values)
-        average_change = sum(change_values) / len(change_values) if change_values else None
+        overall_index = sum(route_values) / len(route_values)
 
-        bundles.append({
-            "data_date": parsed_date,
-            "source_label": raw_label,
-            "overall_index": overall_index,
-            "weekly_change": average_change,
-            "details": detail_rows,
-        })
+        average_change = (
+            sum(route_changes) / len(route_changes)
+            if route_changes
+            else None
+        )
+
+        bundles.append(
+            {
+                "data_date": data_date,
+                "source_label": source_label,
+                "overall_index": overall_index,
+                "weekly_change": average_change,
+                "details": details,
+            }
+        )
+
+    bundles.sort(key=lambda row: row["data_date"])
+
+    log_info(
+        "[PARSE] Historical snapshot bundles created: "
+        f"{len(bundles)} periods"
+    )
 
     return bundles
 
 # =============================================================================
-# 7. Save snapshot (전체 시계열 누적 저장 지원)
+# 7. Historical snapshot persistence
 # =============================================================================
-def save_all_snapshots(bundles: List[Dict[str, Any]]) -> Tuple[int, int, Optional[int], Optional[Dict[str, Any]]]:
+def save_all_snapshots(
+    bundles: List[Dict[str, Any]],
+) -> Dict[str, Any]:
     """
-    모든 날짜별 스냅샷을 DB에 누적 저장합니다.
-    - 이미 존재하는 data_date는 해시 일치 여부 확인 후 스킵 또는 업데이트
-    - 신규 data_date는 신규 INSERT
-    """
-    conn = get_db_connection()
-    new_count = 0
-    updated_count = 0
-    latest_snapshot_id = None
-    latest_bundle = None
+    전체 시계열 데이터를 날짜 기준으로 누적 저장한다.
 
+    Decision logic:
+    1. DB에 data_date가 없으면 신규 INSERT
+    2. data_date가 있고 hash가 같으면 데이터 유지
+    3. data_date가 있고 hash가 다르면 원천 정정으로 간주하고 UPDATE
+    """
+    if not bundles:
+        raise RuntimeError("No TAC snapshot bundles were provided for DB sync.")
+
+    conn = get_db_connection()
     captured_at = get_now_string()
 
+    new_count = 0
+    updated_count = 0
+    unchanged_count = 0
+
+    latest_snapshot_id: Optional[int] = None
+    latest_bundle: Optional[Dict[str, Any]] = None
+
     try:
-        for bundle in bundles:
-            data_date = bundle["data_date"]
-            details = bundle["details"]
-            data_hash = make_snapshot_hash(data_date, details)
+        with conn:
+            for bundle in bundles:
+                data_date = bundle["data_date"]
+                details = bundle["details"]
 
-            existing = conn.execute(
-                "SELECT snapshot_id, data_hash FROM tac_master WHERE data_date = ?",
-                (data_date,),
-            ).fetchone()
+                data_hash = make_snapshot_hash(data_date, details)
 
-            if existing:
-                s_id = int(existing["snapshot_id"])
-                latest_snapshot_id = s_id
-                latest_bundle = bundle
+                existing = conn.execute(
+                    """
+                    SELECT snapshot_id, data_hash
+                    FROM tac_master
+                    WHERE data_date = ?
+                    LIMIT 1
+                    """,
+                    (data_date,),
+                ).fetchone()
 
-                if existing["data_hash"] != data_hash:
-                    # 데이터 내용이 달라진 경우 업데이트
-                    with conn:
+                # -----------------------------------------------------------------
+                # 1. 신규 날짜: INSERT
+                # -----------------------------------------------------------------
+                if existing is None:
+                    cursor = conn.execute(
+                        """
+                        INSERT INTO tac_master (
+                            captured_at,
+                            data_date,
+                            data_hash,
+                            overall_index,
+                            weekly_change,
+                            route_count
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            captured_at,
+                            data_date,
+                            data_hash,
+                            bundle["overall_index"],
+                            bundle["weekly_change"],
+                            len(details),
+                        ),
+                    )
+
+                    snapshot_id = int(cursor.lastrowid)
+
+                    conn.executemany(
+                        """
+                        INSERT INTO tac_detail (
+                            snapshot_id,
+                            route_code,
+                            origin,
+                            destination,
+                            index_value,
+                            weekly_change,
+                            monthly_change,
+                            ytd_change
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        [
+                            (
+                                snapshot_id,
+                                row["route_code"],
+                                row["origin"],
+                                row["destination"],
+                                row["index_value"],
+                                row["weekly_change"],
+                                row["monthly_change"],
+                                row["ytd_change"],
+                            )
+                            for row in details
+                        ],
+                    )
+
+                    new_count += 1
+
+                # -----------------------------------------------------------------
+                # 2. 기존 날짜: 동일 hash면 Skip, 다르면 Update
+                # -----------------------------------------------------------------
+                else:
+                    snapshot_id = int(existing["snapshot_id"])
+
+                    if existing["data_hash"] == data_hash:
+                        unchanged_count += 1
+
+                    else:
                         conn.execute(
                             """
                             UPDATE tac_master
-                            SET captured_at = ?, data_hash = ?, overall_index = ?, weekly_change = ?, route_count = ?
+                            SET
+                                captured_at = ?,
+                                data_hash = ?,
+                                overall_index = ?,
+                                weekly_change = ?,
+                                route_count = ?
                             WHERE snapshot_id = ?
                             """,
                             (
@@ -788,83 +1031,67 @@ def save_all_snapshots(bundles: List[Dict[str, Any]]) -> Tuple[int, int, Optiona
                                 bundle["overall_index"],
                                 bundle["weekly_change"],
                                 len(details),
-                                s_id,
+                                snapshot_id,
                             ),
                         )
-                        conn.execute("DELETE FROM tac_detail WHERE snapshot_id = ?", (s_id,))
+
+                        conn.execute(
+                            """
+                            DELETE FROM tac_detail
+                            WHERE snapshot_id = ?
+                            """,
+                            (snapshot_id,),
+                        )
+
                         conn.executemany(
                             """
                             INSERT INTO tac_detail (
-                                snapshot_id, route_code, origin, destination,
-                                index_value, weekly_change, monthly_change, ytd_change
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                snapshot_id,
+                                route_code,
+                                origin,
+                                destination,
+                                index_value,
+                                weekly_change,
+                                monthly_change,
+                                ytd_change
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                             [
                                 (
-                                    s_id,
-                                    r["route_code"],
-                                    r["origin"],
-                                    r["destination"],
-                                    r["index_value"],
-                                    r["weekly_change"],
-                                    r["monthly_change"],
-                                    r["ytd_change"],
+                                    snapshot_id,
+                                    row["route_code"],
+                                    row["origin"],
+                                    row["destination"],
+                                    row["index_value"],
+                                    row["weekly_change"],
+                                    row["monthly_change"],
+                                    row["ytd_change"],
                                 )
-                                for r in details
+                                for row in details
                             ],
                         )
-                    updated_count += 1
-                continue
 
-            # 신규 삽입
-            with conn:
-                cursor = conn.execute(
-                    """
-                    INSERT INTO tac_master (
-                        captured_at, data_date, data_hash, overall_index, weekly_change, route_count
-                    ) VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        captured_at,
-                        data_date,
-                        data_hash,
-                        bundle["overall_index"],
-                        bundle["weekly_change"],
-                        len(details),
-                    ),
-                )
-                s_id = int(cursor.lastrowid)
-                latest_snapshot_id = s_id
+                        updated_count += 1
+
+                latest_snapshot_id = snapshot_id
                 latest_bundle = bundle
 
-                conn.executemany(
-                    """
-                    INSERT INTO tac_detail (
-                        snapshot_id, route_code, origin, destination,
-                        index_value, weekly_change, monthly_change, ytd_change
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    [
-                        (
-                            s_id,
-                            r["route_code"],
-                            r["origin"],
-                            r["destination"],
-                            r["index_value"],
-                            r["weekly_change"],
-                            r["monthly_change"],
-                            r["ytd_change"],
-                        )
-                        for r in details
-                    ],
-                )
-            new_count += 1
-
         log_info(
-            f"[DB] Bulk sync completed: {new_count} new, {updated_count} updated, "
-            f"total snapshots processed={len(bundles)}"
+            "[DB] Historical TAC sync completed: "
+            f"new={new_count}, "
+            f"updated={updated_count}, "
+            f"unchanged={unchanged_count}, "
+            f"processed={len(bundles)}"
         )
-        return new_count, updated_count, latest_snapshot_id, latest_bundle
+
+        return {
+            "new_count": new_count,
+            "updated_count": updated_count,
+            "unchanged_count": unchanged_count,
+            "latest_snapshot_id": latest_snapshot_id,
+            "latest_bundle": latest_bundle,
+        }
 
     finally:
         conn.close()
@@ -874,6 +1101,7 @@ def save_all_snapshots(bundles: List[Dict[str, Any]]) -> Tuple[int, int, Optiona
 # =============================================================================
 def load_history() -> List[Dict[str, Any]]:
     conn = get_db_connection()
+
     try:
         rows = conn.execute(
             """
@@ -888,12 +1116,14 @@ def load_history() -> List[Dict[str, Any]]:
             ORDER BY data_date ASC, snapshot_id ASC
             """
         ).fetchall()
+
         return [dict(row) for row in rows]
     finally:
         conn.close()
 
 def load_latest_details() -> List[Dict[str, Any]]:
     conn = get_db_connection()
+
     try:
         rows = conn.execute(
             """
@@ -920,15 +1150,92 @@ def load_latest_details() -> List[Dict[str, Any]]:
             ORDER BY d.route_code ASC
             """
         ).fetchall()
+
         return [dict(row) for row in rows]
     finally:
         conn.close()
 
-def build_static_json() -> Dict[str, Any]:
-    history = load_history()
-    latest_detail = load_latest_details()
-    last_sync = get_last_sync_meta()
+def build_raw_dataset_from_db() -> Dict[str, Any]:
+    """
+    HTML 그래프에 전달할 데이터를 DB 전체 누적 이력에서 재구축한다.
 
+    크롤링 실패 시에도 기존 DB 이력을 기반으로 대시보드가 유지된다.
+    """
+    conn = get_db_connection()
+
+    try:
+        master_rows = conn.execute(
+            """
+            SELECT snapshot_id, data_date
+            FROM tac_master
+            ORDER BY data_date ASC, snapshot_id ASC
+            """
+        ).fetchall()
+
+        if not master_rows:
+            return {
+                "labels": [],
+                "series": [],
+            }
+
+        snapshot_ids = [
+            int(row["snapshot_id"])
+            for row in master_rows
+        ]
+
+        labels = [
+            row["data_date"]
+            for row in master_rows
+        ]
+
+        placeholders = ",".join("?" for _ in snapshot_ids)
+
+        detail_rows = conn.execute(
+            f"""
+            SELECT
+                snapshot_id,
+                route_code,
+                index_value
+            FROM tac_detail
+            WHERE snapshot_id IN ({placeholders})
+            ORDER BY route_code, snapshot_id
+            """,
+            snapshot_ids,
+        ).fetchall()
+
+        route_values: Dict[str, Dict[int, Optional[float]]] = {}
+
+        for row in detail_rows:
+            route_code = row["route_code"]
+            snapshot_id = int(row["snapshot_id"])
+
+            route_values.setdefault(route_code, {})
+            route_values[route_code][snapshot_id] = row["index_value"]
+
+        series = []
+
+        for route_code in sorted(route_values):
+            values = [
+                route_values[route_code].get(snapshot_id)
+                for snapshot_id in snapshot_ids
+            ]
+
+            series.append(
+                {
+                    "name": route_code,
+                    "values": values,
+                }
+            )
+
+        return {
+            "labels": labels,
+            "series": series,
+        }
+
+    finally:
+        conn.close()
+
+def build_static_json() -> Dict[str, Any]:
     payload = {
         "generated_at": get_now_string(),
         "source": {
@@ -940,18 +1247,20 @@ def build_static_json() -> Dict[str, Any]:
         },
         "definition": {
             "overall_index": (
-                "Dashboard-derived average of latest available route rates. "
-                "It is not an official TAC composite index."
+                "Dashboard-derived arithmetic average of available "
+                "route-level airfreight rates. "
+                "This is not an official TAC composite index."
             ),
             "weekly_change": (
-                "Dashboard-derived average percentage change versus the "
-                "preceding available source period across routes."
+                "Dashboard-derived average percentage change compared "
+                "with the preceding available source period."
             ),
             "unit": "USD/kg",
         },
-        "last_sync": last_sync,
-        "history": history,
-        "latest_detail": latest_detail,
+        "last_sync": get_last_sync_meta(),
+        "history": load_history(),
+        "latest_detail": load_latest_details(),
+        "raw_dataset": build_raw_dataset_from_db(),
     }
 
     atomic_write_text(
@@ -960,11 +1269,11 @@ def build_static_json() -> Dict[str, Any]:
             payload,
             ensure_ascii=False,
             indent=2,
-            default=json_default,
         ),
     )
 
     log_info(f"[STATIC] JSON generated: {JSON_PATH.name}")
+
     return payload
 
 # =============================================================================
@@ -983,20 +1292,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     :root {
       --bg-root: #0a0b0e;
       --bg-panel: #12141a;
-      --bg-panel-alt: #171a22;
-      --border-subtle: #1e222d;
-      --border-strong: #2a303f;
-      --text-main: #f0f3f6;
-      --text-muted: #737c8e;
-      --text-dim: #454d5d;
-
-      --bb-amber: #ff9900;
-      --bb-amber-dim: #b36b00;
-      --bb-cyan: #00e5ff;
-      --bb-green: #00e676;
-      --bb-red: #ff334b;
-      --bb-purple: #bb86fc;
-      --bb-yellow: #ffd600;
+      --bg-alt: #171a22;
+      --border: #252b38;
+      --text: #edf2f7;
+      --muted: #7d8798;
+      --amber: #ff9900;
+      --cyan: #00e5ff;
+      --green: #00e676;
+      --red: #ff334b;
+      --purple: #bb86fc;
     }
 
     * {
@@ -1006,358 +1310,287 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     body {
-      background-color: var(--bg-root);
-      color: var(--text-main);
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg-root);
+      color: var(--text);
+      font-family: Inter, Arial, sans-serif;
       font-size: 13px;
-      line-height: 1.5;
-      -webkit-font-smoothing: antialiased;
       padding-bottom: 40px;
     }
 
     .mono {
-      font-family: 'JetBrains Mono', Consolas, Menlo, monospace;
-      letter-spacing: -0.2px;
+      font-family: "JetBrains Mono", Consolas, monospace;
     }
 
-    .terminal-header {
-      background-color: var(--bg-panel);
-      border-bottom: 2px solid var(--bb-amber);
-      padding: 10px 20px;
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      padding: 11px 20px;
+      border-bottom: 2px solid var(--amber);
+      background: var(--bg-panel);
     }
 
-    .brand-section {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .terminal-cmd {
-      background: var(--bb-amber);
-      color: #000;
-      font-weight: 800;
-      font-size: 11px;
-      padding: 3px 6px;
-      border-radius: 2px;
-    }
-
-    .terminal-title {
+    .title {
       font-size: 15px;
       font-weight: 700;
-      color: #fff;
-      letter-spacing: 0.5px;
+      letter-spacing: .5px;
     }
 
-    .terminal-title span {
-      color: var(--bb-amber);
-      font-weight: 400;
-    }
-
-    .meta-ticker {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      font-size: 11px;
-      color: var(--text-muted);
-    }
-
-    .meta-ticker a {
-      color: var(--bb-cyan);
-      text-decoration: none;
-    }
-    .meta-ticker a:hover {
-      text-decoration: underline;
-    }
-
-    .status-dot {
+    .command {
       display: inline-block;
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--bb-green);
-      margin-right: 5px;
-      box-shadow: 0 0 8px var(--bb-green);
+      margin-right: 10px;
+      padding: 3px 6px;
+      color: #000;
+      background: var(--amber);
+      font-size: 11px;
+      font-weight: 800;
     }
-    .status-dot.warn {
-      background: var(--bb-amber);
-      box-shadow: 0 0 8px var(--bb-amber);
+
+    .meta {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .meta a {
+      color: var(--cyan);
+      text-decoration: none;
     }
 
     .container {
       max-width: 1400px;
-      margin: 18px auto 0;
+      margin: 18px auto;
       padding: 0 16px;
     }
 
-    .kpi-matrix {
+    .warning {
+      margin-bottom: 14px;
+      padding: 10px 12px;
+      border: 1px solid var(--amber);
+      color: var(--amber);
+      background: rgba(255, 153, 0, .08);
+      font-size: 11px;
+    }
+
+    .kpis {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 12px;
       margin-bottom: 16px;
     }
 
-    .kpi-box {
+    .kpi {
+      padding: 13px 14px;
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--amber);
       background: var(--bg-panel);
-      border: 1px solid var(--border-subtle);
-      border-left: 3px solid var(--bb-amber);
-      padding: 12px 14px;
-      border-radius: 2px;
-      position: relative;
     }
 
-    .kpi-box.cyan { border-left-color: var(--bb-cyan); }
-    .kpi-box.green { border-left-color: var(--bb-green); }
-    .kpi-box.purple { border-left-color: var(--bb-purple); }
+    .kpi.cyan { border-left-color: var(--cyan); }
+    .kpi.green { border-left-color: var(--green); }
+    .kpi.purple { border-left-color: var(--purple); }
 
-    .kpi-tag {
+    .kpi-label {
+      margin-bottom: 7px;
+      color: var(--muted);
       font-size: 10px;
-      text-transform: uppercase;
       font-weight: 700;
-      color: var(--text-muted);
-      margin-bottom: 6px;
-      display: flex;
-      justify-content: space-between;
     }
 
-    .kpi-val {
-      font-size: 24px;
+    .kpi-value {
+      font-size: 22px;
       font-weight: 700;
-      color: #ffffff;
-      line-height: 1.1;
     }
 
     .kpi-sub {
       margin-top: 6px;
-      font-size: 11px;
-      color: var(--text-muted);
+      color: var(--muted);
+      font-size: 10px;
     }
 
     .panel {
-      background: var(--bg-panel);
-      border: 1px solid var(--border-subtle);
-      border-radius: 2px;
       margin-bottom: 16px;
-      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--bg-panel);
     }
 
     .panel-head {
-      background: var(--bg-panel-alt);
-      border-bottom: 1px solid var(--border-subtle);
-      padding: 10px 14px;
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-alt);
     }
 
     .panel-head h2 {
+      color: var(--amber);
       font-size: 13px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--bb-amber);
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      letter-spacing: .4px;
     }
 
     .panel-desc {
-      font-size: 11px;
-      color: var(--text-muted);
+      color: var(--muted);
+      font-size: 10px;
     }
 
     .panel-body {
       padding: 14px;
     }
 
-    .filter-bar {
+    .buttons {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
       margin-bottom: 14px;
-      align-items: center;
     }
 
-    .filter-label {
-      font-size: 11px;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      margin-right: 4px;
-      font-weight: 600;
-    }
-
-    .term-btn {
+    .route-btn {
+      padding: 5px 9px;
+      border: 1px solid var(--border);
+      color: var(--muted);
       background: #0f1117;
-      border: 1px solid var(--border-strong);
-      color: var(--text-muted);
-      padding: 4px 10px;
-      font-size: 11px;
-      border-radius: 2px;
       cursor: pointer;
-      transition: all 0.15s ease;
-      font-family: 'JetBrains Mono', Consolas, monospace;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 11px;
     }
 
-    .term-btn:hover {
-      border-color: var(--bb-amber);
-      color: #fff;
+    .route-btn.active {
+      border-color: var(--amber);
+      color: var(--amber);
+      background: rgba(255, 153, 0, .12);
     }
 
-    .term-btn.active {
-      background: rgba(255, 153, 0, 0.15);
-      border-color: var(--bb-amber);
-      color: var(--bb-amber);
-      font-weight: 600;
+    .chart-wrap {
+      height: 420px;
     }
 
-    .chart-box {
-      height: 400px;
-      position: relative;
-    }
-
-    .data-table-wrap {
-      overflow-x: auto;
-    }
-
-    table.terminal-tbl {
+    table {
       width: 100%;
       border-collapse: collapse;
       font-size: 12px;
+    }
+
+    th {
+      padding: 9px 12px;
+      background: #0d0f15;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 10px;
       text-align: left;
     }
 
-    table.terminal-tbl th {
-      background: #0c0e13;
-      color: var(--text-muted);
-      font-weight: 600;
-      text-transform: uppercase;
-      font-size: 10.5px;
-      letter-spacing: 0.4px;
-      padding: 8px 12px;
-      border-bottom: 1px solid var(--border-strong);
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #1d222c;
     }
 
-    table.terminal-tbl td {
-      padding: 9px 12px;
-      border-bottom: 1px solid var(--border-subtle);
-      color: #e2e8f0;
+    tr:hover {
+      background: rgba(255, 153, 0, .04);
     }
 
-    table.terminal-tbl tbody tr:hover {
-      background: rgba(255, 153, 0, 0.04);
+    .right {
+      text-align: right;
     }
 
-    .text-right { text-align: right; }
-
-    .badge-route {
-      display: inline-block;
+    .route {
       padding: 2px 6px;
-      background: #1e222d;
-      border: 1px solid #2d3343;
-      border-radius: 2px;
+      border: 1px solid #303849;
+      color: var(--cyan);
+      background: #1c212b;
       font-size: 11px;
-      font-weight: 600;
-      color: var(--bb-cyan);
     }
 
-    .delta-up { color: var(--bb-green); font-weight: 600; }
-    .delta-down { color: var(--bb-red); font-weight: 600; }
-    .delta-flat { color: var(--text-dim); }
+    .up { color: var(--green); font-weight: 700; }
+    .down { color: var(--red); font-weight: 700; }
+    .flat { color: var(--muted); }
 
-    .terminal-footer {
-      margin-top: 18px;
+    .note {
       padding: 12px;
-      background: rgba(23, 26, 34, 0.6);
-      border: 1px dashed var(--border-strong);
-      border-radius: 2px;
+      border: 1px dashed var(--border);
+      color: var(--muted);
+      background: rgba(23, 26, 34, .5);
       font-size: 11px;
-      color: var(--text-muted);
-      line-height: 1.6;
+      line-height: 1.7;
     }
 
-    .terminal-footer strong { color: var(--bb-amber); }
+    .note strong {
+      color: var(--amber);
+    }
 
     @media (max-width: 900px) {
-      .kpi-matrix { grid-template-columns: repeat(2, 1fr); }
-      .meta-ticker { display: none; }
-      .chart-box { height: 320px; }
+      .kpis { grid-template-columns: repeat(2, 1fr); }
+      .meta { display: none; }
     }
 
     @media (max-width: 560px) {
-      .kpi-matrix { grid-template-columns: 1fr; }
-      .terminal-header { padding: 8px 12px; }
+      .kpis { grid-template-columns: 1fr; }
+      .header { padding: 10px 12px; }
+      .chart-wrap { height: 320px; }
     }
   </style>
 </head>
 <body>
-  <header class="terminal-header">
-    <div class="brand-section">
-      <div class="terminal-cmd mono">AIR &lt;GO&gt;</div>
-      <div class="terminal-title">TAC INDEX <span>// BALTIC AIRFREIGHT</span></div>
+  <header class="header">
+    <div class="title">
+      <span class="command mono">AIR &lt;GO&gt;</span>
+      TAC INDEX <span style="color:#ff9900;font-weight:400;">// BALTIC AIRFREIGHT</span>
     </div>
-    <div class="meta-ticker mono">
-      <span id="sync-dot-container"><span class="status-dot"></span>LIVE</span>
-      <span>SRC: <a href="__PARENT_URL__" target="_blank" rel="noopener">AIR CARGO NEWS</a></span>
-      <span>UPDATED: <span id="build-timestamp" style="color: #fff;">__GENERATED_AT__</span></span>
-      <span>UNIT: <strong style="color: var(--bb-amber);">USD / kg</strong></span>
+    <div class="meta mono">
+      SRC:
+      <a href="__PARENT_URL__" target="_blank" rel="noopener">AIR CARGO NEWS</a>
+      &nbsp; | &nbsp;
+      UPDATED: __GENERATED_AT__
+      &nbsp; | &nbsp;
+      UNIT: <strong style="color:#ff9900;">USD/kg</strong>
     </div>
   </header>
 
   <main class="container">
-    <div id="sync-banner"></div>
-    <section class="kpi-matrix mono" id="kpi-area"></section>
+    <div id="warning-area"></div>
+    <section class="kpis mono" id="kpi-area"></section>
 
     <section class="panel">
       <div class="panel-head">
-        <h2><span>■</span> ROUTE RATE TIME-SERIES MONITOR</h2>
-        <span class="panel-desc mono">USD / KG INDEXED BENCHMARK</span>
+        <h2>■ ROUTE RATE TIME-SERIES MONITOR</h2>
+        <span class="panel-desc mono">USD / KG</span>
       </div>
       <div class="panel-body">
-        <div class="filter-bar">
-          <span class="filter-label mono">SELECT ROUTE:</span>
-          <div id="route-buttons" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
-        </div>
-        <div class="chart-box">
-          <canvas id="rate-chart"></canvas>
+        <div class="buttons" id="route-buttons"></div>
+        <div class="chart-wrap">
+          <canvas id="chart"></canvas>
         </div>
       </div>
     </section>
 
     <section class="panel">
       <div class="panel-head">
-        <h2><span>■</span> SPOT RATE & PERIODIC DELTA BREAKDOWN</h2>
-        <span class="panel-desc mono">LATEST OBSERVED BENCHMARKS</span>
+        <h2>■ LATEST SPOT RATE & PERIODIC DELTA</h2>
+        <span class="panel-desc mono">LATEST OBSERVATION</span>
       </div>
-      <div class="panel-body" style="padding: 0;">
-        <div class="data-table-wrap">
-          <table class="terminal-tbl mono">
-            <thead>
-              <tr>
-                <th>ROUTE CODE</th>
-                <th>ORIGIN</th>
-                <th>DESTINATION</th>
-                <th class="text-right">LATEST SPOT (USD/KG)</th>
-                <th class="text-right">PERIOD CHANGE (%)</th>
-                <th class="text-right">OBSERVATION DATE</th>
-              </tr>
-            </thead>
-            <tbody id="detail-table-body"></tbody>
-          </table>
-        </div>
+      <div style="overflow-x:auto;">
+        <table class="mono">
+          <thead>
+            <tr>
+              <th>ROUTE</th>
+              <th>ORIGIN</th>
+              <th>DESTINATION</th>
+              <th class="right">LATEST USD/KG</th>
+              <th class="right">CHANGE VS PREV</th>
+              <th class="right">DATE</th>
+            </tr>
+          </thead>
+          <tbody id="detail-body"></tbody>
+        </table>
       </div>
     </section>
 
-    <footer class="terminal-footer mono">
+    <footer class="note mono">
       <strong>[TERMINAL NOTE]</strong><br>
-      1. <strong>Overall Index</strong>는 원천 차트에서 식별된 주요 개별 노선 스팟 운임의 단순 산술 평균치이며 공식 TAC Composite Benchmark를 대변하지 않습니다.<br>
-      2. <strong>Change vs. Prev</strong>는 결측치를 제외한 직전 가용 관측치와의 노선별 변동률 평균을 산출한 지표입니다.<br>
-      3. 데이터 파이프라인은 Air Cargo News 공식 Infogram 임베드 소스로부터 실시간 동기화됩니다.
+      Overall Index는 개별 노선 운임의 단순 산술평균이며 공식 TAC Composite Benchmark가 아닙니다.<br>
+      Change vs Prev는 각 노선의 직전 가용 관측값 대비 변동률입니다.<br>
+      데이터는 Air Cargo News의 Baltic Exchange Airfreight Rate Index Infogram 임베드에서 수집됩니다.
     </footer>
   </main>
 
@@ -1366,16 +1599,16 @@ __JSON_PAYLOAD__
   </script>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
   <script>
     (function () {
       "use strict";
 
-      var dataElement = document.getElementById("tac-data");
-      var DATA = JSON.parse(dataElement.textContent);
-      var chart = null;
+      var DATA = JSON.parse(document.getElementById("tac-data").textContent);
       var selectedRoutes = {};
+      var chart = null;
 
-      var terminalColors = [
+      var colors = [
         "#00e5ff",
         "#ff9900",
         "#00e676",
@@ -1384,119 +1617,118 @@ __JSON_PAYLOAD__
         "#ffd600"
       ];
 
-      function formatNumber(value, digits) {
-        if (value === null || value === undefined || Number.isNaN(Number(value))) {
+      function number(value, digits) {
+        if (value === null || value === undefined || isNaN(Number(value))) {
           return "--";
         }
+
         return Number(value).toLocaleString("en-US", {
           minimumFractionDigits: digits,
           maximumFractionDigits: digits
         });
       }
 
-      function formatPercent(value) {
-        if (value === null || value === undefined || Number.isNaN(Number(value))) {
+      function percent(value) {
+        if (value === null || value === undefined || isNaN(Number(value))) {
           return "--";
         }
+
         var num = Number(value);
         return (num >= 0 ? "+" : "") + num.toFixed(2) + "%";
       }
 
-      function getDeltaClass(value) {
-        if (value === null || value === undefined) return "delta-flat";
-        var num = Number(value);
-        if (num > 0) return "delta-up";
-        if (num < 0) return "delta-down";
-        return "delta-flat";
+      function deltaClass(value) {
+        if (value === null || value === undefined) return "flat";
+        if (Number(value) > 0) return "up";
+        if (Number(value) < 0) return "down";
+        return "flat";
       }
 
-      function getDeltaArrow(value) {
+      function arrow(value) {
         if (value === null || value === undefined) return "";
-        var num = Number(value);
-        if (num > 0) return "▲ ";
-        if (num < 0) return "▼ ";
+        if (Number(value) > 0) return "▲ ";
+        if (Number(value) < 0) return "▼ ";
         return "";
       }
 
-      function renderStatus() {
-        var lastSync = DATA.last_sync || {};
-        var target = document.getElementById("sync-banner");
-        var dot = document.querySelector(".status-dot");
+      function renderWarning() {
+        var sync = DATA.last_sync || {};
 
-        if (!lastSync.status || lastSync.status !== "SUCCESS") {
-          if (dot) dot.className = "status-dot warn";
-          if (target) {
-            target.innerHTML =
-              '<div style="background: rgba(255, 153, 0, 0.1); border: 1px solid var(--bb-amber); color: var(--bb-amber); padding: 8px 12px; margin-bottom: 14px; font-size: 11px;" class="mono">' +
-              '<strong>[WARN]</strong> Pipeline sync status: ' + (lastSync.status || "NO_AUDIT_LOG") +
-              ' | Message: ' + (lastSync.message || "Historical cache in use.") +
-              '</div>';
-          }
-        }
+        if (sync.status === "SUCCESS") return;
+
+        document.getElementById("warning-area").innerHTML =
+          '<div class="warning mono">' +
+          '<strong>[WARN]</strong> Pipeline status: ' +
+          (sync.status || "NO_AUDIT_LOG") +
+          ' | ' +
+          (sync.message || "Historical database cache is displayed.") +
+          '</div>';
       }
 
-      function renderKpis() {
+      function renderKpi() {
         var history = DATA.history || [];
         var latest = history.length ? history[history.length - 1] : null;
-        var latestDetails = DATA.latest_detail || [];
+        var detail = DATA.latest_detail || [];
 
         var cards = [
           {
-            tag: "LATEST DATE",
-            val: latest ? latest.data_date : "--",
-            sub: "Latest Chart Period",
+            label: "LATEST DATE",
+            value: latest ? latest.data_date : "--",
+            sub: "Latest source period",
             cls: "cyan"
           },
           {
-            tag: "OVERALL INDEX",
-            val: (latest ? "$" + formatNumber(latest.overall_index, 2) : "--") + " <span style='font-size:12px; color:var(--text-muted);'>USD/kg</span>",
-            sub: "Arithmetic Route Avg",
-            cls: "amber"
+            label: "ROUTE AVERAGE",
+            value: latest
+              ? "$" + number(latest.overall_index, 2) + " <small>USD/kg</small>"
+              : "--",
+            sub: "Arithmetic route average",
+            cls: ""
           },
           {
-            tag: "CHANGE VS PREV",
-            val: (latest && latest.weekly_change !== null)
-                 ? "<span class='" + getDeltaClass(latest.weekly_change) + "'>" + getDeltaArrow(latest.weekly_change) + formatPercent(latest.weekly_change) + "</span>"
-                 : "--",
-            sub: "Period-over-Period Delta",
+            label: "CHANGE VS PREV",
+            value: latest && latest.weekly_change !== null
+              ? '<span class="' + deltaClass(latest.weekly_change) + '">' +
+                arrow(latest.weekly_change) +
+                percent(latest.weekly_change) +
+                "</span>"
+              : "--",
+            sub: "Average route movement",
             cls: latest && latest.weekly_change >= 0 ? "green" : "purple"
           },
           {
-            tag: "ACTIVE ROUTES",
-            val: (latest ? latest.route_count : latestDetails.length) + " <span style='font-size:12px; color:var(--text-muted);'>PAIRS</span>",
-            sub: "Tracked O-D Air Corridors",
+            label: "ACTIVE ROUTES",
+            value: (latest ? latest.route_count : detail.length) + " <small>PAIRS</small>",
+            sub: "Tracked air corridors",
             cls: "cyan"
           }
         ];
 
-        document.getElementById("kpi-area").innerHTML = cards.map(function (c) {
+        document.getElementById("kpi-area").innerHTML = cards.map(function (card) {
           return (
-            '<div class="kpi-box ' + c.cls + '">' +
-              '<div class="kpi-tag"><span>' + c.tag + '</span></div>' +
-              '<div class="kpi-val">' + c.val + '</div>' +
-              '<div class="kpi-sub mono">' + c.sub + '</div>' +
+            '<div class="kpi ' + card.cls + '">' +
+              '<div class="kpi-label">' + card.label + '</div>' +
+              '<div class="kpi-value">' + card.value + '</div>' +
+              '<div class="kpi-sub">' + card.sub + '</div>' +
             '</div>'
           );
         }).join("");
       }
 
-      function getRouteSeries() {
-        var routeMap = {};
-        (DATA.raw_dataset && DATA.raw_dataset.series || []).forEach(function (series) {
-          routeMap[series.name] = series;
+      function getSeriesMap() {
+        var map = {};
+
+        ((DATA.raw_dataset || {}).series || []).forEach(function (item) {
+          map[item.name] = item;
         });
-        return routeMap;
+
+        return map;
       }
 
-      function renderRouteButtons() {
-        var routeMap = getRouteSeries();
+      function renderButtons() {
+        var routeMap = getSeriesMap();
         var routes = Object.keys(routeMap);
         var target = document.getElementById("route-buttons");
-
-        if (!routes.length) {
-          target.innerHTML = '<span class="mono" style="color:var(--text-dim);">No series available</span>';
-          return;
-        }
 
         routes.forEach(function (route) {
           if (selectedRoutes[route] === undefined) {
@@ -1505,62 +1737,60 @@ __JSON_PAYLOAD__
         });
 
         target.innerHTML = routes.map(function (route) {
-          var active = selectedRoutes[route] ? " active" : "";
           return (
-            '<button class="term-btn' + active + '" data-route="' + route + '">' +
+            '<button class="route-btn ' +
+            (selectedRoutes[route] ? "active" : "") +
+            '" data-route="' + route + '">' +
             route +
             '</button>'
           );
         }).join("");
 
-        target.querySelectorAll(".term-btn").forEach(function (button) {
+        target.querySelectorAll(".route-btn").forEach(function (button) {
           button.addEventListener("click", function () {
             var route = button.getAttribute("data-route");
             selectedRoutes[route] = !selectedRoutes[route];
 
-            var activeCount = Object.keys(selectedRoutes).filter(function (k) {
-              return selectedRoutes[k];
+            var activeCount = Object.keys(selectedRoutes).filter(function (key) {
+              return selectedRoutes[key];
             }).length;
 
             if (activeCount === 0) {
               selectedRoutes[route] = true;
             }
 
-            renderRouteButtons();
+            renderButtons();
             renderChart();
           });
         });
       }
 
       function renderChart() {
-        var routeMap = getRouteSeries();
-        var labels = (DATA.raw_dataset && DATA.raw_dataset.labels) || [];
-        var routes = Object.keys(routeMap).filter(function (route) {
+        if (typeof Chart === "undefined") return;
+
+        var routeMap = getSeriesMap();
+        var labels = ((DATA.raw_dataset || {}).labels || []);
+
+        var activeRoutes = Object.keys(routeMap).filter(function (route) {
           return selectedRoutes[route];
         });
 
-        if (typeof Chart === "undefined") return;
-
-        var datasets = routes.map(function (route, index) {
-          var series = routeMap[route];
-          var col = terminalColors[index % terminalColors.length];
+        var datasets = activeRoutes.map(function (route, index) {
+          var color = colors[index % colors.length];
 
           return {
             label: route,
-            data: series.values,
-            borderColor: col,
-            backgroundColor: col + "15",
+            data: routeMap[route].values,
+            borderColor: color,
+            backgroundColor: color + "20",
             borderWidth: 2,
             tension: 0.2,
-            pointRadius: 2,
+            spanGaps: true,
+            pointRadius: 1.8,
             pointHoverRadius: 5,
-            pointBackgroundColor: col,
-            pointBorderColor: "#0a0b0e",
-            spanGaps: true
+            pointBackgroundColor: color
           };
         });
-
-        var canvas = document.getElementById("rate-chart");
 
         if (chart) {
           chart.data.labels = labels;
@@ -1569,117 +1799,112 @@ __JSON_PAYLOAD__
           return;
         }
 
-        chart = new Chart(canvas.getContext("2d"), {
-          type: "line",
-          data: {
-            labels: labels,
-            datasets: datasets
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: {
-              mode: "index",
-              intersect: false
+        chart = new Chart(
+          document.getElementById("chart").getContext("2d"),
+          {
+            type: "line",
+            data: {
+              labels: labels,
+              datasets: datasets
             },
-            plugins: {
-              legend: {
-                position: "top",
-                align: "end",
-                labels: {
-                  boxWidth: 10,
-                  boxHeight: 10,
-                  color: "#a0aec0",
-                  font: {
-                    family: "'JetBrains Mono', Consolas, monospace",
-                    size: 11
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              interaction: {
+                mode: "index",
+                intersect: false
+              },
+              plugins: {
+                legend: {
+                  position: "top",
+                  align: "end",
+                  labels: {
+                    color: "#a0aec0",
+                    boxWidth: 10,
+                    font: {
+                      family: "JetBrains Mono",
+                      size: 11
+                    }
+                  }
+                },
+                tooltip: {
+                  backgroundColor: "#171a22",
+                  titleColor: "#ff9900",
+                  bodyColor: "#f0f3f6",
+                  borderColor: "#2a303f",
+                  borderWidth: 1,
+                  callbacks: {
+                    label: function (context) {
+                      return " " + context.dataset.label + ": $" +
+                        number(context.parsed.y, 2) + " / kg";
+                    }
                   }
                 }
               },
-              tooltip: {
-                backgroundColor: "#171a22",
-                titleColor: "#ff9900",
-                bodyColor: "#f0f3f6",
-                borderColor: "#2a303f",
-                borderWidth: 1,
-                padding: 10,
-                titleFont: { family: "'JetBrains Mono', monospace", size: 12 },
-                bodyFont: { family: "'JetBrains Mono', monospace", size: 11 },
-                callbacks: {
-                  label: function (context) {
-                    var val = context.parsed.y;
-                    return " " + context.dataset.label + ": " +
-                      (val === null ? "--" : "$" + Number(val).toFixed(2) + " / kg");
-                  }
-                }
-              }
-            },
-            scales: {
-              x: {
-                ticks: {
-                  color: "#64748b",
-                  font: { family: "'JetBrains Mono', monospace", size: 10.5 },
-                  maxTicksLimit: 14
-                },
-                grid: {
-                  color: "#1e222d",
-                  drawBorder: false
-                }
-              },
-              y: {
-                title: {
-                  display: true,
-                  text: "USD / KG",
-                  color: "#737c8e",
-                  font: { family: "'JetBrains Mono', monospace", size: 10 }
-                },
-                ticks: {
-                  color: "#64748b",
-                  font: { family: "'JetBrains Mono', monospace", size: 10.5 },
-                  callback: function (val) {
-                    return "$" + Number(val).toFixed(2);
+              scales: {
+                x: {
+                  ticks: {
+                    color: "#738096",
+                    maxTicksLimit: 14,
+                    font: { family: "JetBrains Mono", size: 10 }
+                  },
+                  grid: {
+                    color: "#202632"
                   }
                 },
-                grid: {
-                  color: "#1e222d",
-                  drawBorder: false
+                y: {
+                  title: {
+                    display: true,
+                    text: "USD / KG",
+                    color: "#7d8798",
+                    font: { family: "JetBrains Mono", size: 10 }
+                  },
+                  ticks: {
+                    color: "#738096",
+                    callback: function (value) {
+                      return "$" + Number(value).toFixed(2);
+                    }
+                  },
+                  grid: {
+                    color: "#202632"
+                  }
                 }
               }
             }
           }
-        });
+        );
       }
 
       function renderDetails() {
         var rows = DATA.latest_detail || [];
-        var target = document.getElementById("detail-table-body");
+        var target = document.getElementById("detail-body");
 
         if (!rows.length) {
           target.innerHTML =
-            '<tr><td colspan="6" style="text-align:center; color:var(--text-dim); padding:20px;">No latest route data available.</td></tr>';
+            '<tr><td colspan="6" class="flat" style="text-align:center;padding:22px;">No route data available.</td></tr>';
           return;
         }
 
         target.innerHTML = rows.map(function (row) {
-          var deltaCls = getDeltaClass(row.weekly_change);
-          var arrow = getDeltaArrow(row.weekly_change);
-
           return (
             "<tr>" +
-              '<td><span class="badge-route">' + (row.route_code || "--") + "</span></td>" +
+              '<td><span class="route">' + (row.route_code || "--") + "</span></td>" +
               "<td>" + (row.origin || "--") + "</td>" +
               "<td>" + (row.destination || "--") + "</td>" +
-              '<td class="text-right" style="font-weight:700; color:#fff;">$' + formatNumber(row.index_value, 2) + "</td>" +
-              '<td class="text-right ' + deltaCls + '">' + arrow + formatPercent(row.weekly_change) + "</td>" +
-              '<td class="text-right" style="color:var(--text-muted);">' + (row.data_date || "--") + "</td>" +
+              '<td class="right" style="font-weight:700;">$' + number(row.index_value, 2) + "</td>" +
+              '<td class="right ' + deltaClass(row.weekly_change) + '">' +
+                arrow(row.weekly_change) +
+                percent(row.weekly_change) +
+              "</td>" +
+              '<td class="right flat">' + (row.data_date || "--") + "</td>" +
             "</tr>"
           );
         }).join("");
       }
 
-      renderStatus();
-      renderKpis();
-      renderRouteButtons();
+      renderWarning();
+      renderKpi();
+      renderButtons();
       renderChart();
       renderDetails();
     })();
@@ -1688,74 +1913,7 @@ __JSON_PAYLOAD__
 </html>
 """
 
-def build_raw_dataset_from_db() -> Dict[str, Any]:
-    conn = get_db_connection()
-
-    try:
-        master_rows = conn.execute(
-            """
-            SELECT snapshot_id, data_date
-            FROM tac_master
-            ORDER BY data_date ASC, snapshot_id ASC
-            """
-        ).fetchall()
-
-        if not master_rows:
-            return {
-                "labels": [],
-                "series": [],
-            }
-
-        labels = [row["data_date"] for row in master_rows]
-        snapshot_ids = [row["snapshot_id"] for row in master_rows]
-
-        placeholders = ",".join("?" for _ in snapshot_ids)
-
-        detail_rows = conn.execute(
-            f"""
-            SELECT snapshot_id, route_code, index_value
-            FROM tac_detail
-            WHERE snapshot_id IN ({placeholders})
-            ORDER BY route_code, snapshot_id
-            """,
-            snapshot_ids,
-        ).fetchall()
-
-        route_values: Dict[str, Dict[int, Optional[float]]] = {}
-
-        for row in detail_rows:
-            route_values.setdefault(row["route_code"], {})
-            route_values[row["route_code"]][row["snapshot_id"]] = row["index_value"]
-
-        series = []
-
-        for route_code in sorted(route_values):
-            values = [
-                route_values[route_code].get(snapshot_id)
-                for snapshot_id in snapshot_ids
-            ]
-            series.append(
-                {
-                    "name": route_code,
-                    "values": values,
-                }
-            )
-
-        return {
-            "labels": labels,
-            "series": series,
-        }
-
-    finally:
-        conn.close()
-
-def build_static_html(
-    json_payload: Dict[str, Any],
-    raw_dataset: Optional[Dict[str, Any]] = None,
-) -> None:
-    payload = dict(json_payload)
-    payload["raw_dataset"] = raw_dataset or build_raw_dataset_from_db()
-
+def build_static_html(payload: Dict[str, Any]) -> None:
     json_payload_text = json.dumps(
         payload,
         ensure_ascii=False,
@@ -1770,6 +1928,7 @@ def build_static_html(
     )
 
     atomic_write_text(HTML_PATH, page)
+
     log_info(f"[STATIC] HTML generated: {HTML_PATH.name}")
 
 # =============================================================================
@@ -1782,33 +1941,56 @@ def run_tac_sync() -> Dict[str, Any]:
         embed_html = fetch_infogram_html()
         infographic_data = extract_infographic_data(embed_html)
         chart_rows = extract_best_chart_rows(infographic_data)
+
         dataset = build_dataset(chart_rows)
 
-        # 전체 과거 시계열 스냅샷 목록 생성
+        # 핵심 변경:
+        # 최신 1개 시점이 아닌 Infogram 전체 시계열을 날짜별로 분해한다.
         bundles = build_all_snapshot_bundles(dataset)
-        if not bundles:
-            raise RuntimeError("No valid snapshot bundles could be constructed from dataset.")
 
-        new_count, updated_count, latest_snapshot_id, latest_bundle = save_all_snapshots(bundles)
+        if not bundles:
+            raise RuntimeError(
+                "No valid historical TAC snapshot bundles could be created."
+            )
+
+        sync_result = save_all_snapshots(bundles)
+
+        latest_bundle = sync_result["latest_bundle"]
+        latest_snapshot_id = sync_result["latest_snapshot_id"]
 
         finished_at = get_now_string()
-
-        latest_date = latest_bundle["data_date"] if latest_bundle else None
-        latest_route_count = len(latest_bundle["details"]) if latest_bundle else 0
 
         save_crawl_audit(
             started_at=started_at,
             finished_at=finished_at,
             status="SUCCESS",
-            message=f"SYNC_OK (new:{new_count}, upd:{updated_count}, total:{len(bundles)})",
+            message=(
+                "HISTORICAL_SYNC "
+                f"(new={sync_result['new_count']}, "
+                f"updated={sync_result['updated_count']}, "
+                f"unchanged={sync_result['unchanged_count']}, "
+                f"processed={len(bundles)})"
+            ),
             snapshot_id=latest_snapshot_id,
-            route_count=latest_route_count,
-            data_date=latest_date,
+            route_count=(
+                len(latest_bundle["details"])
+                if latest_bundle
+                else 0
+            ),
+            data_date=(
+                latest_bundle["data_date"]
+                if latest_bundle
+                else None
+            ),
         )
 
         log_info(
-            f"[SUCCESS] TAC Index extraction and bulk sync completed: "
-            f"new={new_count}, updated={updated_count}, latest_date={latest_date}"
+            "[SUCCESS] TAC historical extraction completed: "
+            f"latest_date={latest_bundle['data_date'] if latest_bundle else '--'}, "
+            f"periods={len(bundles)}, "
+            f"new={sync_result['new_count']}, "
+            f"updated={sync_result['updated_count']}, "
+            f"unchanged={sync_result['unchanged_count']}"
         )
 
         return {
@@ -1816,6 +1998,7 @@ def run_tac_sync() -> Dict[str, Any]:
             "snapshot_id": latest_snapshot_id,
             "dataset": dataset,
             "bundle": latest_bundle,
+            "sync_result": sync_result,
         }
 
     except Exception as exc:
@@ -1856,9 +2039,8 @@ def parse_arguments() -> argparse.Namespace:
         "--allow-empty-success",
         action="store_true",
         help=(
-            "Return exit code 0 even when initial source collection fails and "
-            "no historical snapshot exists. Use only when uninterrupted "
-            "pipeline deployment is more important than strict source validation."
+            "Return exit code 0 even when collection fails and no historical "
+            "snapshot exists. Use only for non-blocking pipeline deployment."
         ),
     )
 
@@ -1871,16 +2053,15 @@ def main() -> int:
     log_info("[CRON] TAC Index Dashboard update started")
     log_info("=" * 72)
 
+    # DB 생성 및 Migration 사전 실행
     conn = get_db_connection()
     conn.close()
 
     result = run_tac_sync()
 
+    # 성공/실패와 무관하게 현재 DB 누적 데이터를 정적 파일로 재생성
     payload = build_static_json()
-
-    # DB에서 최신 시계열을 온전히 빌드하여 HTML 생성
-    raw_dataset = build_raw_dataset_from_db()
-    build_static_html(payload, raw_dataset=raw_dataset)
+    build_static_html(payload)
 
     if result.get("ok"):
         log_info("[CRON] TAC Index Dashboard update completed successfully.")
@@ -1891,7 +2072,7 @@ def main() -> int:
 
     if historical_count > 0:
         log_warning(
-            "[WARN] Fresh TAC collection failed, but existing snapshot data "
+            "[WARN] Fresh TAC collection failed, but historical DB data "
             "was retained and static files were rebuilt."
         )
         log_info("=" * 72)
@@ -1900,7 +2081,7 @@ def main() -> int:
     if args.allow_empty_success:
         log_warning(
             "[WARN] Fresh TAC collection failed and no historical snapshot "
-            "exists. Empty dashboard files were generated by explicit option."
+            "exists. Empty static files were generated by explicit option."
         )
         log_info("=" * 72)
         return 0
@@ -1910,6 +2091,7 @@ def main() -> int:
         "Returning exit code 1."
     )
     log_info("=" * 72)
+
     return 1
 
 if __name__ == "__main__":
