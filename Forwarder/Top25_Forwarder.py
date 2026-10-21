@@ -90,7 +90,7 @@ def calculate_percentage_change(current, previous):
 
 def format_delta(val):
     if val is None: return "N/A"
-    return f"{'+' if val > 0 else ''}{val:.1f}%"
+    return f"{' +' if val > 0 else ''}{val:.1f}%"
 
 # =====================================================
 # 4. Web Crawling & DB
@@ -191,68 +191,75 @@ def build_static_dashboard():
         d_val = item["revenue_delta"]
         d_cls = "delta-up" if d_val and d_val > 0 else ("delta-down" if d_val and d_val < 0 else "delta-neutral")
         rows_html += f"""
-            
-                {item['rank']:02d}
-                
-{html.escape(item['provider'])}
-{html.escape(item['hq'])}
-
-                {format_compact_number(item['revenue'])}
-                {format_compact_number(item['teu'])}
-                {format_compact_number(item['air_tons'])}
-                {format_delta(d_val)}
-            """
+            <tr>
+                <td class="rank">{item['rank']:02d}</td>
+                <td><div class="provider">{html.escape(item['provider'])}</div><div class="hq">{html.escape(item['hq'])}</div></td>
+                <td class="number">{format_compact_number(item['revenue'])}</td>
+                <td class="number">{format_compact_number(item['teu'])}</td>
+                <td class="number">{format_compact_number(item['air_tons'])}</td>
+                <td class="number {d_cls}">{format_delta(d_val)}</td>
+            </tr>
+        """
     total_rev = sum(i["revenue"] for i in data)
     total_teu = sum(i["teu"] for i in data)
     total_air = sum(i["air_tons"] for i in data)
     comp_txt = f"VS {comp_date}" if comp_date else "NO PRIOR SNAPSHOT"
-    html_template = f"""
+    html_template = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>FORWARDER MONITOR | MI Terminal</title>
+    <style>
+        :root {{ --bg: #07111c; --panel: #0d1c2b; --panel-2: #10253a; --line: #27415b; --text: #eef5fb; --muted: #8fa5b8; --cyan: #00d8ff; --green: #41e29a; --red: #ff647c; --orange: #ffab40; }}
+        body {{ margin: 0; background: var(--bg); color: var(--text); font-family: Arial, sans-serif; }}
+        .page {{ max-width: 1480px; margin: 0 auto; padding: 24px; }}
+        .terminal-header {{ display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid var(--cyan); padding-bottom: 18px; }}
+        .terminal-header h1 {{ margin: 0; color: var(--cyan); font-size: 32px; }}
+        .reference {{ text-align: right; color: var(--orange); font-family: monospace; font-size: 13px; }}
+        .kpi-strip {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0; }}
+        .kpi {{ background: var(--panel); border: 1px solid var(--line); padding: 16px; }}
+        .kpi .stat {{ display: block; color: var(--cyan); font-size: 25px; font-weight: 700; font-family: monospace; }}
+        .kpi .label {{ display: block; margin-top: 8px; color: var(--muted); font-size: 11px; text-transform: uppercase; }}
+        .table-wrap {{ background: var(--panel); border: 1px solid var(--line); overflow-x: auto; }}
+        table {{ width: 100%; border-collapse: collapse; }}
+        thead {{ background: var(--panel-2); }}
+        th {{ padding: 13px; color: var(--cyan); text-align: left; font-size: 11px; text-transform: uppercase; border-bottom: 1px solid var(--line); }}
+        td {{ padding: 14px; border-bottom: 1px solid rgba(39, 65, 91, 0.75); font-size: 13px; }}
+        .rank {{ color: var(--orange); font-family: monospace; font-weight: 700; }}
+        .provider {{ font-weight: 700; }}
+        .hq {{ color: var(--muted); font-size: 11px; }}
+        .number {{ text-align: right; font-family: monospace; }}
+        .delta-up {{ color: var(--green); }}
+        .delta-down {{ color: var(--red); }}
+        .delta-neutral {{ color: var(--muted); }}
+        .footer {{ margin-top: 16px; color: var(--muted); font-size: 11px; }}
+    </style>
+</head>
+<body>
+    <main class="page">
+        <header class="terminal-header">
+            <div><h1>FORWARDER MONITOR</h1><p>A&A TOP 25 GLOBAL FORWARDERS</p></div>
+            <div class="reference"><div>DATA REF: {ref_date}</div><div>{comp_txt}</div></div>
+        </header>
+        <section class="kpi-strip">
+            <div class="kpi"><span class="stat">{len(data_list)}</span><span class="label">Total Providers</span></div>
+            <div class="kpi"><span class="stat">{html.escape(data_list[0]["provider"])}</span><span class="label">Market Leader</span></div>
+            <div class="kpi"><span class="stat">{format_compact_number(total_rev)}</span><span class="label">Agg. Revenue</span></div>
+            <div class="kpi"><span class="stat">{format_compact_number(total_teu)} / {format_compact_number(total_air_tons)}</span><span class="label">TEU / Air Tons</span></div>
+        </section>
+        <section class="table-wrap">
+            <table>
+                <thead><tr><th>Rank</th><th>Provider / HQ</th><th style="text-align:right;">Revenue</th><th style="text-align:right;">Ocean TEU</th><th style="text-align:right;">Air Tons</th><th style="text-align:right;">Rev Δ</th></tr></thead>
+                <tbody>
+                    {rows_html}
+                </tbody>
+            </table>
+        </section>
+        <footer class="footer">Source: A&A / 3PL Logistics. Revenue Δ vs latest prior snapshot.</footer>
+    </main>
+</body>
+</html>"""
 
-
-    
-    FORWARDER MONITOR | MI Terminal
-    
-
-
-    
-
-        
-
-            
-FORWARDER MONITOR
-A&A TOP 25 GLOBAL FREIGHT FORWARDERS
-
-
-            
-DATA REF: {ref_date}
-{comp_txt}
-
-        
-
-        
-{len(data)}
-Total Providers
-{html.escape(data[0]['provider'])}
-Market Leader
-{format_compact_number(total_rev)}
-Agg. Revenue
-{format_compact_number(total_teu)} / {format_compact_number(total_air)}
-TEU / Air Tons
-
-        
-
-            {rows_html}
-Rank	Provider / HQ	Revenue	Ocean TEU	Air Tons	Rev Δ
-
-        
-
-        
-Source: A&A / 3PL Logistics. Revenue Δ vs latest prior snapshot.
-
-    
-
-
-"""
     STATIC_HTML_PATH.write_text(html_template, encoding="utf-8")
     log(f"[HTML] Dashboard generated: {STATIC_HTML_PATH}")
 
