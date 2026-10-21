@@ -4,6 +4,7 @@
 """
 Market Intelligence Portal - Root Dashboard Generator
 Bloomberg Professional Terminal High-Density Interface
+Reads all verified module SQLite databases and generates index.html & dashboard_summary.json.
 """
 
 import json
@@ -34,7 +35,7 @@ OUTPUT_JSON = os.path.join(BASE_DIR, "dashboard_summary.json")
 # DELTA FORMATTING HELPER
 # ==========================================
 def calculate_delta(curr, prev, is_int=False):
-    """Calculate absolute and percentage deltas, returns (formatted_delta, class, arrow)."""
+    """Calculate absolute and percentage deltas with Bloomberg directional indicators."""
     if curr is None:
         return "-", "neutral", ""
 
@@ -67,6 +68,7 @@ def calculate_delta(curr, prev, is_int=False):
 # DATA FETCHERS
 # ==========================================
 def fetch_shipping_data():
+    """Fetches SCFI and BDI indices."""
     data = {
         "scfi": {
             "price": "N/A",
@@ -96,7 +98,7 @@ def fetch_shipping_data():
             )
             tables = [r[0] for r in cursor.fetchall()]
 
-            # SCFI Check
+            # SCFI
             scfi_table = next(
                 (
                     t
@@ -106,9 +108,7 @@ def fetch_shipping_data():
                 None,
             )
             if scfi_table:
-                cursor.execute(
-                    f'PRAGMA table_info("{scfi_table}")'
-                )  # check cols
+                cursor.execute(f'PRAGMA table_info("{scfi_table}")')
                 cols = [c[1].lower() for c in cursor.fetchall()]
                 date_col = next((c for c in cols if "date" in c), cols[0])
                 val_col = next(
@@ -138,7 +138,7 @@ def fetch_shipping_data():
                     data["scfi"]["class"] = cls
                     data["scfi"]["arrow"] = arrow
 
-            # BDI Check
+            # BDI
             bdi_table = next((t for t in tables if "bdi" in t.lower()), None)
             if bdi_table:
                 cursor.execute(f'PRAGMA table_info("{bdi_table}")')
@@ -176,7 +176,7 @@ def fetch_shipping_data():
     return data
 
 def fetch_alphaliner_data():
-    """Reads latest master and computes Top 10 aggregate share from detail."""
+    """Reads latest master snapshot and computes Top 10 aggregate share from detail."""
     data = {
         "total_ships": "7,670 Ships",
         "total_teu": "34,291,389 TEU",
@@ -210,7 +210,7 @@ def fetch_alphaliner_data():
                 if teu:
                     data["total_teu"] = f"{teu:,} TEU"
 
-                # 2. Detail Top 10 Share
+                # 2. Detail Top 10 aggregate market share
                 cursor.execute(
                     """
                     SELECT SUM(market_share)
@@ -333,6 +333,7 @@ def fetch_bunker_and_crude_data():
     return data
 
 def fetch_forwarder_data():
+    """Fetches Top Forwarder and aggregate ocean TEU / air tonnage."""
     data = {
         "top_forwarder": "Kuehne + Nagel",
         "total_ocean_teu": "N/A",
@@ -352,7 +353,7 @@ def fetch_forwarder_data():
                 target_date = max_date_row[0]
                 data["date"] = target_date
 
-                # Top Forwarder
+                # Rank 1 Forwarder
                 cursor.execute(
                     """
                     SELECT provider FROM forwarders
@@ -385,24 +386,28 @@ def fetch_forwarder_data():
     return data
 
 def fetch_tac_data():
+    """Fetches 3 Air Freight Corridors directly from tac_detail / tac_master schema."""
     data = {
-        "date": "2026-10-20",
+        "date": "2026-09-01",
         "routes": {
             "FRA - NAM": {
-                "price": "2.48",
-                "delta": "+0.05 (+2.06%)",
+                "name": "Frankfurt - North America",
+                "price": "2.40",
+                "delta": "+0.02 (+0.84%)",
                 "class": "up",
                 "arrow": "▲",
             },
             "HKG - EUR": {
-                "price": "4.12",
-                "delta": "-0.08 (-1.90%)",
-                "class": "down",
-                "arrow": "▼",
+                "name": "Hong Kong - Europe",
+                "price": "4.80",
+                "delta": "+0.22 (+4.80%)",
+                "class": "up",
+                "arrow": "▲",
             },
             "HKG - NAM": {
-                "price": "5.65",
-                "delta": "+0.12 (+2.17%)",
+                "name": "Hong Kong - North America",
+                "price": "7.02",
+                "delta": "+0.04 (+0.57%)",
                 "class": "up",
                 "arrow": "▲",
             },
@@ -415,18 +420,48 @@ def fetch_tac_data():
     try:
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
+
+            # Target 3 corridors mapping
+            corridor_targets = {
+                "FRA - NAM": ["frankfurt", "north america"],
+                "HKG - EUR": ["hong kong", "europe"],
+                "HKG - NAM": ["hong kong", "north america"],
+            }
+
+            # Check if tac_detail table exists
             cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='tac_detail'"
             )
-            tables = [r[0] for r in cursor.fetchall()]
-            if tables:
-                t_name = tables[0]
-                cursor.execute(
-                    f"SELECT DISTINCT route FROM {t_name}"
-                )  # if route col exists
-                # Dynamically fill if table exists
-    except Exception:
-        pass
+            if cursor.fetchone():
+                for code, keywords in corridor_targets.items():
+                    cursor.execute(
+                        """
+                        SELECT d.period, d.index_value
+                        FROM tac_detail d
+                        JOIN tac_master m ON d.snapshot_id = m.snapshot_id
+                        WHERE (LOWER(d.origin) LIKE ? AND LOWER(d.destination) LIKE ?)
+                           OR LOWER(d.route_code) LIKE ?
+                        ORDER BY d.period DESC
+                        LIMIT 2
+                    """,
+                        (
+                            f"%{keywords[0]}%",
+                            f"%{keywords[1]}%",
+                            f"%{keywords[0][:3]}%{keywords[1][:3]}%",
+                        ),
+                    )
+                    rows = cursor.fetchall()
+                    if rows:
+                        data["date"] = str(rows[0][0])[:10]
+                        curr = float(rows[0][1])
+                        prev = float(rows[1][1]) if len(rows) > 1 else None
+                        data["routes"][code]["price"] = f"{curr:.2f}"
+                        delta_str, cls, arrow = calculate_delta(curr, prev)
+                        data["routes"][code]["delta"] = delta_str
+                        data["routes"][code]["class"] = cls
+                        data["routes"][code]["arrow"] = arrow
+    except Exception as e:
+        print(f"[WARN] TAC data load: {e}")
     return data
 
 def fetch_macro_data():
@@ -504,7 +539,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             margin: 0 auto;
         }}
 
-        /* TOP TERMINAL HEADER BAR */
+        /* TERMINAL TOP HEADER */
         .terminal-header {{
             display: flex;
             justify-content: space-between;
@@ -547,7 +582,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             font-weight: 700;
         }}
 
-        /* SECTION HEADER BANNER */
+        /* SECTION HEADER BARS */
         .section-bar {{
             background: #141A22;
             border-left: 4px solid var(--bb-amber);
@@ -571,7 +606,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             font-size: 10px;
         }}
 
-        /* GRID LAYOUTS */
+        /* GRIDS */
         .grid-4 {{
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -591,7 +626,6 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            position: relative;
         }}
 
         .panel-header {{
@@ -634,7 +668,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             flex-grow: 1;
         }}
 
-        /* METRIC ITEMS */
+        /* METRIC CELLS */
         .metric-cell {{
             background: var(--panel-inner);
             border: 1px solid #141C24;
@@ -686,7 +720,6 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
         .metric-delta {{
             font-size: 10px;
             font-weight: 700;
-            letter-spacing: -0.01em;
             white-space: nowrap;
         }}
 
@@ -694,7 +727,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
         .metric-delta.down {{ color: var(--bb-red); }}
         .metric-delta.neutral {{ color: var(--bb-neutral); }}
 
-        /* ROW-BASED TABLE IN PANEL */
+        /* DENSE TABLE */
         .dense-table {{
             width: 100%;
             border-collapse: collapse;
@@ -733,12 +766,6 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
         .table-row-delta {{
             text-align: right;
             font-weight: 700;
-        }}
-
-        .group-divider {{
-            height: 1px;
-            background: var(--panel-border);
-            margin: 4px 0;
         }}
 
         /* PANEL FOOTER */
@@ -854,7 +881,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                 </div>
             </div>
 
-            <!-- 3. Bunker Price & Crude Oil (Unified 6 Metrics) -->
+            <!-- 3. Bunker Price Unified Card -->
             <div class="panel">
                 <div class="panel-header">
                     <span class="panel-headline">BUNKER & CRUDE OIL</span>
@@ -1053,7 +1080,7 @@ def main():
     macro_data = fetch_macro_data()
 
     # 1. Generate Root index.html
-    print(f"[INFO] Generating Terminal HTML -> {OUTPUT_HTML}")
+    print(f"[INFO] Generating Bloomberg Terminal HTML -> {OUTPUT_HTML}")
     html_content = generate_html(
         shipping_data,
         alphaliner_data,
@@ -1079,7 +1106,7 @@ def main():
     with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
         json.dump(summary_data, f, ensure_ascii=False, indent=2)
 
-    print("[SUCCESS] Bloomberg Terminal dashboard generation complete.")
+    print("[SUCCESS] Market Intelligence root dashboard generated successfully.")
 
 if __name__ == "__main__":
     main()
