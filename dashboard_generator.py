@@ -1156,19 +1156,36 @@ def get_tac_summary():
                 reverse=True,
             )
 
-            latest_row = rows[0]
-            latest_rate = latest_row["rate"]
-            latest_month = latest_row["month"]
+            # -----------------------------------------------------------------
+            # 날짜별 최신 Rate만 남긴다.
+            #
+            # 같은 날짜에 데이터가 여러 건 있는 경우 SQL/Python 정렬상 첫 번째 값을
+            # 해당 날짜의 최신값으로 사용한다.
+            # -----------------------------------------------------------------
+            latest_rate_by_date = {}
 
-            # 최신월보다 이전인 가장 가까운 월의 Rate를 사용한다.
-            previous_row = next(
-                (
-                    row
-                    for row in rows
-                    if row["month"] < latest_month
-                ),
-                None,
+            for row in rows:
+                data_date = row["date"]
+
+                if data_date not in latest_rate_by_date:
+                    latest_rate_by_date[data_date] = row
+
+            # 날짜 기준 내림차순 정렬:
+            # [최신 데이터, 직전 데이터, ...]
+            distinct_date_rows = sorted(
+                latest_rate_by_date.values(),
+                key=lambda item: item["date"],
+                reverse=True,
             )
+
+            latest_row = distinct_date_rows[0]
+            previous_row = (
+                distinct_date_rows[1]
+                if len(distinct_date_rows) > 1
+                else None
+            )
+
+            latest_rate = latest_row["rate"]
 
             config = summary_mapping[corridor_name]
 
@@ -1180,6 +1197,16 @@ def get_tac_summary():
             )
 
             latest_dates.append(latest_row["date"])
+
+            logger.info(
+                "TAC corridor summary: corridor=%s, latest=%s (%s), previous=%s (%s)",
+                corridor_name,
+                latest_rate,
+                latest_row["date"],
+                previous_row["rate"] if previous_row else None,
+                previous_row["date"] if previous_row else None,
+            )
+
 
         if latest_dates:
             summary["latest_date"] = max(latest_dates)
