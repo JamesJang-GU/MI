@@ -1,85 +1,122 @@
 {
-  "generated_at": "2026-10-21 09:15:39",
+  "generated_at": "2026-10-21T09:23:13.668982",
   "shipping": {
-    "title": "Shipping Index (SCFI / BDI)",
-    "path": "Shipping Index/index.html",
-    "category": "Sea",
-    "scfi_latest": "3,679.6",
-    "scfi_date": "2026-10-16",
-    "scfi_delta_html": "<span class=\"delta-up\">WoW +15.5 (+0.42%) ↗</span>",
-    "bdi_latest": "2,593",
-    "bdi_date": "2026-10-20",
-    "bdi_delta_html": "<span class=\"delta-up\">WoW +47 (+1.85%) ↗</span>",
-    "status": "Active"
+    "scfi": {
+      "price": "N/A",
+      "delta": "-",
+      "class": "neutral",
+      "arrow": "",
+      "date": "-"
+    },
+    "bdi": {
+      "price": "N/A",
+      "delta": "-",
+      "class": "neutral",
+      "arrow": "",
+      "date": "-"
+    },
+    "date": "2026-10-21"
   },
   "alphaliner": {
-    "title": "Alphaliner TOP 100",
-    "path": "Alphaliner/index.html",
-    "category": "Sea",
-    "latest_date": "2026-10-19",
-    "total_ships": "6,616 Ships",
-    "total_teu": "34,113,905 TEU",
-    "top10_share": "85.00%",
-    "top1_operator": "Mediterranean Shg Co (21.5%)",
-    "status": "Active"
+    "total_ships": "7,670 Ships",
+    "total_teu": "34,946,761 TEU",
+    "top10_share": "85.0%",
+    "date": "2026-10-21"
   },
   "bunker": {
-    "title": "Bunker Price",
-    "path": "BunkerPrice/index.html",
-    "category": "Sea",
-    "latest_date": "2026-10-20",
-    "rotterdam": "765.00 USD/MT",
-    "rotterdam_delta_html": "<span class=\"delta-up\">+9.50 (+1.26%) ↗</span>",
-    "fujairah": "979.50 USD/MT",
-    "fujairah_delta_html": "<span class=\"delta-up\">+6.50 (+0.67%) ↗</span>",
-    "singapore": "932.50 USD/MT",
-    "singapore_delta_html": "<span class=\"delta-down\">-1.50 (-0.16%) ↘</span>",
-    "status": "Active"
-  },
-  "oil": {
-    "title": "Crude Oil",
-    "path": "BunkerPrice/OilPrice/index.html",
-    "category": "Sea",
-    "latest_date": "2026-10-20",
-    "dubai": "110.70 USD/BBL",
-    "dubai_delta_html": "<span class=\"delta-up\">+3.60 (+3.36%) ↗</span>",
-    "brent": "108.79 USD/BBL",
-    "brent_delta_html": "<span class=\"delta-down\">-0.76 (-0.69%) ↘</span>",
-    "wti": "101.79 USD/BBL",
-    "wti_delta_html": "<span class=\"delta-down\">-1.87 (-1.80%) ↘</span>",
-    "status": "Active"
+    "date": "2026-10-20",
+    "vlsfo": {
+      "Rotterdam": {
+        "price": "765.0",
+        "delta": "+9.50 (+1.26%)",
+        "class": "up",
+        "arrow": "▲"
+      },
+      "Fujairah": {
+        "price": "979.5",
+        "delta": "+6.50 (+0.67%)",
+        "class": "up",
+        "arrow": "▲"
+      },
+      "Singapore": {
+        "price": "932.5",
+        "delta": "-1.50 (-0.16%)",
+        "class": "down",
+        "arrow": "▼"
+      }
+    },
+    "crude": {
+      "Dubai": {
+        "price": "110.70",
+        "delta": "+3.60 (+3.36%)",
+        "class": "up",
+        "arrow": "▲"
+      },
+      "Brent": {
+        "price": "108.79",
+        "delta": "-0.76 (-0.69%)",
+        "class": "down",
+        "arrow": "▼"
+      },
+      "WTI": {
+        "price": "101.79",
+        "delta": "-1.87 (-1.80%)",
+        "class": "down",
+        "arrow": "▼"
+      }
+    }
   },
   "forwarder": {
-    "title": "Global Top 25 Forwarders",
-    "path": "Forwarder/index.html",
-    "category": "Sea",
-    "latest_date": "2026-10-21",
-    "rank": "#01",
-    "provider": "DSV",
-    "revenue": "37.4K USD",
-    "teu": "3.70M TEU",
-    "air_tons": "2.01M Tons",
-    "status": "Active"
+    "top_forwarder": "DSV",
+    "total_ocean_teu": "36,630,328 TEU",
+    "total_air_tons": "15,670,405 MT",
+    "date": "2026-10-21"
   },
   "tac": {
-    "title": "Air Freight (TAC Index)",
-    "path": "TAC Index/index.html",
-    "category": "Air",
-    "latest_date": "2026-09-01",
-    "frankfurt_north_america_rate": "$2.40 USD/kg",
-    "frankfurt_north_america_mom_html": "<span class=\"delta-up\">+0.02 (+0.84%) ↗</span>",
-    "hong_kong_europe_rate": "$4.80 USD/kg",
-    "hong_kong_europe_mom_html": "<span class=\"delta-up\">+0.22 (+4.80%) ↗</span>",
-    "hong_kong_north_america_rate": "$7.02 USD/kg",
-    "hong_kong_north_america_mom_html": "<span class=\"delta-up\">+0.04 (+0.57%) ↗</span>",
-    "status": "Active"
+    "date": "2026-09-01",
+    "routes": {
+      "FRA - NAM": {
+        "name": "Frankfurt - North America",
+        "price": "2.40",
+        "delta": "+0.02 (+0.84%)",
+        "class": "up",
+        "arrow": "▲"
+      },
+      "HKG - EUR": {
+        "name": "Hong Kong - Europe",
+        "price": "4.80",
+        "delta": "+0.22 (+4.80%)",
+        "class": "up",
+        "arrow": "▲"
+      },
+      "HKG - NAM": {
+        "name": "Hong Kong - North America",
+        "price": "7.02",
+        "delta": "+0.04 (+0.57%)",
+        "class": "up",
+        "arrow": "▲"
+      }
+    }
   },
   "macro": {
-    "title": "Macro Economies & GSCPI",
-    "path": "GDP&Inflation/index.html",
-    "category": "Global",
-    "latest_date": "-",
-    "gscpi_latest": "-",
-    "status": "No Data"
+    "gscpi": {
+      "value": "-0.15",
+      "delta": "-0.04 (-21.05%)",
+      "class": "down",
+      "arrow": "▼"
+    },
+    "us_gdp": {
+      "value": "2.8%",
+      "delta": "+0.2% (+7.69%)",
+      "class": "up",
+      "arrow": "▲"
+    },
+    "us_cpi": {
+      "value": "2.4%",
+      "delta": "-0.1% (-4.00%)",
+      "class": "down",
+      "arrow": "▼"
+    },
+    "date": "2026-10-21"
   }
 }
