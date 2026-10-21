@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-21 02:04:21",
+  "generated_at": "2026-10-21 02:24:16",
   "shipping": {
     "title": "Shipping Index (SCFI / BDI)",
     "path": "Shipping Index/index.html",
@@ -21,17 +21,16 @@
     "status": "Active"
   },
   "bunker": {
-    "title": "Bunker Price Monitor",
+    "title": "Bunker Price (VLSFO)",
     "path": "BunkerPrice/index.html",
     "category": "Sea",
-    "latest_date": "-",
-    "singapore_vlsfo": "-",
-    "rotterdam_vlsfo": "-",
-    "houston_vlsfo": "-",
-    "vlsfo": "-",
-    "lsmgo": "-",
-    "ifo380": "-",
-    "status": "No Data"
+    "latest_date": "2026-10-20",
+    "rotterdam": "765.00 USD/MT",
+    "fujairah": "979.50 USD/MT",
+    "singapore": "932.50 USD/MT",
+    "market_average": "892.33 USD/MT",
+    "available_ports": 3,
+    "status": "Active"
   },
   "forwarder": {
     "title": "Global Top 25 Forwarders",
