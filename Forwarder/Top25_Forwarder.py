@@ -242,7 +242,7 @@ def build_static_dashboard():
             <div class="reference"><div>DATA REF: {ref_date}</div><div>{comp_txt}</div></div>
         </header>
         <section class="kpi-strip">
-            <div class="kpi"><span class="stat">{len(data_list)}</span><span class="label">Total Providers</span></div>
+            <div class="kpi"><span class="stat">{len(data)}</span><span class="label">Total Providers</span></div>
             <div class="kpi"><span class="stat">{html.escape(data_list[0]["provider"])}</span><span class="label">Market Leader</span></div>
             <div class="kpi"><span class="stat">{format_compact_number(total_rev)}</span><span class="label">Agg. Revenue</span></div>
             <div class="kpi"><span class="stat">{format_compact_number(total_teu)} / {format_compact_number(total_air_tons)}</span><span class="label">TEU / Air Tons</span></div>
