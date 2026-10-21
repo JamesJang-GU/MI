@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-21 04:56:09",
+  "generated_at": "2026-10-21 05:05:34",
   "shipping": {
     "title": "Shipping Index (SCFI / BDI)",
     "path": "Shipping Index/index.html",
@@ -66,9 +66,9 @@
     "path": "TAC Index/index.html",
     "category": "Air",
     "latest_date": "2026-09-01",
-    "overall_index": "4.74",
-    "weekly_change": "+2.07%",
-    "route_count": "3",
+    "overall_index": "$4.74 USD/kg",
+    "weekly_change_html": "<span class=\"delta-up\">+2.07% ↗</span>",
+    "route_count": "3 Routes",
     "status": "Active"
   },
   "macro": {
