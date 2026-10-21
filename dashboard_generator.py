@@ -878,19 +878,24 @@ def find_tac_route_table(cursor):
             ],
         )
 
-        corridor_col = find_first_column(
-            columns,
-            [
-                "corridor",
-                "corridor_name",
-                "route",
-                "route_name",
-                "lane",
-                "lane_name",
-                "market",
-                "market_name",
-            ],
-        )
+corridor_col = find_first_column(
+    columns,
+    [
+        # 현재 TAC_Index.db의 공식 노선 식별 컬럼
+        "route_code",
+
+        # 타 DB 구조 호환용 후보
+        "corridor",
+        "corridor_name",
+        "route",
+        "route_name",
+        "lane",
+        "lane_name",
+        "market",
+        "market_name",
+    ],
+)
+
 
         origin_col = find_first_column(
             columns,
