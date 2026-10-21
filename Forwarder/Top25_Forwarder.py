@@ -239,6 +239,20 @@ def build_static_dashboard():
     comp_txt = f"VS {comp_date}" if comp_date else "NO PRIOR SNAPSHOT"
     
     html_template = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<title>Forwarder Dashboard</title>
+</head>
+<body>
+
+<h1>FORWARDER MONITOR</h1>
+
+{rows_html}
+
+</body>
+</html>
+"""
 
 
     
