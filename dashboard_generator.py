@@ -2,7 +2,7 @@
 """
 Market Intelligence Portal - Main Dashboard Generator
 
-통합 Market Intelligence Portal의 루트 index.html을 생성한다.
+통합 Market Intelligence Portal의 루트 index.html 및 summary json을 생성한다.
 
 연결 모듈:
 - Sea
@@ -12,7 +12,11 @@ Market Intelligence Portal - Main Dashboard Generator
   - Crude Oil (Dubai, Brent, WTI with Delta ↗/↘)
   - Global Top 25 Forwarders
 - Air
-  - TAC Air Freight Index (Overall Index & WoW Delta ↗/↘)
+  - TAC Air Freight Index
+    * Overall Index & Weekly Delta ↗/↘
+    * Frankfurt-North America (Latest Rate & MoM Delta ↗/↘)
+    * Hong Kong-Europe (Latest Rate & MoM Delta ↗/↘)
+    * Hong Kong-North America (Latest Rate & MoM Delta ↗/↘)
 - Global
   - Macro Economies & GSCPI
 """
@@ -181,7 +185,7 @@ def normalize_port_name(value):
 def calculate_delta_display(current_value, previous_value, decimals=2, prefix=""):
     """
     최신값과 직전값을 비교해 HTML 증감 표시를 반환한다.
-    반환 예: <span class="delta-up">+12.50 (+1.62%) ↗</span>
+    반환 예: <span class="delta-up">WoW +12.50 (+1.62%) ↗</span>
     """
     if current_value is None or previous_value is None:
         return '<span class="delta-neutral">-</span>'
@@ -661,8 +665,75 @@ def get_forwarder_summary():
 # 8. TAC Air Freight Summary
 # =============================================================================
 
+def normalize_tac_corridor_name(value):
+    """
+    TAC 데이터의 다양한 Corridor 명칭을 포털 표준 규격으로 매핑한다.
+    """
+    raw_value = str(value or "").strip()
+    normalized = (
+        raw_value.upper()
+        .replace("–", "-")
+        .replace("—", "-")
+        .replace("_", " ")
+        .replace("/", " ")
+        .replace("-", " ")
+        .replace("TO", " ")
+    )
+    compact = "".join(char for char in normalized if char.isalnum())
+
+    mapping = {
+        "FRANKFURTNORTHAMERICA": "Frankfurt-North America",
+        "FRANORTHAMERICA": "Frankfurt-North America",
+        "FRAUSA": "Frankfurt-North America",
+        "FRANORTHAMERICAINDEX": "Frankfurt-North America",
+
+        "HONGKONGEUROPE": "Hong Kong-Europe",
+        "HKEUROPE": "Hong Kong-Europe",
+        "HKGEUROPE": "Hong Kong-Europe",
+        "HONGKONGEUROPEINDEX": "Hong Kong-Europe",
+
+        "HONGKONGNORTHAMERICA": "Hong Kong-North America",
+        "HKNORTHAMERICA": "Hong Kong-North America",
+        "HKGNORTHAMERICA": "Hong Kong-North America",
+        "HONGKONGNORTHAMERICAINDEX": "Hong Kong-North America",
+    }
+    return mapping.get(compact, raw_value)
+
+def calculate_rate_delta_display(current_value, previous_value, decimals=2):
+    """
+    항공운임 Rate의 MoM 증감(절대치 + %) 및 화살표를 반환한다.
+    반환 예: <span class="delta-up">MoM +0.12 (+2.60%) ↗</span>
+    """
+    if current_value is None or previous_value is None:
+        return '<span class="delta-neutral">MoM -</span>'
+
+    try:
+        cur = float(current_value)
+        prv = float(previous_value)
+    except (TypeError, ValueError):
+        return '<span class="delta-neutral">MoM -</span>'
+
+    diff = cur - prv
+    pct = (diff / prv * 100.0) if prv != 0 else 0.0
+
+    if diff > 0:
+        return f'<span class="delta-up">MoM +{diff:,.{decimals}f} (+{pct:.2f}%) ↗</span>'
+    elif diff < 0:
+        return f'<span class="delta-down">MoM {diff:,.{decimals}f} ({pct:.2f}%) ↘</span>'
+    else:
+        return f'<span class="delta-neutral">MoM {diff:,.{decimals}f} (0.00%) →</span>'
+
 def get_tac_summary():
-    """TAC Air Freight Index 최신 지수 및 전주 대비 증감률(↗/↘)을 읽는다."""
+    """
+    TAC Air Freight Index 최신 종합 지수 및 3대 핵심 노선의
+    최신 운임(Latest Rate) 및 전월 대비 증감(MoM Delta ↗/↘)을 추출한다.
+    """
+    target_corridors = [
+        "Frankfurt-North America",
+        "Hong Kong-Europe",
+        "Hong Kong-North America",
+    ]
+
     summary = {
         "title": "Air Freight (TAC Index)",
         "path": "TAC Index/index.html",
@@ -671,6 +742,12 @@ def get_tac_summary():
         "overall_index": "-",
         "weekly_change_html": '<span class="delta-neutral">-</span>',
         "route_count": "-",
+        "frankfurt_north_america_rate": "-",
+        "frankfurt_north_america_mom_html": '<span class="delta-neutral">MoM -</span>',
+        "hong_kong_europe_rate": "-",
+        "hong_kong_europe_mom_html": '<span class="delta-neutral">MoM -</span>',
+        "hong_kong_north_america_rate": "-",
+        "hong_kong_north_america_mom_html": '<span class="delta-neutral">MoM -</span>',
         "status": "No Data",
     }
 
@@ -684,20 +761,43 @@ def get_tac_summary():
             if not table_exists(cursor, "tac_master"):
                 return summary
 
-            row = cursor.execute(
-                """
-                SELECT data_date, overall_index, weekly_change, route_count
+            master_columns = get_table_columns(cursor, "tac_master")
+            master_snapshot_col = find_first_column(master_columns, ["snapshot_id", "id"])
+            master_date_col = find_first_column(master_columns, ["data_date", "date", "snapshot_date"])
+            overall_index_col = find_first_column(master_columns, ["overall_index", "index_value", "overall_rate"])
+            weekly_change_col = find_first_column(master_columns, ["weekly_change", "wow_change", "week_change"])
+            route_count_col = find_first_column(master_columns, ["route_count", "corridor_count", "routes"])
+
+            if not master_snapshot_col or not master_date_col:
+                return summary
+
+            select_cols = [
+                f"{quote_identifier(master_snapshot_col)} AS snapshot_id",
+                f"{quote_identifier(master_date_col)} AS data_date",
+            ]
+            select_cols.append(f"{quote_identifier(overall_index_col)} AS overall_index" if overall_index_col else "NULL AS overall_index")
+            select_cols.append(f"{quote_identifier(weekly_change_col)} AS weekly_change" if weekly_change_col else "NULL AS weekly_change")
+            select_cols.append(f"{quote_identifier(route_count_col)} AS route_count" if route_count_col else "NULL AS route_count")
+
+            latest_master = cursor.execute(
+                f"""
+                SELECT {", ".join(select_cols)}
                 FROM tac_master
-                ORDER BY data_date DESC, snapshot_id DESC
+                ORDER BY {quote_identifier(master_date_col)} DESC, {quote_identifier(master_snapshot_col)} DESC
                 LIMIT 1
                 """
             ).fetchone()
 
-        if row:
-            data_date, overall_index, weekly_change, route_count = row
-            summary["latest_date"] = str(data_date or "-")[:10]
-            summary["overall_index"] = f"${float(overall_index):,.2f} USD/kg" if overall_index is not None else "-"
-            summary["route_count"] = f"{int(route_count)} Routes" if route_count is not None else "-"
+            if not latest_master:
+                return summary
+
+            _, latest_data_date, overall_index, weekly_change, route_count = latest_master
+
+            summary["latest_date"] = str(latest_data_date or "-")[:10]
+            if overall_index is not None:
+                summary["overall_index"] = f"${float(overall_index):,.2f} USD/kg"
+            if route_count is not None:
+                summary["route_count"] = f"{int(route_count)} Routes"
 
             if weekly_change is not None:
                 chg = float(weekly_change)
@@ -708,7 +808,84 @@ def get_tac_summary():
                 else:
                     summary["weekly_change_html"] = '<span class="delta-neutral">0.00% →</span>'
 
-            summary["status"] = "Active"
+            # -----------------------------------------------------------------
+            # Detail 노선 데이터 추출 및 MoM 산출
+            # -----------------------------------------------------------------
+            detail_table_candidates = ["tac_detail", "tac_details", "tac_routes", "tac_corridors", "tac_rates"]
+            detail_table = next((t for t in detail_table_candidates if table_exists(cursor, t)), None)
+
+            if not detail_table:
+                summary["status"] = "Active"
+                return summary
+
+            detail_columns = get_table_columns(cursor, detail_table)
+            detail_snap_col = find_first_column(detail_columns, ["snapshot_id", "master_id", "tac_master_id"])
+            corridor_col = find_first_column(detail_columns, ["corridor", "route", "route_name", "corridor_name", "lane", "market"])
+            rate_col = find_first_column(detail_columns, ["latest_rate", "rate", "rate_value", "price", "index_value", "value", "usd_per_kg"])
+
+            if not detail_snap_col or not corridor_col or not rate_col:
+                summary["status"] = "Active"
+                return summary
+
+            corridor_rows = cursor.execute(
+                f"""
+                SELECT
+                    master.{quote_identifier(master_date_col)} AS data_date,
+                    detail.{quote_identifier(corridor_col)} AS corridor_name,
+                    detail.{quote_identifier(rate_col)} AS rate
+                FROM {quote_identifier(detail_table)} AS detail
+                INNER JOIN tac_master AS master
+                    ON detail.{quote_identifier(detail_snap_col)} = master.{quote_identifier(master_snapshot_col)}
+                WHERE detail.{quote_identifier(rate_col)} IS NOT NULL
+                ORDER BY master.{quote_identifier(master_date_col)} DESC, master.{quote_identifier(master_snapshot_col)} DESC
+                """
+            ).fetchall()
+
+        corridor_history = {c: [] for c in target_corridors}
+        for d_date, c_name, val in corridor_rows:
+            norm_c = normalize_tac_corridor_name(c_name)
+            if norm_c not in corridor_history:
+                continue
+            try:
+                rate_val = float(val)
+            except (TypeError, ValueError):
+                continue
+
+            dt_str = str(d_date or "")[:10]
+            if not dt_str:
+                continue
+
+            corridor_history[norm_c].append({
+                "date": dt_str,
+                "month": dt_str[:7],
+                "rate": rate_val,
+            })
+
+        corridor_mapping = {
+            "Frankfurt-North America": ("frankfurt_north_america_rate", "frankfurt_north_america_mom_html"),
+            "Hong Kong-Europe": ("hong_kong_europe_rate", "hong_kong_europe_mom_html"),
+            "Hong Kong-North America": ("hong_kong_north_america_rate", "hong_kong_north_america_mom_html"),
+        }
+
+        for c_name, h_rows in corridor_history.items():
+            if not h_rows:
+                continue
+
+            latest_item = h_rows[0]
+            latest_r = latest_item["rate"]
+            latest_m = latest_item["month"]
+
+            prev_item = next((r for r in h_rows if r["month"] < latest_m), None)
+            rate_k, mom_k = corridor_mapping[c_name]
+
+            summary[rate_k] = f"${latest_r:,.2f} USD/kg"
+            summary[mom_k] = calculate_rate_delta_display(
+                latest_r,
+                prev_item["rate"] if prev_item else None,
+                decimals=2
+            )
+
+        summary["status"] = "Active"
 
     except Exception as error:
         logger.exception(f"Failed to read TAC DB: {error}")
@@ -873,7 +1050,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       color: var(--text-dim);
     }
 
-    /* Sea 영역: 5개 카드 5열 배치 (와이드 화면) */
+    /* Sea 영역: 5개 카드 배치 */
     .grid-sea {
       display: grid;
       grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -1001,6 +1178,49 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .grid-triple .kpi-label { font-size: 8px; }
     .grid-triple .kpi-val { font-size: 10px; letter-spacing: -0.3px; }
 
+    /* TAC Corridor 레이아웃 */
+    .tac-corridor-label {
+      margin: 8px 0 6px;
+      color: var(--amber);
+      font-family: var(--mono);
+      font-size: 8.5px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+
+    .tac-corridor-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 5px;
+    }
+
+    .tac-corridor-grid .kpi-item {
+      padding: 6px 6px;
+    }
+
+    .tac-corridor-grid .kpi-label {
+      min-height: 22px;
+      margin-bottom: 4px;
+      overflow: visible;
+      white-space: normal;
+      font-size: 8px;
+      line-height: 1.3;
+    }
+
+    .tac-corridor-grid .kpi-val {
+      font-size: 10px;
+      letter-spacing: -0.35px;
+    }
+
+    .tac-corridor-grid .delta-sub {
+      font-size: 8px;
+      letter-spacing: -0.45px;
+    }
+
+    .tac-card {
+      min-height: 285px;
+    }
+
     /* Delta & Arrow Styles */
     .delta-sub {
       margin-top: 4px;
@@ -1061,6 +1281,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     @media (max-width: 600px) {
       body { padding: 8px; }
       .grid-sea, .grid-2 { grid-template-columns: 1fr; }
+      .tac-corridor-grid { grid-template-columns: 1fr; }
+      .tac-card { min-height: 0; }
       .top-bar {
         align-items: flex-start;
         flex-direction: column;
@@ -1265,10 +1487,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </section>
 
     <div class="grid-2">
+      <!-- Air Section -->
       <section class="section-group">
         <div class="section-title">Air</div>
 
-        <a href="__TAC_PATH__" class="card">
+        <a href="__TAC_PATH__" class="card tac-card">
           <div>
             <div class="card-header">
               <span class="card-title">Air Freight (TAC Index)</span>
@@ -1287,6 +1510,27 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <div class="delta-sub"><span class="delta-neutral">O-D Tracked</span></div>
               </div>
             </div>
+
+            <div class="tac-corridor-label">LATEST RATE / MONTH-ON-MONTH CHANGE</div>
+            <div class="tac-corridor-grid">
+              <div class="kpi-item">
+                <div class="kpi-label">Frankfurt-North America</div>
+                <div class="kpi-val highlight">__TAC_FRA_NA_RATE__</div>
+                <div class="delta-sub">__TAC_FRA_NA_MOM__</div>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-label">Hong Kong-Europe</div>
+                <div class="kpi-val">__TAC_HKG_EU_RATE__</div>
+                <div class="delta-sub">__TAC_HKG_EU_MOM__</div>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-label">Hong Kong-North America</div>
+                <div class="kpi-val amber">__TAC_HKG_NA_RATE__</div>
+                <div class="delta-sub">__TAC_HKG_NA_MOM__</div>
+              </div>
+            </div>
           </div>
 
           <div class="card-footer">
@@ -1296,10 +1540,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </a>
       </section>
 
+      <!-- Global Section -->
       <section class="section-group">
         <div class="section-title">Global</div>
 
-        <a href="__MACRO_PATH__" class="card">
+        <a href="__MACRO_PATH__" class="card tac-card">
           <div>
             <div class="card-header">
               <span class="card-title">Macro Economies &amp; GSCPI</span>
@@ -1440,6 +1685,18 @@ def main():
     html_output = html_output.replace("__TAC_WEEKLY_DELTA__", tac["weekly_change_html"])
     html_output = replace_template_value(html_output, "__TAC_DATE__", tac["latest_date"])
     html_output = replace_template_value(html_output, "__TAC_ROUTES__", tac["route_count"])
+
+    # Frankfurt - North America
+    html_output = replace_template_value(html_output, "__TAC_FRA_NA_RATE__", tac["frankfurt_north_america_rate"])
+    html_output = html_output.replace("__TAC_FRA_NA_MOM__", tac["frankfurt_north_america_mom_html"])
+
+    # Hong Kong - Europe
+    html_output = replace_template_value(html_output, "__TAC_HKG_EU_RATE__", tac["hong_kong_europe_rate"])
+    html_output = html_output.replace("__TAC_HKG_EU_MOM__", tac["hong_kong_europe_mom_html"])
+
+    # Hong Kong - North America
+    html_output = replace_template_value(html_output, "__TAC_HKG_NA_RATE__", tac["hong_kong_north_america_rate"])
+    html_output = html_output.replace("__TAC_HKG_NA_MOM__", tac["hong_kong_north_america_mom_html"])
 
     # -------------------------------------------------------------------------
     # Macro / GSCPI
