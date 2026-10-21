@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-21 01:38:20",
+  "generated_at": "2026-10-21 02:04:21",
   "shipping": {
     "title": "Shipping Index (SCFI / BDI)",
     "path": "Shipping Index/index.html",
@@ -21,22 +21,29 @@
     "status": "Active"
   },
   "bunker": {
-    "title": "Bunker Price (VLSFO)",
+    "title": "Bunker Price Monitor",
     "path": "BunkerPrice/index.html",
     "category": "Sea",
     "latest_date": "-",
-    "rotterdam": "-",
-    "singapore": "-",
-    "status": "Active"
+    "singapore_vlsfo": "-",
+    "rotterdam_vlsfo": "-",
+    "houston_vlsfo": "-",
+    "vlsfo": "-",
+    "lsmgo": "-",
+    "ifo380": "-",
+    "status": "No Data"
   },
   "forwarder": {
     "title": "Global Top 25 Forwarders",
     "path": "Forwarder/index.html",
     "category": "Sea",
-    "latest_year": "-",
-    "top1_ocean": "-",
-    "top1_air": "-",
-    "status": "No Data"
+    "latest_date": "2026-10-21",
+    "rank": "#01",
+    "provider": "DSV",
+    "revenue": "37.4K USD",
+    "teu": "3.70M TEU",
+    "air_tons": "2.01M Tons",
+    "status": "Active"
   },
   "tac": {
     "title": "Air Freight (TAC Index)",

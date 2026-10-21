@@ -2,34 +2,49 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
   <title>MARKET INTELLIGENCE // TERMINAL PORTAL</title>
+
   <style>
     :root {
-      --bg-dark: #0a0e17;
-      --bg-panel: #111827;
-      --bg-item: #0d131f;
-      --bg-hover: #162235;
-      --amber: #f59e0b;
-      --amber-bright: #fbbf24;
-      --cyan: #06b6d4;
-      --cyan-bright: #22d3ee;
-      --green: #10b981;
-      --red: #f43f5e;
-      --text: #e2e8f0;
-      --text-muted: #94a3b8;
-      --text-dim: #64748b;
-      --border: #1e293b;
-      --border-light: #334155;
-      --mono: "Roboto Mono", "Consolas", "Courier New", monospace;
+      --bg-dark: #02060b;
+      --bg-panel: #070d15;
+      --bg-item: #0b121c;
+      --bg-hover: #101a27;
+      --amber: #ff8a00;
+      --amber-bright: #ffb14e;
+      --cyan: #42c6e8;
+      --cyan-bright: #75daf2;
+      --green: #00d26a;
+      --red: #ff4d4f;
+      --text: #e7edf4;
+      --text-muted: #8798aa;
+      --text-dim: #5d6d7d;
+      --border: #243342;
+      --border-light: #405064;
+      --mono: "IBM Plex Mono", "Roboto Mono", "Consolas", "Courier New", monospace;
       --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", Arial, sans-serif;
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
-    html, body {
-      height: 100%;
-      background: var(--bg-dark);
+    html,
+    body {
+      min-height: 100%;
+      background:
+        linear-gradient(
+          180deg,
+          rgba(255, 138, 0, 0.035) 0%,
+          rgba(2, 6, 11, 0) 260px
+        ),
+        var(--bg-dark);
       color: var(--text);
       font-family: var(--sans);
       font-size: 12px;
@@ -40,29 +55,31 @@
     body {
       display: flex;
       flex-direction: column;
-      padding: 10px 16px;
       min-height: 100vh;
-      justify-content: space-between;
+      padding: 10px 16px;
     }
 
     .container {
-      max-width: 1600px;
       width: 100%;
+      max-width: 1600px;
       margin: 0 auto;
       flex: 1;
       display: flex;
       flex-direction: column;
-      justify-content: flex-start;
       gap: 10px;
     }
 
-    /* Top Bloomberg Bar & Header */
+    /* =====================================================
+       Top Bloomberg Terminal Bar
+       ===================================================== */
     .top-bar {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding-bottom: 6px;
-      border-bottom: 1px solid var(--border);
+      min-height: 34px;
+      padding: 0 10px;
+      border: 1px solid var(--border-light);
+      background: var(--bg-panel);
       font-family: var(--mono);
       font-size: 11px;
     }
@@ -70,31 +87,43 @@
     .top-left {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
+      min-width: 0;
     }
 
     .badge-term {
+      display: inline-block;
+      padding: 2px 6px;
       background: var(--amber);
-      color: #000;
+      color: #050505;
       font-weight: 800;
-      padding: 1px 5px;
-      border-radius: 2px;
       font-size: 10px;
+      letter-spacing: 0.4px;
     }
 
     .title-main {
-      font-size: 16px;
-      font-weight: 800;
       color: #ffffff;
-      letter-spacing: -0.3px;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .updated-at {
+      flex-shrink: 0;
       color: var(--text-dim);
+      font-size: 10px;
     }
-    .updated-at span { color: var(--amber); }
 
-    /* Section Groups */
+    .updated-at span {
+      color: var(--amber-bright);
+    }
+
+    /* =====================================================
+       Section Layout
+       ===================================================== */
     .section-group {
       display: flex;
       flex-direction: column;
@@ -102,240 +131,351 @@
     }
 
     .section-title {
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--amber);
-      font-family: var(--mono);
-      letter-spacing: 0.5px;
       display: flex;
       align-items: center;
       gap: 6px;
+      color: var(--amber);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.65px;
       text-transform: uppercase;
     }
-    .section-title::before { content: "//"; color: var(--text-dim); font-weight: 800; }
 
-    /* Compact Grids */
-    .grid-4 {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
+    .section-title::before {
+      content: "//";
+      color: var(--text-dim);
+      font-weight: 800;
     }
 
-    .grid-2 {
+    .grid-4 {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 10px;
     }
 
     .grid-split {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
     }
 
-    /* Bloomberg Cards */
+    /* =====================================================
+       Terminal Cards
+       ===================================================== */
     .card {
-      background: var(--bg-panel);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 10px 12px;
-      text-decoration: none;
-      color: inherit;
+      position: relative;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      position: relative;
-      transition: all 0.15s ease;
+      min-height: 148px;
+      padding: 10px 12px;
       overflow: hidden;
-    }
-
-    .card::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 2px;
-      background: var(--border-light);
+      border: 1px solid var(--border);
+      border-top: 2px solid var(--border-light);
+      background:
+        linear-gradient(
+          135deg,
+          rgba(255, 138, 0, 0.035),
+          transparent 55%
+        ),
+        var(--bg-panel);
+      color: inherit;
+      text-decoration: none;
+      transition: all 0.15s ease;
     }
 
     .card:hover {
-      background: var(--bg-hover);
       border-color: var(--amber);
+      border-top-color: var(--amber);
+      background: var(--bg-hover);
       transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      box-shadow: 0 5px 14px rgba(0, 0, 0, 0.45);
     }
-    .card:hover::before { background: var(--amber); }
+
+    .bunker-card {
+      min-height: 204px;
+    }
 
     .card-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 6px;
-      margin-bottom: 6px;
+      gap: 7px;
+      margin-bottom: 7px;
     }
 
     .card-title {
-      font-size: 12.5px;
-      font-weight: 700;
+      min-width: 0;
+      overflow: hidden;
       color: #ffffff;
       font-family: var(--mono);
-      white-space: nowrap;
-      overflow: hidden;
+      font-size: 11.5px;
+      font-weight: 800;
       text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .badge {
-      font-size: 9.5px;
+      flex-shrink: 0;
       padding: 1px 5px;
-      border-radius: 2px;
-      font-weight: 700;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
       font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
     }
 
     .badge.active {
-      background: rgba(16, 185, 129, 0.15);
+      border-color: var(--green);
+      background: rgba(0, 210, 106, 0.1);
       color: var(--green);
-      border: 1px solid var(--green);
     }
 
     .badge.nodata {
-      background: rgba(100, 116, 139, 0.15);
+      border-color: var(--border);
+      background: rgba(93, 109, 125, 0.12);
       color: var(--text-dim);
-      border: 1px solid var(--border);
     }
 
-    /* KPI Rows */
+    /* =====================================================
+       KPI Components
+       ===================================================== */
     .kpi-group {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 6px;
-      margin: 4px 0 6px 0;
+      margin: 4px 0 6px;
     }
 
     .kpi-item {
-      background: var(--bg-item);
+      min-width: 0;
       padding: 6px 8px;
-      border-radius: 3px;
-      border: 1px solid rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(64, 80, 100, 0.55);
+      background: var(--bg-item);
     }
 
     .kpi-label {
-      font-size: 10px;
+      margin-bottom: 3px;
+      overflow: hidden;
       color: var(--text-muted);
       font-family: var(--mono);
-      margin-bottom: 2px;
-      white-space: nowrap;
-      overflow: hidden;
+      font-size: 9.5px;
+      letter-spacing: 0.1px;
       text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .kpi-val {
-      font-size: 14px;
-      font-weight: 800;
+      overflow: hidden;
       color: #ffffff;
       font-family: var(--mono);
-      white-space: nowrap;
-      overflow: hidden;
+      font-size: 13px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
       text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
-    .kpi-val.highlight { color: var(--cyan-bright); }
-    .kpi-val.amber { color: var(--amber); }
+    .kpi-val.highlight {
+      color: var(--cyan-bright);
+    }
 
-    .small-value { font-size: 11px; }
+    .kpi-val.amber {
+      color: var(--amber-bright);
+    }
 
-    /* Card Footer */
-    .card-footer {
-      font-size: 10px;
-      color: var(--text-dim);
+    .small-value {
+      font-size: 10.5px;
+      letter-spacing: -0.2px;
+    }
+
+    /* =====================================================
+       Bunker-Specific Compact KPI Layout
+       ===================================================== */
+    .bunker-section-label {
+      margin: 7px 0 4px;
+      color: var(--amber);
       font-family: var(--mono);
+      font-size: 8.5px;
+      font-weight: 800;
+      letter-spacing: 0.45px;
+    }
+
+    .bunker-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 5px;
+      margin-bottom: 4px;
+    }
+
+    .bunker-grid .kpi-item {
+      padding: 5px 6px;
+    }
+
+    .bunker-grid .kpi-label {
+      font-size: 8.5px;
+    }
+
+    .bunker-grid .kpi-val {
+      font-size: 9.5px;
+      letter-spacing: -0.45px;
+    }
+
+    /* =====================================================
+       Card Footer
+       ===================================================== */
+    .card-footer {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 6px;
+      margin-top: 5px;
+      padding-top: 6px;
       border-top: 1px solid var(--border);
-      padding-top: 5px;
-      margin-top: 4px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 9.5px;
     }
 
     .arrow {
+      flex-shrink: 0;
       color: var(--amber);
       font-weight: 800;
     }
 
-    /* Bottom Status Bar */
+    /* =====================================================
+       Portal Footer
+       ===================================================== */
     footer {
-      padding-top: 8px;
-      border-top: 1px solid var(--border);
       display: flex;
       justify-content: space-between;
+      gap: 12px;
+      width: 100%;
+      max-width: 1600px;
+      margin: 10px auto 0;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
       color: var(--text-dim);
       font-family: var(--mono);
-      font-size: 10px;
+      font-size: 9.5px;
     }
 
-    @media (max-width: 1200px) {
-      .grid-4 { grid-template-columns: repeat(2, 1fr); }
-      .grid-split { grid-template-columns: 1fr; }
+    @media (max-width: 1250px) {
+      .grid-4 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      body {
+        padding: 8px;
+      }
+
+      .grid-4,
+      .grid-split {
+        grid-template-columns: 1fr;
+      }
+
+      .top-bar {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 5px;
+        padding: 8px 10px;
+      }
+
+      .top-left {
+        width: 100%;
+      }
+
+      .updated-at {
+        padding-left: 1px;
+      }
+
+      footer {
+        align-items: flex-start;
+        flex-direction: column;
+      }
     }
   </style>
 </head>
+
 <body>
   <div class="container">
     <header class="top-bar">
       <div class="top-left">
-        <span class="badge-term">TERMINAL</span>
-        <span class="title-main">MARKET INTELLIGENCE // MAIN PORTAL</span>
+        <span class="badge-term">MI&lt;GO&gt;</span>
+        <span class="title-main">
+          MARKET INTELLIGENCE // MAIN PORTAL
+        </span>
       </div>
-      <div class="updated-at">UPDATED: <span>2026-10-21 01:38:20</span></div>
+      <div class="updated-at">
+        UPDATED: <span>2026-10-21 02:04:21</span>
+      </div>
     </header>
 
-    <!-- 1. Sea Section (4 Cards) -->
+    <!-- =================================================
+         1. Sea Section
+         ================================================= -->
     <section class="section-group">
       <div class="section-title">Sea</div>
+
       <div class="grid-4">
         <!-- Shipping Index -->
         <a href="Shipping Index/index.html" class="card">
           <div>
             <div class="card-header">
               <span class="card-title">Shipping Index (SCFI / BDI)</span>
-              <span class="badge active">Active</span>
+              <span class="badge active">
+                Active
+              </span>
             </div>
+
             <div class="kpi-group">
               <div class="kpi-item">
-                <div class="kpi-label">SCFI 종합지수</div>
+                <div class="kpi-label">SCFI Composite</div>
                 <div class="kpi-val highlight">3,679.6</div>
               </div>
+
               <div class="kpi-item">
-                <div class="kpi-label">BDI 종합지수</div>
+                <div class="kpi-label">BDI Composite</div>
                 <div class="kpi-val amber">2,546</div>
               </div>
             </div>
           </div>
+
           <div class="card-footer">
             <span>Date: 2026-10-19</span>
             <span class="arrow">OPEN &rarr;</span>
           </div>
         </a>
 
-        <!-- Alphaliner TOP 100 -->
+        <!-- Alphaliner -->
         <a href="Alphaliner/index.html" class="card">
           <div>
             <div class="card-header">
               <span class="card-title">Alphaliner TOP 100</span>
-              <span class="badge active">Active</span>
+              <span class="badge active">
+                Active
+              </span>
             </div>
+
             <div class="kpi-group">
               <div class="kpi-item">
-                <div class="kpi-label">총 선복량 (TEU)</div>
+                <div class="kpi-label">Total Fleet Capacity</div>
                 <div class="kpi-val">34,113,905</div>
               </div>
+
               <div class="kpi-item">
-                <div class="kpi-label">1위 선사 점유율</div>
-                <div class="kpi-val small-value highlight">Mediterranean Shg Co (21.50%)</div>
+                <div class="kpi-label">#01 Operator / Share</div>
+                <div class="kpi-val small-value highlight">
+                  Mediterranean Shg Co (21.50%)
+                </div>
               </div>
             </div>
           </div>
+
           <div class="card-footer">
             <span>Date: 2026-10-19</span>
             <span class="arrow">OPEN &rarr;</span>
@@ -343,25 +483,72 @@
         </a>
 
         <!-- Bunker Price -->
-        <a href="BunkerPrice/index.html" class="card">
+        <a href="BunkerPrice/index.html" class="card bunker-card">
           <div>
             <div class="card-header">
-              <span class="card-title">Bunker Price (VLSFO)</span>
-              <span class="badge active">Active</span>
+              <span class="card-title">Bunker Price Monitor</span>
+              <span class="badge nodata">
+                No Data
+              </span>
             </div>
-            <div class="kpi-group">
+
+            <div class="bunker-section-label">
+              VLSFO / MAJOR PORTS
+            </div>
+
+            <div class="bunker-grid">
               <div class="kpi-item">
-                <div class="kpi-label">주요 항만 가격</div>
-                <div class="kpi-val small-value">RDM / SIN</div>
+                <div class="kpi-label">Singapore</div>
+                <div class="kpi-val highlight">
+                  -
+                </div>
               </div>
+
               <div class="kpi-item">
-                <div class="kpi-label">유종 모니터링</div>
-                <div class="kpi-val small-value amber">VLSFO / LSMGO</div>
+                <div class="kpi-label">Rotterdam</div>
+                <div class="kpi-val">
+                  -
+                </div>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-label">Houston</div>
+                <div class="kpi-val">
+                  -
+                </div>
+              </div>
+            </div>
+
+            <div class="bunker-section-label">
+              SINGAPORE / FUEL GRADES
+            </div>
+
+            <div class="bunker-grid">
+              <div class="kpi-item">
+                <div class="kpi-label">VLSFO</div>
+                <div class="kpi-val amber">
+                  -
+                </div>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-label">LSMGO</div>
+                <div class="kpi-val">
+                  -
+                </div>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-label">IFO380</div>
+                <div class="kpi-val">
+                  -
+                </div>
               </div>
             </div>
           </div>
+
           <div class="card-footer">
-            <span>Fuel Oil Price Trends</span>
+            <span>Date: -</span>
             <span class="arrow">OPEN &rarr;</span>
           </div>
         </a>
@@ -371,76 +558,113 @@
           <div>
             <div class="card-header">
               <span class="card-title">Global Top 25 Forwarders</span>
-              <span class="badge nodata">No Data</span>
+              <span class="badge active">
+                Active
+              </span>
             </div>
+
             <div class="kpi-group">
               <div class="kpi-item">
-                <div class="kpi-label">해상 1위 포워더</div>
-                <div class="kpi-val small-value">-</div>
+                <div class="kpi-label">#01 Provider</div>
+                <div class="kpi-val small-value highlight">
+                  DSV
+                </div>
               </div>
+
               <div class="kpi-item">
-                <div class="kpi-label">항공 1위 포워더</div>
-                <div class="kpi-val small-value highlight">-</div>
+                <div class="kpi-label">Revenue</div>
+                <div class="kpi-val amber">
+                  37.4K USD
+                </div>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-label">Ocean Volume</div>
+                <div class="kpi-val small-value">
+                  3.70M TEU
+                </div>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-label">Air Volume</div>
+                <div class="kpi-val small-value">
+                  2.01M Tons
+                </div>
               </div>
             </div>
           </div>
+
           <div class="card-footer">
-            <span>A&A Global Ranking Analysis</span>
+            <span>Snapshot: 2026-10-21</span>
             <span class="arrow">OPEN &rarr;</span>
           </div>
         </a>
       </div>
     </section>
 
-    <!-- 2. Air & Global Split Section -->
+    <!-- =================================================
+         2. Air & Global Section
+         ================================================= -->
     <div class="grid-split">
-      <!-- Air Section (1 Card) -->
       <section class="section-group">
         <div class="section-title">Air</div>
+
         <a href="TAC Index/index.html" class="card">
           <div>
             <div class="card-header">
               <span class="card-title">Air Freight (TAC Index)</span>
-              <span class="badge active">Active</span>
+              <span class="badge active">
+                Active
+              </span>
             </div>
+
             <div class="kpi-group">
               <div class="kpi-item">
-                <div class="kpi-label">종합 지수 (Overall)</div>
+                <div class="kpi-label">Overall Index</div>
                 <div class="kpi-val highlight">4.74</div>
               </div>
+
               <div class="kpi-item">
-                <div class="kpi-label">주간 변동률 (W/W)</div>
+                <div class="kpi-label">Weekly Change</div>
                 <div class="kpi-val amber">+2.07%</div>
               </div>
             </div>
           </div>
+
           <div class="card-footer">
-            <span>Date: 2026-09-01 (Routes: 3)</span>
+            <span>Date: 2026-09-01 / Routes: 3</span>
             <span class="arrow">OPEN &rarr;</span>
           </div>
         </a>
       </section>
 
-      <!-- Global Section (1 Card) -->
       <section class="section-group">
         <div class="section-title">Global</div>
+
         <a href="GDP&amp;Inflation/index.html" class="card">
           <div>
             <div class="card-header">
-              <span class="card-title">Macro Economies & GSCPI</span>
-              <span class="badge nodata">No Data</span>
+              <span class="card-title">Macro Economies &amp; GSCPI</span>
+              <span class="badge nodata">
+                No Data
+              </span>
             </div>
+
             <div class="kpi-group">
               <div class="kpi-item">
-                <div class="kpi-label">공급망 압력 (GSCPI)</div>
+                <div class="kpi-label">Supply Chain Pressure</div>
                 <div class="kpi-val highlight">-</div>
               </div>
+
               <div class="kpi-item">
-                <div class="kpi-label">거시 지표 범위</div>
-                <div class="kpi-val small-value">WorldBank GDP / CPI</div>
+                <div class="kpi-label">Macro Coverage</div>
+                <div class="kpi-val small-value">
+                  WorldBank GDP / CPI
+                </div>
               </div>
             </div>
           </div>
+
           <div class="card-footer">
             <span>Date: -</span>
             <span class="arrow">OPEN &rarr;</span>
@@ -451,7 +675,9 @@
   </div>
 
   <footer>
-    <div>MARKET INTELLIGENCE PLATFORM // REAL-TIME LOGISTICS & MACRO DASHBOARDS</div>
+    <div>
+      MARKET INTELLIGENCE PLATFORM // LOGISTICS &amp; MACRO DASHBOARDS
+    </div>
     <div>TERMINAL FEED: ACTIVE</div>
   </footer>
 </body>
