@@ -176,8 +176,8 @@ def get_db_connection() -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS tac_master (
             snapshot_id    INTEGER PRIMARY KEY AUTOINCREMENT,
             captured_at    TEXT NOT NULL,
-            data_date      TEXT NOT NULL,
-            data_hash      TEXT NOT NULL UNIQUE,
+            data_date      TEXT NOT NULL UNIQUE,
+            data_hash      TEXT NOT NULL,
             overall_index  REAL,
             weekly_change  REAL,
             route_count    INTEGER NOT NULL
@@ -661,18 +661,6 @@ def build_dataset(rows: List[List[Any]]) -> Dict[str, Any]:
         "series": series,
     }
 
-def get_latest_data_position(dataset: Dict[str, Any]) -> int:
-    labels = dataset.get("labels", [])
-    series = dataset.get("series", [])
-
-    for index in range(len(labels) - 1, -1, -1):
-        for item in series:
-            values = item.get("values", [])
-            if index < len(values) and values[index] is not None:
-                return index
-
-    raise RuntimeError("No valid latest data point was found.")
-
 def get_previous_valid_value(
     values: List[Optional[float]],
     from_index: int,
@@ -680,191 +668,203 @@ def get_previous_valid_value(
     for index in range(from_index - 1, -1, -1):
         if index < len(values) and values[index] is not None:
             return values[index]
-
     return None
 
-def build_snapshot_bundle(dataset: Dict[str, Any]) -> Dict[str, Any]:
-    latest_index = get_latest_data_position(dataset)
-    labels = dataset["labels"]
-    source_dates = dataset["source_dates"]
-    series = dataset["series"]
-
-    latest_label = labels[latest_index]
-    parsed_date = source_dates[latest_index]
-
-    if parsed_date is None:
-        raise RuntimeError(
-            "The latest source label could not be converted to a date. "
-            f"Latest label: '{latest_label}'"
-        )
-
-    detail_rows: List[Dict[str, Any]] = []
-    latest_values: List[float] = []
-    change_values: List[float] = []
-
-    for item in series:
-        route_name = item["name"]
-        values = item["values"]
-
-        latest_value = (
-            values[latest_index]
-            if latest_index < len(values)
-            else None
-        )
-
-        if latest_value is None:
-            continue
-
-        previous_value = get_previous_valid_value(values, latest_index)
-
-        weekly_change: Optional[float] = None
-        if previous_value not in (None, 0):
-            weekly_change = ((latest_value - previous_value) / previous_value) * 100
-            change_values.append(weekly_change)
-
-        origin, destination = split_route(route_name)
-
-        detail_rows.append(
-            {
-                "route_code": route_name,
-                "origin": origin,
-                "destination": destination,
-                "index_value": latest_value,
-                "weekly_change": weekly_change,
-                "monthly_change": None,
-                "ytd_change": None,
-            }
-        )
-
-        latest_values.append(latest_value)
-
-    if not detail_rows:
-        raise RuntimeError("No route-level values exist for the latest TAC date.")
-
-    overall_index = sum(latest_values) / len(latest_values)
-    average_change = (
-        sum(change_values) / len(change_values)
-        if change_values
-        else None
-    )
-
-    return {
-        "data_date": parsed_date,
-        "source_label": latest_label,
-        "overall_index": overall_index,
-        "weekly_change": average_change,
-        "details": detail_rows,
-    }
-
-def make_snapshot_hash(bundle: Dict[str, Any]) -> str:
+def make_snapshot_hash(data_date: str, details: List[Dict[str, Any]]) -> str:
     normalized_payload = {
-        "data_date": bundle["data_date"],
-        "source_label": bundle["source_label"],
-        "details": sorted(
-            bundle["details"],
-            key=lambda row: row["route_code"],
-        ),
+        "data_date": data_date,
+        "details": sorted(details, key=lambda row: row["route_code"]),
     }
-
     raw = json.dumps(
         normalized_payload,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
     )
-
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
-# =============================================================================
-# 7. Save snapshot
-# =============================================================================
-def save_snapshot(bundle: Dict[str, Any]) -> Tuple[int, bool]:
-    data_hash = make_snapshot_hash(bundle)
-    captured_at = get_now_string()
-    details = bundle["details"]
+def build_all_snapshot_bundles(dataset: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """모든 과거 시계열 포인트를 순회하며 날짜별 스냅샷 번들을 구축합니다."""
+    labels = dataset["labels"]
+    source_dates = dataset["source_dates"]
+    series = dataset["series"]
 
+    bundles: List[Dict[str, Any]] = []
+
+    for idx, raw_label in enumerate(labels):
+        parsed_date = source_dates[idx] or raw_label
+
+        detail_rows: List[Dict[str, Any]] = []
+        valid_values: List[float] = []
+        change_values: List[float] = []
+
+        for item in series:
+            route_name = item["name"]
+            values = item["values"]
+
+            val = values[idx] if idx < len(values) else None
+            if val is None:
+                continue
+
+            prev_val = get_previous_valid_value(values, idx)
+            weekly_change: Optional[float] = None
+            if prev_val not in (None, 0):
+                weekly_change = ((val - prev_val) / prev_val) * 100
+                change_values.append(weekly_change)
+
+            origin, destination = split_route(route_name)
+            detail_rows.append({
+                "route_code": route_name,
+                "origin": origin,
+                "destination": destination,
+                "index_value": val,
+                "weekly_change": weekly_change,
+                "monthly_change": None,
+                "ytd_change": None,
+            })
+            valid_values.append(val)
+
+        if not detail_rows:
+            continue
+
+        overall_index = sum(valid_values) / len(valid_values)
+        average_change = sum(change_values) / len(change_values) if change_values else None
+
+        bundles.append({
+            "data_date": parsed_date,
+            "source_label": raw_label,
+            "overall_index": overall_index,
+            "weekly_change": average_change,
+            "details": detail_rows,
+        })
+
+    return bundles
+
+# =============================================================================
+# 7. Save snapshot (전체 시계열 누적 저장 지원)
+# =============================================================================
+def save_all_snapshots(bundles: List[Dict[str, Any]]) -> Tuple[int, int, Optional[int], Optional[Dict[str, Any]]]:
+    """
+    모든 날짜별 스냅샷을 DB에 누적 저장합니다.
+    - 이미 존재하는 data_date는 해시 일치 여부 확인 후 스킵 또는 업데이트
+    - 신규 data_date는 신규 INSERT
+    """
     conn = get_db_connection()
+    new_count = 0
+    updated_count = 0
+    latest_snapshot_id = None
+    latest_bundle = None
+
+    captured_at = get_now_string()
 
     try:
-        existing = conn.execute(
-            """
-            SELECT snapshot_id
-            FROM tac_master
-            WHERE data_hash = ?
-            """,
-            (data_hash,),
-        ).fetchone()
+        for bundle in bundles:
+            data_date = bundle["data_date"]
+            details = bundle["details"]
+            data_hash = make_snapshot_hash(data_date, details)
 
-        if existing:
-            snapshot_id = int(existing["snapshot_id"])
-            log_info(
-                f"[DB] Duplicate TAC snapshot detected. "
-                f"Using existing snapshot_id={snapshot_id}"
-            )
-            return snapshot_id, False
+            existing = conn.execute(
+                "SELECT snapshot_id, data_hash FROM tac_master WHERE data_date = ?",
+                (data_date,),
+            ).fetchone()
 
-        with conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO tac_master (
-                    captured_at,
-                    data_date,
-                    data_hash,
-                    overall_index,
-                    weekly_change,
-                    route_count
-                )
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    captured_at,
-                    bundle["data_date"],
-                    data_hash,
-                    bundle["overall_index"],
-                    bundle["weekly_change"],
-                    len(details),
-                ),
-            )
+            if existing:
+                s_id = int(existing["snapshot_id"])
+                latest_snapshot_id = s_id
+                latest_bundle = bundle
 
-            snapshot_id = int(cursor.lastrowid)
+                if existing["data_hash"] != data_hash:
+                    # 데이터 내용이 달라진 경우 업데이트
+                    with conn:
+                        conn.execute(
+                            """
+                            UPDATE tac_master
+                            SET captured_at = ?, data_hash = ?, overall_index = ?, weekly_change = ?, route_count = ?
+                            WHERE snapshot_id = ?
+                            """,
+                            (
+                                captured_at,
+                                data_hash,
+                                bundle["overall_index"],
+                                bundle["weekly_change"],
+                                len(details),
+                                s_id,
+                            ),
+                        )
+                        conn.execute("DELETE FROM tac_detail WHERE snapshot_id = ?", (s_id,))
+                        conn.executemany(
+                            """
+                            INSERT INTO tac_detail (
+                                snapshot_id, route_code, origin, destination,
+                                index_value, weekly_change, monthly_change, ytd_change
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            [
+                                (
+                                    s_id,
+                                    r["route_code"],
+                                    r["origin"],
+                                    r["destination"],
+                                    r["index_value"],
+                                    r["weekly_change"],
+                                    r["monthly_change"],
+                                    r["ytd_change"],
+                                )
+                                for r in details
+                            ],
+                        )
+                    updated_count += 1
+                continue
 
-            conn.executemany(
-                """
-                INSERT INTO tac_detail (
-                    snapshot_id,
-                    route_code,
-                    origin,
-                    destination,
-                    index_value,
-                    weekly_change,
-                    monthly_change,
-                    ytd_change
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
+            # 신규 삽입
+            with conn:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO tac_master (
+                        captured_at, data_date, data_hash, overall_index, weekly_change, route_count
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
                     (
-                        snapshot_id,
-                        row["route_code"],
-                        row["origin"],
-                        row["destination"],
-                        row["index_value"],
-                        row["weekly_change"],
-                        row["monthly_change"],
-                        row["ytd_change"],
-                    )
-                    for row in details
-                ],
-            )
+                        captured_at,
+                        data_date,
+                        data_hash,
+                        bundle["overall_index"],
+                        bundle["weekly_change"],
+                        len(details),
+                    ),
+                )
+                s_id = int(cursor.lastrowid)
+                latest_snapshot_id = s_id
+                latest_bundle = bundle
+
+                conn.executemany(
+                    """
+                    INSERT INTO tac_detail (
+                        snapshot_id, route_code, origin, destination,
+                        index_value, weekly_change, monthly_change, ytd_change
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            s_id,
+                            r["route_code"],
+                            r["origin"],
+                            r["destination"],
+                            r["index_value"],
+                            r["weekly_change"],
+                            r["monthly_change"],
+                            r["ytd_change"],
+                        )
+                        for r in details
+                    ],
+                )
+            new_count += 1
 
         log_info(
-            f"[DB] New TAC snapshot saved: "
-            f"id={snapshot_id}, "
-            f"date={bundle['data_date']}, "
-            f"routes={len(details)}"
+            f"[DB] Bulk sync completed: {new_count} new, {updated_count} updated, "
+            f"total snapshots processed={len(bundles)}"
         )
-
-        return snapshot_id, True
+        return new_count, updated_count, latest_snapshot_id, latest_bundle
 
     finally:
         conn.close()
@@ -874,7 +874,6 @@ def save_snapshot(bundle: Dict[str, Any]) -> Tuple[int, bool]:
 # =============================================================================
 def load_history() -> List[Dict[str, Any]]:
     conn = get_db_connection()
-
     try:
         rows = conn.execute(
             """
@@ -889,15 +888,12 @@ def load_history() -> List[Dict[str, Any]]:
             ORDER BY data_date ASC, snapshot_id ASC
             """
         ).fetchall()
-
         return [dict(row) for row in rows]
-
     finally:
         conn.close()
 
 def load_latest_details() -> List[Dict[str, Any]]:
     conn = get_db_connection()
-
     try:
         rows = conn.execute(
             """
@@ -924,9 +920,7 @@ def load_latest_details() -> List[Dict[str, Any]]:
             ORDER BY d.route_code ASC
             """
         ).fetchall()
-
         return [dict(row) for row in rows]
-
     finally:
         conn.close()
 
@@ -974,7 +968,7 @@ def build_static_json() -> Dict[str, Any]:
     return payload
 
 # =============================================================================
-# 9. Static HTML dashboard (Bloomberg Terminal Style)
+# 9. Static HTML dashboard
 # =============================================================================
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="ko">
@@ -996,7 +990,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       --text-muted: #737c8e;
       --text-dim: #454d5d;
 
-      /* Bloomberg Core Palette */
       --bb-amber: #ff9900;
       --bb-amber-dim: #b36b00;
       --bb-cyan: #00e5ff;
@@ -1027,7 +1020,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       letter-spacing: -0.2px;
     }
 
-    /* Terminal Header Bar */
     .terminal-header {
       background-color: var(--bg-panel);
       border-bottom: 2px solid var(--bb-amber);
@@ -1098,14 +1090,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       box-shadow: 0 0 8px var(--bb-amber);
     }
 
-    /* Main Container */
     .container {
       max-width: 1400px;
       margin: 18px auto 0;
       padding: 0 16px;
     }
 
-    /* KPI Command Matrix */
     .kpi-matrix {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -1122,15 +1112,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       position: relative;
     }
 
-    .kpi-box.cyan {
-      border-left-color: var(--bb-cyan);
-    }
-    .kpi-box.green {
-      border-left-color: var(--bb-green);
-    }
-    .kpi-box.purple {
-      border-left-color: var(--bb-purple);
-    }
+    .kpi-box.cyan { border-left-color: var(--bb-cyan); }
+    .kpi-box.green { border-left-color: var(--bb-green); }
+    .kpi-box.purple { border-left-color: var(--bb-purple); }
 
     .kpi-tag {
       font-size: 10px;
@@ -1155,7 +1139,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       color: var(--text-muted);
     }
 
-    /* Panel Shell */
     .panel {
       background: var(--bg-panel);
       border: 1px solid var(--border-subtle);
@@ -1193,7 +1176,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       padding: 14px;
     }
 
-    /* Filter Toolbar */
     .filter-bar {
       display: flex;
       flex-wrap: wrap;
@@ -1234,13 +1216,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       font-weight: 600;
     }
 
-    /* Chart Container */
     .chart-box {
       height: 400px;
       position: relative;
     }
 
-    /* Terminal Data Table */
     .data-table-wrap {
       overflow-x: auto;
     }
@@ -1273,9 +1253,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       background: rgba(255, 153, 0, 0.04);
     }
 
-    .text-right {
-      text-align: right;
-    }
+    .text-right { text-align: right; }
 
     .badge-route {
       display: inline-block;
@@ -1288,21 +1266,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       color: var(--bb-cyan);
     }
 
-    .delta-up {
-      color: var(--bb-green);
-      font-weight: 600;
-    }
+    .delta-up { color: var(--bb-green); font-weight: 600; }
+    .delta-down { color: var(--bb-red); font-weight: 600; }
+    .delta-flat { color: var(--text-dim); }
 
-    .delta-down {
-      color: var(--bb-red);
-      font-weight: 600;
-    }
-
-    .delta-flat {
-      color: var(--text-dim);
-    }
-
-    /* Footer & Disclaimer */
     .terminal-footer {
       margin-top: 18px;
       padding: 12px;
@@ -1314,35 +1281,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       line-height: 1.6;
     }
 
-    .terminal-footer strong {
-      color: var(--bb-amber);
-    }
+    .terminal-footer strong { color: var(--bb-amber); }
 
-    /* Responsive */
     @media (max-width: 900px) {
-      .kpi-matrix {
-        grid-template-columns: repeat(2, 1fr);
-      }
-      .meta-ticker {
-        display: none;
-      }
-      .chart-box {
-        height: 320px;
-      }
+      .kpi-matrix { grid-template-columns: repeat(2, 1fr); }
+      .meta-ticker { display: none; }
+      .chart-box { height: 320px; }
     }
 
     @media (max-width: 560px) {
-      .kpi-matrix {
-        grid-template-columns: 1fr;
-      }
-      .terminal-header {
-        padding: 8px 12px;
-      }
+      .kpi-matrix { grid-template-columns: 1fr; }
+      .terminal-header { padding: 8px 12px; }
     }
   </style>
 </head>
 <body>
-  <!-- Terminal Top Navigation Bar -->
   <header class="terminal-header">
     <div class="brand-section">
       <div class="terminal-cmd mono">AIR &lt;GO&gt;</div>
@@ -1357,13 +1310,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   </header>
 
   <main class="container">
-    <!-- Audit / Sync Meta Banner -->
     <div id="sync-banner"></div>
-
-    <!-- 4-Box Key Metrics Matrix -->
     <section class="kpi-matrix mono" id="kpi-area"></section>
 
-    <!-- Interactive Route Rate Chart -->
     <section class="panel">
       <div class="panel-head">
         <h2><span>■</span> ROUTE RATE TIME-SERIES MONITOR</h2>
@@ -1380,7 +1329,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       </div>
     </section>
 
-    <!-- Latest Route Observation Detail Table -->
     <section class="panel">
       <div class="panel-head">
         <h2><span>■</span> SPOT RATE & PERIODIC DELTA BREAKDOWN</h2>
@@ -1405,7 +1353,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       </div>
     </section>
 
-    <!-- Terminal Operational Notes & Disclaimers -->
     <footer class="terminal-footer mono">
       <strong>[TERMINAL NOTE]</strong><br>
       1. <strong>Overall Index</strong>는 원천 차트에서 식별된 주요 개별 노선 스팟 운임의 단순 산술 평균치이며 공식 TAC Composite Benchmark를 대변하지 않습니다.<br>
@@ -1414,7 +1361,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </footer>
   </main>
 
-  <!-- Embedded JSON Data Payload -->
   <script type="application/json" id="tac-data">
 __JSON_PAYLOAD__
   </script>
@@ -1429,14 +1375,13 @@ __JSON_PAYLOAD__
       var chart = null;
       var selectedRoutes = {};
 
-      // Bloomberg Terminal Vibrant Line Color Map
       var terminalColors = [
-        "#00e5ff", // Cyan
-        "#ff9900", // Amber
-        "#00e676", // Green
-        "#ff334b", // Red
-        "#bb86fc", // Purple
-        "#ffd600"  // Yellow
+        "#00e5ff",
+        "#ff9900",
+        "#00e676",
+        "#ff334b",
+        "#bb86fc",
+        "#ffd600"
       ];
 
       function formatNumber(value, digits) {
@@ -1743,35 +1688,6 @@ __JSON_PAYLOAD__
 </html>
 """
 
-def build_static_html(
-    json_payload: Dict[str, Any],
-    raw_dataset: Optional[Dict[str, Any]] = None,
-) -> None:
-    payload = dict(json_payload)
-    payload["raw_dataset"] = raw_dataset or {
-        "labels": [],
-        "series": [],
-    }
-
-    if not raw_dataset:
-        payload["raw_dataset"] = build_raw_dataset_from_db()
-
-    json_payload_text = json.dumps(
-        payload,
-        ensure_ascii=False,
-        indent=2,
-    ).replace("</", "<\\/")
-
-    page = (
-        HTML_TEMPLATE
-        .replace("__PARENT_URL__", PARENT_URL)
-        .replace("__GENERATED_AT__", get_now_string())
-        .replace("__JSON_PAYLOAD__", json_payload_text)
-    )
-
-    atomic_write_text(HTML_PATH, page)
-    log_info(f"[STATIC] HTML generated: {HTML_PATH.name}")
-
 def build_raw_dataset_from_db() -> Dict[str, Any]:
     conn = get_db_connection()
 
@@ -1833,6 +1749,29 @@ def build_raw_dataset_from_db() -> Dict[str, Any]:
     finally:
         conn.close()
 
+def build_static_html(
+    json_payload: Dict[str, Any],
+    raw_dataset: Optional[Dict[str, Any]] = None,
+) -> None:
+    payload = dict(json_payload)
+    payload["raw_dataset"] = raw_dataset or build_raw_dataset_from_db()
+
+    json_payload_text = json.dumps(
+        payload,
+        ensure_ascii=False,
+        indent=2,
+    ).replace("</", "<\\/")
+
+    page = (
+        HTML_TEMPLATE
+        .replace("__PARENT_URL__", PARENT_URL)
+        .replace("__GENERATED_AT__", get_now_string())
+        .replace("__JSON_PAYLOAD__", json_payload_text)
+    )
+
+    atomic_write_text(HTML_PATH, page)
+    log_info(f"[STATIC] HTML generated: {HTML_PATH.name}")
+
 # =============================================================================
 # 10. Main crawling process
 # =============================================================================
@@ -1844,39 +1783,39 @@ def run_tac_sync() -> Dict[str, Any]:
         infographic_data = extract_infographic_data(embed_html)
         chart_rows = extract_best_chart_rows(infographic_data)
         dataset = build_dataset(chart_rows)
-        bundle = build_snapshot_bundle(dataset)
 
-        snapshot_id, is_new = save_snapshot(bundle)
+        # 전체 과거 시계열 스냅샷 목록 생성
+        bundles = build_all_snapshot_bundles(dataset)
+        if not bundles:
+            raise RuntimeError("No valid snapshot bundles could be constructed from dataset.")
+
+        new_count, updated_count, latest_snapshot_id, latest_bundle = save_all_snapshots(bundles)
 
         finished_at = get_now_string()
+
+        latest_date = latest_bundle["data_date"] if latest_bundle else None
+        latest_route_count = len(latest_bundle["details"]) if latest_bundle else 0
 
         save_crawl_audit(
             started_at=started_at,
             finished_at=finished_at,
             status="SUCCESS",
-            message=(
-                "NEW_SNAPSHOT"
-                if is_new
-                else "DUPLICATE_SNAPSHOT"
-            ),
-            snapshot_id=snapshot_id,
-            route_count=len(bundle["details"]),
-            data_date=bundle["data_date"],
+            message=f"SYNC_OK (new:{new_count}, upd:{updated_count}, total:{len(bundles)})",
+            snapshot_id=latest_snapshot_id,
+            route_count=latest_route_count,
+            data_date=latest_date,
         )
 
         log_info(
-            "[SUCCESS] TAC Index extraction completed: "
-            f"date={bundle['data_date']}, "
-            f"source_label={bundle['source_label']}, "
-            f"routes={len(bundle['details'])}"
+            f"[SUCCESS] TAC Index extraction and bulk sync completed: "
+            f"new={new_count}, updated={updated_count}, latest_date={latest_date}"
         )
 
         return {
             "ok": True,
-            "snapshot_id": snapshot_id,
-            "is_new": is_new,
+            "snapshot_id": latest_snapshot_id,
             "dataset": dataset,
-            "bundle": bundle,
+            "bundle": latest_bundle,
         }
 
     except Exception as exc:
@@ -1939,7 +1878,8 @@ def main() -> int:
 
     payload = build_static_json()
 
-    raw_dataset = result.get("dataset") if result.get("ok") else None
+    # DB에서 최신 시계열을 온전히 빌드하여 HTML 생성
+    raw_dataset = build_raw_dataset_from_db()
     build_static_html(payload, raw_dataset=raw_dataset)
 
     if result.get("ok"):
