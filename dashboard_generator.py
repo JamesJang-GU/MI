@@ -1974,27 +1974,60 @@ def main():
     html_output = replace_template_value(html_output, "__FORWARDER_DATE__", forwarder["latest_date"])
 
     # -------------------------------------------------------------------------
-    # TAC Air Freight
+    # TAC Air Freight - Route-level data only
     # -------------------------------------------------------------------------
-    html_output = replace_template_value(html_output, "__TAC_PATH__", tac["path"])
-    html_output = replace_template_value(html_output, "__TAC_STATUS__", tac["status"])
-    html_output = html_output.replace("__TAC_STATUS_CLASS__", get_status_class(tac["status"]))
-    html_output = replace_template_value(html_output, "__TAC_INDEX__", tac["overall_index"])
-    html_output = html_output.replace("__TAC_WEEKLY_DELTA__", tac["weekly_change_html"])
-    html_output = replace_template_value(html_output, "__TAC_DATE__", tac["latest_date"])
-    html_output = replace_template_value(html_output, "__TAC_ROUTES__", tac["route_count"])
+    html_output = replace_template_value(
+        html_output,
+        "__TAC_PATH__",
+        tac["path"],
+    )
+    html_output = replace_template_value(
+        html_output,
+        "__TAC_STATUS__",
+        tac["status"],
+    )
+    html_output = html_output.replace(
+        "__TAC_STATUS_CLASS__",
+        get_status_class(tac["status"]),
+    )
+    html_output = replace_template_value(
+        html_output,
+        "__TAC_DATE__",
+        tac["latest_date"],
+    )
 
     # Frankfurt - North America
-    html_output = replace_template_value(html_output, "__TAC_FRA_NA_RATE__", tac["frankfurt_north_america_rate"])
-    html_output = html_output.replace("__TAC_FRA_NA_MOM__", tac["frankfurt_north_america_mom_html"])
+    html_output = replace_template_value(
+        html_output,
+        "__TAC_FRA_NA_RATE__",
+        tac["frankfurt_north_america_rate"],
+    )
+    html_output = html_output.replace(
+        "__TAC_FRA_NA_MOM__",
+        tac["frankfurt_north_america_mom_html"],
+    )
 
     # Hong Kong - Europe
-    html_output = replace_template_value(html_output, "__TAC_HKG_EU_RATE__", tac["hong_kong_europe_rate"])
-    html_output = html_output.replace("__TAC_HKG_EU_MOM__", tac["hong_kong_europe_mom_html"])
+    html_output = replace_template_value(
+        html_output,
+        "__TAC_HKG_EU_RATE__",
+        tac["hong_kong_europe_rate"],
+    )
+    html_output = html_output.replace(
+        "__TAC_HKG_EU_MOM__",
+        tac["hong_kong_europe_mom_html"],
+    )
 
     # Hong Kong - North America
-    html_output = replace_template_value(html_output, "__TAC_HKG_NA_RATE__", tac["hong_kong_north_america_rate"])
-    html_output = html_output.replace("__TAC_HKG_NA_MOM__", tac["hong_kong_north_america_mom_html"])
+    html_output = replace_template_value(
+        html_output,
+        "__TAC_HKG_NA_RATE__",
+        tac["hong_kong_north_america_rate"],
+    )
+    html_output = html_output.replace(
+        "__TAC_HKG_NA_MOM__",
+        tac["hong_kong_north_america_mom_html"],
+    )
 
     # -------------------------------------------------------------------------
     # Macro / GSCPI
