@@ -667,16 +667,7 @@ def get_forwarder_summary():
 
 def normalize_tac_corridor_name(value):
     """
-    TAC DB 내 다양한 Route / Corridor 표기를 포털 표시 기준으로 통일한다.
-
-    지원 예시:
-    - Frankfurt-North America
-    - Frankfurt - North America
-    - Frankfurt to North America
-    - FRA-North America
-    - Hong Kong-Europe
-    - HKG-Europe
-    - Hong Kong-North America
+    TAC DB 내 Route / Corridor 표기를 포털 표준 명칭으로 통일한다.
     """
     raw_value = str(value or "").strip()
 
@@ -719,15 +710,82 @@ def normalize_tac_corridor_name(value):
 
     return mapping.get(compact, raw_value)
 
+def normalize_tac_period(value):
+    """
+    TAC 기간 값을 비교 가능한 월 기준 형식으로 정규화한다.
+
+    지원 예시:
+    - 2026-09-01
+    - 2026-09
+    - 20260901
+    - 2026/09/01
+    - Sep-26
+    - Sep 2026
+    - September-2026
+
+    반환:
+    {
+        "date": "YYYY-MM-01",
+        "month": "YYYY-MM",
+        "sort_key": 202609
+    }
+
+    변환 불가 시 None 반환.
+    """
+    raw_value = str(value or "").strip()
+
+    if not raw_value:
+        return None
+
+    normalized = (
+        raw_value
+        .replace("/", "-")
+        .replace(".", "-")
+        .replace("_", "-")
+    )
+
+    formats = [
+        "%Y-%m-%d",
+        "%Y-%m",
+        "%Y%m%d",
+        "%Y%m",
+        "%d-%m-%Y",
+        "%d-%b-%Y",
+        "%d-%b-%y",
+        "%b-%y",
+        "%b-%Y",
+        "%b %y",
+        "%b %Y",
+        "%B-%Y",
+        "%B %Y",
+    ]
+
+    parsed_date = None
+
+    for date_format in formats:
+        try:
+            parsed_date = datetime.strptime(normalized, date_format)
+            break
+        except ValueError:
+            continue
+
+    if parsed_date is None:
+        # datetime 문자열 등 YYYY-MM-DD로 시작하는 데이터 대응
+        try:
+            parsed_date = datetime.strptime(normalized[:10], "%Y-%m-%d")
+        except ValueError:
+            return None
+
+    return {
+        "date": parsed_date.strftime("%Y-%m-01"),
+        "month": parsed_date.strftime("%Y-%m"),
+        "sort_key": parsed_date.year * 100 + parsed_date.month,
+    }
+
 def calculate_rate_delta_display(current_value, previous_value, decimals=2):
     """
-    최신 항공운임과 전월 최신 항공운임을 비교하여
+    최신 항공운임과 직전 월 운임을 비교하여
     절대 증감, 증감률, 방향 화살표를 HTML 형태로 반환한다.
-
-    표시 예:
-    +0.12 (+2.60%) ↗
-    -0.08 (-1.45%) ↘
-    ±0.00 (±0.00%) →
     """
     if current_value is None or previous_value is None:
         return '<span class="delta-neutral">-</span>'
@@ -777,13 +835,12 @@ def get_sqlite_table_names(cursor):
 
 def find_tac_route_table(cursor):
     """
-    TAC DB 안에서 Route / Corridor 운임 데이터가 들어 있는 테이블을 자동 탐색한다.
+    TAC Route 시계열 데이터 테이블을 탐색한다.
 
-    지원 DB 구조:
-    1. corridor / route / lane 컬럼이 있는 구조
-    2. origin + destination 컬럼이 분리된 구조
-    3. 상세 테이블 자체에 date가 있는 구조
-    4. snapshot_id를 통해 tac_master의 날짜와 연결해야 하는 구조
+    핵심 변경:
+    - period / month / report_period 등 실제 운임 기준기간 컬럼을
+      data_date보다 우선한다.
+    - data_date는 저장·수집일일 수 있어 시계열 비교 기준으로 부적합할 수 있다.
     """
     table_names = get_sqlite_table_names(cursor)
 
@@ -859,16 +916,25 @@ def find_tac_route_table(cursor):
             ],
         )
 
+        # 중요:
+        # period/month를 data_date보다 우선한다.
+        # TAC 차트의 Sep-16 ~ Sep-26 같은 historical period를 사용하기 위함.
         date_col = find_first_column(
             columns,
             [
+                "period",
+                "report_period",
+                "rate_period",
+                "month",
+                "rate_month",
+                "report_month",
+                "period_month",
+                "observation_date",
+                "rate_date",
+                "report_date",
+                "snapshot_date",
                 "data_date",
                 "date",
-                "snapshot_date",
-                "rate_date",
-                "period",
-                "month",
-                "report_date",
             ],
         )
 
@@ -901,7 +967,18 @@ def find_tac_route_table(cursor):
         if corridor_col:
             score += 5
 
-        if date_col:
+        # 실제 시계열 기간 컬럼이면 강하게 우선
+        if date_col and date_col.lower() in {
+            "period",
+            "report_period",
+            "rate_period",
+            "month",
+            "rate_month",
+            "report_month",
+            "period_month",
+        }:
+            score += 30
+        elif date_col:
             score += 5
 
         candidates.append(
@@ -930,7 +1007,7 @@ def get_tac_route_rows(cursor):
 
     반환 형식:
     [
-        (data_date, corridor_name, rate),
+        (period_value, corridor_name, rate),
         ...
     ]
     """
@@ -938,8 +1015,7 @@ def get_tac_route_rows(cursor):
 
     if not route_table_info:
         logger.warning(
-            "TAC Route 데이터 테이블을 찾지 못했습니다. "
-            "TAC DB 내 테이블 목록: %s",
+            "TAC Route 데이터 테이블을 찾지 못했습니다. tables=%s",
             get_sqlite_table_names(cursor),
         )
         return []
@@ -953,7 +1029,8 @@ def get_tac_route_rows(cursor):
     snapshot_col = route_table_info["snapshot_col"]
 
     logger.info(
-        "TAC Route source detected: table=%s, rate=%s, corridor=%s, origin=%s, destination=%s, date=%s, snapshot=%s",
+        "TAC source selected | table=%s | rate=%s | corridor=%s | "
+        "origin=%s | destination=%s | period=%s | snapshot=%s",
         table_name,
         rate_col,
         corridor_col,
@@ -963,56 +1040,62 @@ def get_tac_route_rows(cursor):
         snapshot_col,
     )
 
-    # -------------------------------------------------------------------------
-    # Route 명칭 생성
-    # 1) corridor / route 컬럼이 있는 경우 그대로 사용
-    # 2) origin + destination이 분리된 경우 "Origin-Destination"으로 생성
-    # -------------------------------------------------------------------------
     if corridor_col:
-        corridor_expression = (
-            f'detail.{quote_identifier(corridor_col)}'
-        )
+        corridor_expression = f"detail.{quote_identifier(corridor_col)}"
     else:
         corridor_expression = (
-            f"COALESCE(detail.{quote_identifier(origin_col)}, '') "
+            f"TRIM(COALESCE(detail.{quote_identifier(origin_col)}, '')) "
             f"|| '-' || "
-            f"COALESCE(detail.{quote_identifier(destination_col)}, '')"
+            f"TRIM(COALESCE(detail.{quote_identifier(destination_col)}, ''))"
         )
 
-    # -------------------------------------------------------------------------
-    # 날짜 처리
-    # 1) 상세 테이블에 날짜가 있으면 직접 사용
-    # 2) snapshot_id만 있으면 tac_master와 JOIN하여 날짜 사용
-    # -------------------------------------------------------------------------
+    # 상세 테이블에 period/month/date가 있으면 해당 값이 최우선이다.
     if date_col:
         query = f"""
             SELECT
-                detail.{quote_identifier(date_col)} AS data_date,
+                detail.{quote_identifier(date_col)} AS period_value,
                 {corridor_expression} AS corridor_name,
                 detail.{quote_identifier(rate_col)} AS rate
             FROM {quote_identifier(table_name)} AS detail
             WHERE detail.{quote_identifier(rate_col)} IS NOT NULL
-            ORDER BY detail.{quote_identifier(date_col)} DESC
+              AND TRIM(COALESCE(detail.{quote_identifier(date_col)}, '')) <> ''
         """
 
-        return cursor.execute(query).fetchall()
+        rows = cursor.execute(query).fetchall()
 
+        logger.info(
+            "TAC rows loaded from direct period column | table=%s | rows=%s",
+            table_name,
+            len(rows),
+        )
+
+        return rows
+
+    # period/date 컬럼이 없고 snapshot_id만 있을 때만 tac_master 기준일을 사용한다.
     if not snapshot_col or not table_exists(cursor, "tac_master"):
         logger.warning(
-            "TAC Route 테이블에 직접 날짜 컬럼이 없고 tac_master 연결도 불가능합니다. "
-            "table=%s",
+            "TAC period column 및 tac_master 연결을 모두 사용할 수 없습니다. table=%s",
             table_name,
         )
         return []
 
     master_columns = get_table_columns(cursor, "tac_master")
+
     master_snapshot_col = find_first_column(
         master_columns,
         ["snapshot_id", "id"],
     )
+
     master_date_col = find_first_column(
         master_columns,
-        ["data_date", "date", "snapshot_date"],
+        [
+            "period",
+            "report_period",
+            "month",
+            "data_date",
+            "snapshot_date",
+            "date",
+        ],
     )
 
     if not master_snapshot_col or not master_date_col:
@@ -1021,7 +1104,7 @@ def get_tac_route_rows(cursor):
 
     query = f"""
         SELECT
-            master.{quote_identifier(master_date_col)} AS data_date,
+            master.{quote_identifier(master_date_col)} AS period_value,
             {corridor_expression} AS corridor_name,
             detail.{quote_identifier(rate_col)} AS rate
         FROM {quote_identifier(table_name)} AS detail
@@ -1029,23 +1112,25 @@ def get_tac_route_rows(cursor):
             ON detail.{quote_identifier(snapshot_col)}
              = master.{quote_identifier(master_snapshot_col)}
         WHERE detail.{quote_identifier(rate_col)} IS NOT NULL
-        ORDER BY
-            master.{quote_identifier(master_date_col)} DESC,
-            master.{quote_identifier(master_snapshot_col)} DESC
     """
 
-    return cursor.execute(query).fetchall()
+    rows = cursor.execute(query).fetchall()
+
+    logger.info(
+        "TAC rows loaded through tac_master | table=%s | rows=%s",
+        table_name,
+        len(rows),
+    )
+
+    return rows
 
 def get_tac_summary():
     """
     루트 포털 Air 카드용 TAC Route 요약 데이터를 반환한다.
 
-    표시 대상:
-    - Frankfurt-North America
-    - Hong Kong-Europe
-    - Hong Kong-North America
-
-    Overall Index 및 Corridor Count는 루트 포털에서 표시하지 않는다.
+    비교 기준:
+    - 최신 월의 Rate
+    - 직전 월의 Rate
     """
     target_corridors = [
         "Frankfurt-North America",
@@ -1061,17 +1146,17 @@ def get_tac_summary():
 
         "frankfurt_north_america_rate": "-",
         "frankfurt_north_america_mom_html": (
-            '<span class="delta-neutral">MoM -</span>'
+            '<span class="delta-neutral">-</span>'
         ),
 
         "hong_kong_europe_rate": "-",
         "hong_kong_europe_mom_html": (
-            '<span class="delta-neutral">MoM -</span>'
+            '<span class="delta-neutral">-</span>'
         ),
 
         "hong_kong_north_america_rate": "-",
         "hong_kong_north_america_mom_html": (
-            '<span class="delta-neutral">MoM -</span>'
+            '<span class="delta-neutral">-</span>'
         ),
 
         "status": "No Data",
@@ -1089,6 +1174,7 @@ def get_tac_summary():
             corridor_rows = get_tac_route_rows(cursor)
 
         if not corridor_rows:
+            logger.warning("TAC Route 시계열 조회 결과가 없습니다.")
             return summary
 
         corridor_history = {
@@ -1096,7 +1182,7 @@ def get_tac_summary():
             for corridor in target_corridors
         }
 
-        for raw_date, raw_corridor, raw_rate in corridor_rows:
+        for raw_period, raw_corridor, raw_rate in corridor_rows:
             normalized_corridor = normalize_tac_corridor_name(raw_corridor)
 
             if normalized_corridor not in corridor_history:
@@ -1107,22 +1193,21 @@ def get_tac_summary():
             except (TypeError, ValueError):
                 continue
 
-            date_value = str(raw_date or "").strip()
+            period_info = normalize_tac_period(raw_period)
 
-            if not date_value:
-                continue
-
-            # YYYY-MM-DD / YYYY-MM / YYYYMMDD 등 다양한 날짜 형식 수용
-            normalized_date = date_value[:10]
-            month_key = date_value[:7]
-
-            if len(month_key) < 7:
+            if not period_info:
+                logger.warning(
+                    "TAC 기간 값을 해석하지 못했습니다 | corridor=%s | raw_period=%s",
+                    normalized_corridor,
+                    raw_period,
+                )
                 continue
 
             corridor_history[normalized_corridor].append(
                 {
-                    "date": normalized_date,
-                    "month": month_key,
+                    "date": period_info["date"],
+                    "month": period_info["month"],
+                    "sort_key": period_info["sort_key"],
                     "rate": rate,
                 }
             )
@@ -1146,52 +1231,49 @@ def get_tac_summary():
 
         for corridor_name, rows in corridor_history.items():
             if not rows:
-                logger.warning("TAC 대상 Route 데이터를 찾지 못했습니다: %s", corridor_name)
+                logger.warning(
+                    "TAC 대상 Route 데이터를 찾지 못했습니다: %s",
+                    corridor_name,
+                )
                 continue
 
-            # SQL에서 날짜 내림차순 정렬되어 있지만,
-            # 데이터 정합성을 위해 Python에서도 재정렬한다.
-            rows.sort(
-                key=lambda item: (item["date"], item["rate"]),
-                reverse=True,
-            )
-
-            # -----------------------------------------------------------------
-            # 날짜별 최신 Rate만 남긴다.
+            # 동일 월 중복 데이터가 존재할 수 있으므로,
+            # 월별로 1개만 보관한다.
             #
-            # 같은 날짜에 데이터가 여러 건 있는 경우 SQL/Python 정렬상 첫 번째 값을
-            # 해당 날짜의 최신값으로 사용한다.
-            # -----------------------------------------------------------------
-            latest_rate_by_date = {}
+            # 데이터가 여러 개일 경우 마지막 행을 우선하되,
+            # TAC 차트용 역사 데이터 구조에서는 일반적으로 월별 1행이다.
+            rate_by_month = {}
 
             for row in rows:
-                data_date = row["date"]
+                month_key = row["month"]
 
-                if data_date not in latest_rate_by_date:
-                    latest_rate_by_date[data_date] = row
+                if month_key not in rate_by_month:
+                    rate_by_month[month_key] = row
 
-            # 날짜 기준 내림차순 정렬:
-            # [최신 데이터, 직전 데이터, ...]
-            distinct_date_rows = sorted(
-                latest_rate_by_date.values(),
-                key=lambda item: item["date"],
+            # 실제 연월 sort_key 기준 내림차순.
+            # 문자열 기준 정렬이 아니라 Sep-26, Oct-25 등의 형식도 안전하게 처리한다.
+            distinct_month_rows = sorted(
+                rate_by_month.values(),
+                key=lambda item: item["sort_key"],
                 reverse=True,
             )
 
-            latest_row = distinct_date_rows[0]
+            latest_row = distinct_month_rows[0]
+
             previous_row = (
-                distinct_date_rows[1]
-                if len(distinct_date_rows) > 1
+                distinct_month_rows[1]
+                if len(distinct_month_rows) >= 2
                 else None
             )
 
-            latest_rate = latest_row["rate"]
-
             config = summary_mapping[corridor_name]
 
-            summary[config["rate_key"]] = f"${latest_rate:,.2f} USD/kg"
+            summary[config["rate_key"]] = (
+                f"${latest_row['rate']:,.2f} USD/kg"
+            )
+
             summary[config["mom_key"]] = calculate_rate_delta_display(
-                latest_rate,
+                latest_row["rate"],
                 previous_row["rate"] if previous_row else None,
                 decimals=2,
             )
@@ -1199,18 +1281,24 @@ def get_tac_summary():
             latest_dates.append(latest_row["date"])
 
             logger.info(
-                "TAC corridor summary: corridor=%s, latest=%s (%s), previous=%s (%s)",
+                "TAC corridor summary | corridor=%s | available_months=%s | "
+                "latest=%s (%s) | previous=%s (%s)",
                 corridor_name,
-                latest_rate,
-                latest_row["date"],
+                [
+                    (item["month"], item["rate"])
+                    for item in distinct_month_rows[:5]
+                ],
+                latest_row["rate"],
+                latest_row["month"],
                 previous_row["rate"] if previous_row else None,
-                previous_row["date"] if previous_row else None,
+                previous_row["month"] if previous_row else None,
             )
-
 
         if latest_dates:
             summary["latest_date"] = max(latest_dates)
             summary["status"] = "Active"
+
+        logger.info("TAC summary final: %s", summary)
 
     except Exception as error:
         logger.exception("Failed to read TAC DB: %s", error)
