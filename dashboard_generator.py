@@ -4,7 +4,10 @@
 """
 Market Intelligence Portal - Root Dashboard Generator
 Bloomberg Professional Terminal High-Density Interface
-Reads all verified module SQLite databases and generates index.html & dashboard_summary.json.
+
+Reads verified module SQLite databases and generates:
+- index.html
+- dashboard_summary.json
 """
 
 import json
@@ -18,57 +21,120 @@ from datetime import datetime
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 DB_PATHS = {
-    "shipping": os.path.join(BASE_DIR, "ShippingIndex", "shipping_index.db"),
-    "alphaliner": os.path.join(BASE_DIR, "Alphaliner", "alphaliner_history.db"),
-    "bunker": os.path.join(BASE_DIR, "BunkerPrice", "bunker_price_data.db"),
-    "forwarder": os.path.join(
-        BASE_DIR, "Forwarder", "freight_forwarders_data.db"
+    # Actual schema:
+    # index_raw(dt, region, value, index_name, source_file, created_at)
+    "shipping": os.path.join(
+        BASE_DIR,
+        "Shipping Index",
+        "index_history.db",
     ),
-    "tac": os.path.join(BASE_DIR, "TAC Index", "tac_data.db"),
-    "macro": os.path.join(BASE_DIR, "MacroEconomies", "macro_data.db"),
+    "alphaliner": os.path.join(
+        BASE_DIR,
+        "Alphaliner",
+        "alphaliner_history.db",
+    ),
+    "bunker": os.path.join(
+        BASE_DIR,
+        "BunkerPrice",
+        "bunker_price_data.db",
+    ),
+    "forwarder": os.path.join(
+        BASE_DIR,
+        "Forwarder",
+        "freight_forwarders_data.db",
+    ),
+    # Actual TAC DB filename
+    "tac": os.path.join(
+        BASE_DIR,
+        "TAC Index",
+        "TAC_Index.db",
+    ),
+    "macro": os.path.join(
+        BASE_DIR,
+        "MacroEconomies",
+        "macro_data.db",
+    ),
 }
 
 OUTPUT_HTML = os.path.join(BASE_DIR, "index.html")
 OUTPUT_JSON = os.path.join(BASE_DIR, "dashboard_summary.json")
 
 # ==========================================
+# COMMON DATABASE HELPERS
+# ==========================================
+def table_exists(cursor, table_name):
+    """Return True when the SQLite table exists."""
+    cursor.execute(
+        """
+        SELECT 1
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND name = ?
+        LIMIT 1
+        """,
+        (table_name,),
+    )
+    return cursor.fetchone() is not None
+
+def get_table_columns(cursor, table_name):
+    """Return the table columns as a lower-case set."""
+    cursor.execute(f'PRAGMA table_info("{table_name}")')
+    return {row[1].lower() for row in cursor.fetchall()}
+
+# ==========================================
 # DELTA FORMATTING HELPER
 # ==========================================
 def calculate_delta(curr, prev, is_int=False):
-    """Calculate absolute and percentage deltas with Bloomberg directional indicators."""
+    """
+    Calculate absolute and percentage deltas
+    with Bloomberg-style directional indicators.
+    """
     if curr is None:
         return "-", "neutral", ""
 
     if prev is None or prev == 0:
-        val_str = f"{int(curr):,}" if is_int else f"{curr:,.2f}"
-        return val_str, "neutral", ""
+        return "-", "neutral", ""
 
     diff = curr - prev
     pct = (diff / prev) * 100.0
 
     if diff > 0:
         arrow = "▲"
-        cls = "up"
+        css_class = "up"
         diff_str = f"+{int(diff):,}" if is_int else f"+{diff:.2f}"
         pct_str = f"+{pct:.2f}%"
+
     elif diff < 0:
         arrow = "▼"
-        cls = "down"
+        css_class = "down"
         diff_str = f"{int(diff):,}" if is_int else f"{diff:.2f}"
         pct_str = f"{pct:.2f}%"
+
     else:
         arrow = "■"
-        cls = "neutral"
+        css_class = "neutral"
         diff_str = "0" if is_int else "0.00"
         pct_str = "0.00%"
 
-    return f"{diff_str} ({pct_str})", cls, arrow
+    return f"{diff_str} ({pct_str})", css_class, arrow
 
 # ==========================================
 # DATA FETCHERS
 # ==========================================
 def fetch_shipping_data():
-    """Fetches SCFI and BDI indices."""
+    """
+    Fetch SCFI Composite and BDI Composite.
+
+    Actual DB:
+      Shipping Index/index_history.db
+
+    Actual table:
+      index_raw(dt, region, value, index_name, source_file, created_at)
+
+    Required filters:
+      SCFI: index_name='SCFI' AND region='종합'
+      BDI : index_name='BDI'  AND region='BDI'
+    """
     data = {
         "scfi": {
             "price": "N/A",
@@ -84,150 +150,215 @@ def fetch_shipping_data():
             "arrow": "",
             "date": "-",
         },
-        "date": datetime.today().strftime("%Y-%m-%d"),
+        "date": "-",
     }
+
     db_path = DB_PATHS["shipping"]
+
     if not os.path.exists(db_path):
+        print(f"[WARN] Shipping DB not found: {db_path}")
         return data
 
     try:
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-            )
-            tables = [r[0] for r in cursor.fetchall()]
 
-            # SCFI
-            scfi_table = next(
-                (
-                    t
-                    for t in tables
-                    if "scfi" in t.lower() or "shipping" in t.lower()
-                ),
-                None,
-            )
-            if scfi_table:
-                cursor.execute(f'PRAGMA table_info("{scfi_table}")')
-                cols = [c[1].lower() for c in cursor.fetchall()]
-                date_col = next((c for c in cols if "date" in c), cols[0])
-                val_col = next(
-                    (
-                        c
-                        for c in cols
-                        if "val" in c
-                        or "price" in c
-                        or "index" in c
-                        or "scfi" in c
-                    ),
-                    cols[1],
-                )
+            if not table_exists(cursor, "index_raw"):
+                print("[WARN] Shipping table 'index_raw' not found.")
+                return data
 
+            def load_index(index_name, region, is_int=False):
                 cursor.execute(
-                    f'SELECT "{date_col}", "{val_col}" FROM "{scfi_table}" WHERE "{val_col}" IS NOT NULL ORDER BY "{date_col}" DESC LIMIT 2'
-                )
-                rows = cursor.fetchall()
-                if rows:
-                    data["date"] = str(rows[0][0])[:10]
-                    data["scfi"]["date"] = str(rows[0][0])[:10]
-                    curr = float(rows[0][1])
-                    prev = float(rows[1][1]) if len(rows) > 1 else None
-                    data["scfi"]["price"] = f"{curr:,.2f}"
-                    delta_str, cls, arrow = calculate_delta(curr, prev)
-                    data["scfi"]["delta"] = delta_str
-                    data["scfi"]["class"] = cls
-                    data["scfi"]["arrow"] = arrow
-
-            # BDI
-            bdi_table = next((t for t in tables if "bdi" in t.lower()), None)
-            if bdi_table:
-                cursor.execute(f'PRAGMA table_info("{bdi_table}")')
-                cols = [c[1].lower() for c in cursor.fetchall()]
-                date_col = next((c for c in cols if "date" in c), cols[0])
-                val_col = next(
-                    (
-                        c
-                        for c in cols
-                        if "val" in c
-                        or "price" in c
-                        or "index" in c
-                        or "bdi" in c
-                    ),
-                    cols[1],
+                    """
+                    SELECT dt, value
+                    FROM index_raw
+                    WHERE index_name = ?
+                      AND region = ?
+                      AND value IS NOT NULL
+                    ORDER BY dt DESC
+                    LIMIT 2
+                    """,
+                    (index_name, region),
                 )
 
-                cursor.execute(
-                    f'SELECT "{date_col}", "{val_col}" FROM "{bdi_table}" WHERE "{val_col}" IS NOT NULL ORDER BY "{date_col}" DESC LIMIT 2'
-                )
                 rows = cursor.fetchall()
-                if rows:
-                    data["bdi"]["date"] = str(rows[0][0])[:10]
-                    curr = float(rows[0][1])
-                    prev = float(rows[1][1]) if len(rows) > 1 else None
-                    data["bdi"]["price"] = f"{int(curr):,}"
-                    delta_str, cls, arrow = calculate_delta(
-                        curr, prev, is_int=True
+
+                if not rows:
+                    print(
+                        f"[WARN] Shipping data not found: "
+                        f"index_name={index_name}, region={region}"
                     )
-                    data["bdi"]["delta"] = delta_str
-                    data["bdi"]["class"] = cls
-                    data["bdi"]["arrow"] = arrow
-    except Exception as e:
-        print(f"[WARN] Shipping data load: {e}")
+                    return None
+
+                latest_date = str(rows[0][0])[:10]
+                current_value = float(rows[0][1])
+
+                previous_value = None
+                if len(rows) > 1 and rows[1][1] is not None:
+                    previous_value = float(rows[1][1])
+
+                delta_str, css_class, arrow = calculate_delta(
+                    current_value,
+                    previous_value,
+                    is_int=is_int,
+                )
+
+                if is_int:
+                    price_str = f"{int(current_value):,}"
+                else:
+                    price_str = f"{current_value:,.2f}"
+
+                return {
+                    "price": price_str,
+                    "delta": delta_str,
+                    "class": css_class,
+                    "arrow": arrow,
+                    "date": latest_date,
+                }
+
+            scfi_result = load_index(
+                index_name="SCFI",
+                region="종합",
+                is_int=False,
+            )
+
+            bdi_result = load_index(
+                index_name="BDI",
+                region="BDI",
+                is_int=True,
+            )
+
+            if scfi_result:
+                data["scfi"] = scfi_result
+                data["date"] = scfi_result["date"]
+
+            if bdi_result:
+                data["bdi"] = bdi_result
+
+                if data["date"] == "-":
+                    data["date"] = bdi_result["date"]
+
+    except sqlite3.Error as error:
+        print(f"[WARN] Shipping data load error: {error}")
+
+    except Exception as error:
+        print(f"[WARN] Unexpected shipping data error: {error}")
+
     return data
 
 def fetch_alphaliner_data():
-    """Reads latest master snapshot and computes Top 10 aggregate share from detail."""
+    """
+    Read the latest Alphaliner snapshot and Top 10 aggregate market share.
+    """
     data = {
-        "total_ships": "7,670 Ships",
-        "total_teu": "34,291,389 TEU",
-        "top10_share": "84.2%",
+        "total_ships": "N/A",
+        "total_teu": "N/A",
+        "top10_share": "N/A",
         "date": "N/A",
     }
+
     db_path = DB_PATHS["alphaliner"]
+
     if not os.path.exists(db_path):
+        print(f"[WARN] Alphaliner DB not found: {db_path}")
         return data
 
     try:
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
 
-            # 1. Master row
-            cursor.execute("""
-                SELECT snapshot_id, data_date, global_ships, total_ships, global_teu, total_teu
+            if not table_exists(cursor, "alphaliner_master"):
+                print("[WARN] Alphaliner table 'alphaliner_master' not found.")
+                return data
+
+            if not table_exists(cursor, "alphaliner_detail"):
+                print("[WARN] Alphaliner table 'alphaliner_detail' not found.")
+                return data
+
+            cursor.execute(
+                """
+                SELECT
+                    snapshot_id,
+                    data_date,
+                    global_ships,
+                    total_ships,
+                    global_teu,
+                    total_teu
                 FROM alphaliner_master
-                ORDER BY snapshot_id DESC LIMIT 1
-            """)
+                ORDER BY data_date DESC, snapshot_id DESC
+                LIMIT 1
+                """
+            )
+
             row = cursor.fetchone()
-            if row:
-                snapshot_id, data_date, g_ships, t_ships, g_teu, t_teu = row
-                data["date"] = data_date or "N/A"
 
-                ships = g_ships if (g_ships and g_ships > 0) else t_ships
-                teu = g_teu if (g_teu and g_teu > 0) else t_teu
+            if not row:
+                return data
 
-                if ships:
-                    data["total_ships"] = f"{ships:,} Ships"
-                if teu:
-                    data["total_teu"] = f"{teu:,} TEU"
+            (
+                snapshot_id,
+                data_date,
+                global_ships,
+                total_ships,
+                global_teu,
+                total_teu,
+            ) = row
 
-                # 2. Detail Top 10 aggregate market share
-                cursor.execute(
-                    """
-                    SELECT SUM(market_share)
-                    FROM alphaliner_detail
-                    WHERE snapshot_id = ? AND rank <= 10
+            data["date"] = str(data_date)[:10] if data_date else "N/A"
+
+            ships = (
+                global_ships
+                if global_ships is not None and global_ships > 0
+                else total_ships
+            )
+
+            teu = (
+                global_teu
+                if global_teu is not None and global_teu > 0
+                else total_teu
+            )
+
+            if ships is not None:
+                data["total_ships"] = f"{int(ships):,} Ships"
+
+            if teu is not None:
+                data["total_teu"] = f"{int(teu):,} TEU"
+
+            cursor.execute(
+                """
+                SELECT SUM(market_share)
+                FROM alphaliner_detail
+                WHERE snapshot_id = ?
+                  AND rank <= 10
                 """,
-                    (snapshot_id,),
-                )
-                share_row = cursor.fetchone()
-                if share_row and share_row[0]:
-                    data["top10_share"] = f"{share_row[0]:.1f}%"
-    except Exception as e:
-        print(f"[WARN] Alphaliner load: {e}")
+                (snapshot_id,),
+            )
+
+            share_row = cursor.fetchone()
+
+            if share_row and share_row[0] is not None:
+                data["top10_share"] = f"{float(share_row[0]):.1f}%"
+
+    except sqlite3.Error as error:
+        print(f"[WARN] Alphaliner data load error: {error}")
+
+    except Exception as error:
+        print(f"[WARN] Unexpected Alphaliner data error: {error}")
+
     return data
 
 def fetch_bunker_and_crude_data():
-    """Fetches VLSFO (Rotterdam, Fujairah, Singapore) and Crude Oil (Dubai, Brent, WTI)."""
+    """
+    Fetch VLSFO prices:
+    - Rotterdam
+    - Fujairah
+    - Singapore
+
+    Fetch crude oil prices:
+    - Dubai
+    - Brent
+    - WTI
+    """
     data = {
         "date": "N/A",
         "vlsfo": {
@@ -271,200 +402,434 @@ def fetch_bunker_and_crude_data():
             },
         },
     }
+
     db_path = DB_PATHS["bunker"]
+
     if not os.path.exists(db_path):
+        print(f"[WARN] Bunker DB not found: {db_path}")
         return data
 
     try:
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
 
-            # A. VLSFO Ports
-            for port in ["Rotterdam", "Fujairah", "Singapore"]:
+            if table_exists(cursor, "product_vlsfo"):
+                for port in ["Rotterdam", "Fujairah", "Singapore"]:
+                    cursor.execute(
+                        """
+                        SELECT date_str, price
+                        FROM product_vlsfo
+                        WHERE port = ?
+                          AND price IS NOT NULL
+                        ORDER BY date_str DESC, timestamp_ms DESC
+                        LIMIT 2
+                        """,
+                        (port,),
+                    )
+
+                    rows = cursor.fetchall()
+
+                    if not rows:
+                        continue
+
+                    latest_date = str(rows[0][0])[:10]
+                    current_value = float(rows[0][1])
+
+                    previous_value = None
+                    if len(rows) > 1 and rows[1][1] is not None:
+                        previous_value = float(rows[1][1])
+
+                    delta_str, css_class, arrow = calculate_delta(
+                        current_value,
+                        previous_value,
+                    )
+
+                    data["vlsfo"][port] = {
+                        "price": f"{current_value:.1f}",
+                        "delta": delta_str,
+                        "class": css_class,
+                        "arrow": arrow,
+                    }
+
+                    if data["date"] == "N/A":
+                        data["date"] = latest_date
+
+            else:
+                print("[WARN] Bunker table 'product_vlsfo' not found.")
+
+            if table_exists(cursor, "oil_prices"):
                 cursor.execute(
                     """
-                    SELECT date_str, price
-                    FROM product_vlsfo
-                    WHERE port = ?
-                    ORDER BY date_str DESC, timestamp_ms DESC
+                    SELECT DATE, Dubai, Brent, WTI
+                    FROM oil_prices
+                    ORDER BY DATE DESC
                     LIMIT 2
-                """,
-                    (port,),
+                    """
                 )
-                rows = cursor.fetchall()
-                if rows:
-                    data["date"] = rows[0][0]
-                    curr = float(rows[0][1])
-                    prev = float(rows[1][1]) if len(rows) > 1 else None
-                    data["vlsfo"][port]["price"] = f"{curr:.1f}"
-                    delta_str, cls, arrow = calculate_delta(curr, prev)
-                    data["vlsfo"][port]["delta"] = delta_str
-                    data["vlsfo"][port]["class"] = cls
-                    data["vlsfo"][port]["arrow"] = arrow
 
-            # B. Crude Oil
-            cursor.execute("""
-                SELECT DATE, Dubai, Brent, WTI
-                FROM oil_prices
-                ORDER BY DATE DESC
-                LIMIT 2
-            """)
-            oil_rows = cursor.fetchall()
-            if oil_rows:
-                curr_row = oil_rows[0]
-                prev_row = oil_rows[1] if len(oil_rows) > 1 else None
+                oil_rows = cursor.fetchall()
 
-                oil_indices = {"Dubai": 1, "Brent": 2, "WTI": 3}
-                for oil, idx in oil_indices.items():
-                    curr = float(curr_row[idx]) if curr_row[idx] else None
-                    prev = (
-                        float(prev_row[idx])
-                        if (prev_row and prev_row[idx])
-                        else None
-                    )
-                    if curr is not None:
-                        data["crude"][oil]["price"] = f"{curr:.2f}"
-                        delta_str, cls, arrow = calculate_delta(curr, prev)
-                        data["crude"][oil]["delta"] = delta_str
-                        data["crude"][oil]["class"] = cls
-                        data["crude"][oil]["arrow"] = arrow
-    except Exception as e:
-        print(f"[WARN] Bunker & Crude load: {e}")
+                if oil_rows:
+                    current_row = oil_rows[0]
+                    previous_row = oil_rows[1] if len(oil_rows) > 1 else None
+
+                    oil_indices = {
+                        "Dubai": 1,
+                        "Brent": 2,
+                        "WTI": 3,
+                    }
+
+                    for oil_name, column_index in oil_indices.items():
+                        current_value = (
+                            float(current_row[column_index])
+                            if current_row[column_index] is not None
+                            else None
+                        )
+
+                        previous_value = (
+                            float(previous_row[column_index])
+                            if (
+                                previous_row is not None
+                                and previous_row[column_index] is not None
+                            )
+                            else None
+                        )
+
+                        if current_value is None:
+                            continue
+
+                        delta_str, css_class, arrow = calculate_delta(
+                            current_value,
+                            previous_value,
+                        )
+
+                        data["crude"][oil_name] = {
+                            "price": f"{current_value:.2f}",
+                            "delta": delta_str,
+                            "class": css_class,
+                            "arrow": arrow,
+                        }
+
+            else:
+                print("[WARN] Bunker table 'oil_prices' not found.")
+
+    except sqlite3.Error as error:
+        print(f"[WARN] Bunker & Crude load error: {error}")
+
+    except Exception as error:
+        print(f"[WARN] Unexpected Bunker & Crude error: {error}")
+
     return data
 
 def fetch_forwarder_data():
-    """Fetches Top Forwarder and aggregate ocean TEU / air tonnage."""
+    """
+    Fetch latest Top 25 Forwarder results:
+    - Rank 1 provider
+    - Total Ocean TEU
+    - Total Air Tons
+    """
     data = {
-        "top_forwarder": "Kuehne + Nagel",
+        "top_forwarder": "N/A",
         "total_ocean_teu": "N/A",
         "total_air_tons": "N/A",
         "date": "N/A",
     }
+
     db_path = DB_PATHS["forwarder"]
+
     if not os.path.exists(db_path):
+        print(f"[WARN] Forwarder DB not found: {db_path}")
         return data
 
     try:
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
+
+            if not table_exists(cursor, "forwarders"):
+                print("[WARN] Forwarder table 'forwarders' not found.")
+                return data
+
             cursor.execute("SELECT MAX(date) FROM forwarders")
             max_date_row = cursor.fetchone()
-            if max_date_row and max_date_row[0]:
-                target_date = max_date_row[0]
-                data["date"] = target_date
 
-                # Rank 1 Forwarder
-                cursor.execute(
-                    """
-                    SELECT provider FROM forwarders
-                    WHERE date = ?
-                    ORDER BY rank ASC LIMIT 1
-                """,
-                    (target_date,),
-                )
-                top_row = cursor.fetchone()
-                if top_row:
-                    data["top_forwarder"] = top_row[0]
+            if not max_date_row or not max_date_row[0]:
+                return data
 
-                # Aggregate Ocean TEU & Air Tons
-                cursor.execute(
-                    """
-                    SELECT SUM(teu), SUM(air_tons)
-                    FROM forwarders
-                    WHERE date = ?
+            target_date = max_date_row[0]
+            data["date"] = str(target_date)[:10]
+
+            cursor.execute(
+                """
+                SELECT provider
+                FROM forwarders
+                WHERE date = ?
+                ORDER BY rank ASC
+                LIMIT 1
                 """,
-                    (target_date,),
-                )
-                sum_row = cursor.fetchone()
-                if sum_row:
-                    if sum_row[0]:
-                        data["total_ocean_teu"] = f"{int(sum_row[0]):,} TEU"
-                    if sum_row[1]:
-                        data["total_air_tons"] = f"{int(sum_row[1]):,} MT"
-    except Exception as e:
-        print(f"[WARN] Forwarder load: {e}")
+                (target_date,),
+            )
+
+            top_row = cursor.fetchone()
+
+            if top_row and top_row[0]:
+                data["top_forwarder"] = str(top_row[0])
+
+            cursor.execute(
+                """
+                SELECT
+                    SUM(teu),
+                    SUM(air_tons)
+                FROM forwarders
+                WHERE date = ?
+                """,
+                (target_date,),
+            )
+
+            sum_row = cursor.fetchone()
+
+            if sum_row:
+                if sum_row[0] is not None:
+                    data["total_ocean_teu"] = f"{int(sum_row[0]):,} TEU"
+
+                if sum_row[1] is not None:
+                    data["total_air_tons"] = f"{int(sum_row[1]):,} MT"
+
+    except sqlite3.Error as error:
+        print(f"[WARN] Forwarder data load error: {error}")
+
+    except Exception as error:
+        print(f"[WARN] Unexpected Forwarder data error: {error}")
+
     return data
 
 def fetch_tac_data():
-    """Fetches 3 Air Freight Corridors directly from tac_detail / tac_master schema."""
+    """
+    Fetch three TAC air freight corridors.
+
+    Important:
+    - Data recency is based on tac_master.data_date.
+    - snapshot_id must not be used as a time sequence because historical
+      backfill processing may create non-chronological snapshot IDs.
+    """
     data = {
-        "date": "2026-09-01",
+        "date": "N/A",
         "routes": {
             "FRA - NAM": {
                 "name": "Frankfurt - North America",
-                "price": "2.40",
-                "delta": "+0.02 (+0.84%)",
-                "class": "up",
-                "arrow": "▲",
+                "price": "N/A",
+                "delta": "-",
+                "class": "neutral",
+                "arrow": "",
             },
             "HKG - EUR": {
                 "name": "Hong Kong - Europe",
-                "price": "4.80",
-                "delta": "+0.22 (+4.80%)",
-                "class": "up",
-                "arrow": "▲",
+                "price": "N/A",
+                "delta": "-",
+                "class": "neutral",
+                "arrow": "",
             },
             "HKG - NAM": {
                 "name": "Hong Kong - North America",
-                "price": "7.02",
-                "delta": "+0.04 (+0.57%)",
-                "class": "up",
-                "arrow": "▲",
+                "price": "N/A",
+                "delta": "-",
+                "class": "neutral",
+                "arrow": "",
             },
         },
     }
+
     db_path = DB_PATHS["tac"]
+
     if not os.path.exists(db_path):
+        print(f"[WARN] TAC DB not found: {db_path}")
         return data
+
+    corridor_targets = {
+        "FRA - NAM": {
+            "origin": "frankfurt",
+            "destination": "north america",
+            "route_patterns": [
+                "%fra%nam%",
+                "%fra%north america%",
+                "%frankfurt%north america%",
+            ],
+        },
+        "HKG - EUR": {
+            "origin": "hong kong",
+            "destination": "europe",
+            "route_patterns": [
+                "%hkg%eur%",
+                "%hkg%europe%",
+                "%hong kong%europe%",
+            ],
+        },
+        "HKG - NAM": {
+            "origin": "hong kong",
+            "destination": "north america",
+            "route_patterns": [
+                "%hkg%nam%",
+                "%hkg%north america%",
+                "%hong kong%north america%",
+            ],
+        },
+    }
 
     try:
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
 
-            # Target 3 corridors mapping
-            corridor_targets = {
-                "FRA - NAM": ["frankfurt", "north america"],
-                "HKG - EUR": ["hong kong", "europe"],
-                "HKG - NAM": ["hong kong", "north america"],
-            }
+            if not table_exists(cursor, "tac_master"):
+                print("[WARN] TAC table 'tac_master' not found.")
+                return data
 
-            # Check if tac_detail table exists
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='tac_detail'"
-            )
-            if cursor.fetchone():
-                for code, keywords in corridor_targets.items():
-                    cursor.execute(
+            if not table_exists(cursor, "tac_detail"):
+                print("[WARN] TAC table 'tac_detail' not found.")
+                return data
+
+            master_columns = get_table_columns(cursor, "tac_master")
+            detail_columns = get_table_columns(cursor, "tac_detail")
+
+            required_master_columns = {"snapshot_id", "data_date"}
+            required_detail_columns = {"snapshot_id", "index_value"}
+
+            if not required_master_columns.issubset(master_columns):
+                print(
+                    "[WARN] TAC master schema missing required columns: "
+                    "snapshot_id and/or data_date."
+                )
+                return data
+
+            if not required_detail_columns.issubset(detail_columns):
+                print(
+                    "[WARN] TAC detail schema missing required columns: "
+                    "snapshot_id and/or index_value."
+                )
+                return data
+
+            has_origin = "origin" in detail_columns
+            has_destination = "destination" in detail_columns
+            has_route_code = "route_code" in detail_columns
+
+            for route_key, target in corridor_targets.items():
+                query_conditions = []
+                query_params = []
+
+                if has_origin and has_destination:
+                    query_conditions.append(
                         """
-                        SELECT d.period, d.index_value
-                        FROM tac_detail d
-                        JOIN tac_master m ON d.snapshot_id = m.snapshot_id
-                        WHERE (LOWER(d.origin) LIKE ? AND LOWER(d.destination) LIKE ?)
-                           OR LOWER(d.route_code) LIKE ?
-                        ORDER BY d.period DESC
-                        LIMIT 2
-                    """,
                         (
-                            f"%{keywords[0]}%",
-                            f"%{keywords[1]}%",
-                            f"%{keywords[0][:3]}%{keywords[1][:3]}%",
-                        ),
+                            LOWER(COALESCE(d.origin, '')) LIKE ?
+                            AND LOWER(COALESCE(d.destination, '')) LIKE ?
+                        )
+                        """
                     )
-                    rows = cursor.fetchall()
-                    if rows:
-                        data["date"] = str(rows[0][0])[:10]
-                        curr = float(rows[0][1])
-                        prev = float(rows[1][1]) if len(rows) > 1 else None
-                        data["routes"][code]["price"] = f"{curr:.2f}"
-                        delta_str, cls, arrow = calculate_delta(curr, prev)
-                        data["routes"][code]["delta"] = delta_str
-                        data["routes"][code]["class"] = cls
-                        data["routes"][code]["arrow"] = arrow
-    except Exception as e:
-        print(f"[WARN] TAC data load: {e}")
+                    query_params.extend(
+                        [
+                            f"%{target['origin']}%",
+                            f"%{target['destination']}%",
+                        ]
+                    )
+
+                if has_route_code:
+                    route_pattern_conditions = []
+
+                    for pattern in target["route_patterns"]:
+                        route_pattern_conditions.append(
+                            "LOWER(COALESCE(d.route_code, '')) LIKE ?"
+                        )
+                        query_params.append(pattern)
+
+                    if route_pattern_conditions:
+                        query_conditions.append(
+                            "(" + " OR ".join(route_pattern_conditions) + ")"
+                        )
+
+                if not query_conditions:
+                    print(
+                        f"[WARN] TAC route columns unavailable for {route_key}."
+                    )
+                    continue
+
+                where_clause = " OR ".join(query_conditions)
+
+                cursor.execute(
+                    f"""
+                    SELECT
+                        m.data_date,
+                        d.index_value
+                    FROM tac_detail d
+                    JOIN tac_master m
+                      ON d.snapshot_id = m.snapshot_id
+                    WHERE d.index_value IS NOT NULL
+                      AND ({where_clause})
+                    ORDER BY m.data_date DESC, m.snapshot_id DESC
+                    LIMIT 10
+                    """,
+                    tuple(query_params),
+                )
+
+                raw_rows = cursor.fetchall()
+
+                if not raw_rows:
+                    print(f"[WARN] TAC data not found for route: {route_key}")
+                    continue
+
+                # Same data_date can have duplicate crawler snapshots.
+                # Keep only one latest record per data_date.
+                unique_rows = []
+                seen_dates = set()
+
+                for row_date, row_value in raw_rows:
+                    normalized_date = str(row_date)[:10]
+
+                    if normalized_date in seen_dates:
+                        continue
+
+                    seen_dates.add(normalized_date)
+                    unique_rows.append((normalized_date, row_value))
+
+                    if len(unique_rows) >= 2:
+                        break
+
+                if not unique_rows:
+                    continue
+
+                latest_date = unique_rows[0][0]
+                current_value = float(unique_rows[0][1])
+
+                previous_value = None
+                if len(unique_rows) > 1 and unique_rows[1][1] is not None:
+                    previous_value = float(unique_rows[1][1])
+
+                delta_str, css_class, arrow = calculate_delta(
+                    current_value,
+                    previous_value,
+                )
+
+                data["routes"][route_key] = {
+                    "name": data["routes"][route_key]["name"],
+                    "price": f"{current_value:.2f}",
+                    "delta": delta_str,
+                    "class": css_class,
+                    "arrow": arrow,
+                }
+
+                if data["date"] == "N/A":
+                    data["date"] = latest_date
+
+    except sqlite3.Error as error:
+        print(f"[WARN] TAC data load error: {error}")
+
+    except Exception as error:
+        print(f"[WARN] Unexpected TAC data error: {error}")
+
     return data
 
 def fetch_macro_data():
+    """
+    Macro module schema integration is not defined in this version.
+    Current display values are retained from the original dashboard logic.
+    """
     return {
         "gscpi": {
             "value": "-0.15",
@@ -539,7 +904,6 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             margin: 0 auto;
         }}
 
-        /* TERMINAL TOP HEADER */
         .terminal-header {{
             display: flex;
             justify-content: space-between;
@@ -582,7 +946,6 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             font-weight: 700;
         }}
 
-        /* SECTION HEADER BARS */
         .section-bar {{
             background: #141A22;
             border-left: 4px solid var(--bb-amber);
@@ -606,7 +969,6 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             font-size: 10px;
         }}
 
-        /* GRIDS */
         .grid-4 {{
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -619,7 +981,6 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             gap: 10px;
         }}
 
-        /* TERMINAL PANEL */
         .panel {{
             background: var(--panel-bg);
             border: 1px solid var(--panel-border);
@@ -668,7 +1029,6 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             flex-grow: 1;
         }}
 
-        /* METRIC CELLS */
         .metric-cell {{
             background: var(--panel-inner);
             border: 1px solid #141C24;
@@ -723,11 +1083,18 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             white-space: nowrap;
         }}
 
-        .metric-delta.up {{ color: var(--bb-green); }}
-        .metric-delta.down {{ color: var(--bb-red); }}
-        .metric-delta.neutral {{ color: var(--bb-neutral); }}
+        .metric-delta.up {{
+            color: var(--bb-green);
+        }}
 
-        /* DENSE TABLE */
+        .metric-delta.down {{
+            color: var(--bb-red);
+        }}
+
+        .metric-delta.neutral {{
+            color: var(--bb-neutral);
+        }}
+
         .dense-table {{
             width: 100%;
             border-collapse: collapse;
@@ -768,7 +1135,18 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             font-weight: 700;
         }}
 
-        /* PANEL FOOTER */
+        .up {{
+            color: var(--bb-green);
+        }}
+
+        .down {{
+            color: var(--bb-red);
+        }}
+
+        .neutral {{
+            color: var(--bb-neutral);
+        }}
+
         .panel-footer {{
             background: #090C10;
             border-top: 1px solid var(--panel-border);
@@ -786,74 +1164,98 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
         }}
 
         @media (max-width: 1200px) {{
-            .grid-4 {{ grid-template-columns: repeat(2, 1fr); }}
+            .grid-4 {{
+                grid-template-columns: repeat(2, 1fr);
+            }}
         }}
 
         @media (max-width: 768px) {{
-            .grid-4, .grid-2 {{ grid-template-columns: 1fr; }}
+            .grid-4,
+            .grid-2 {{
+                grid-template-columns: 1fr;
+            }}
+
+            .section-bar {{
+                display: block;
+            }}
+
+            .section-bar span.sub {{
+                display: block;
+                margin-top: 4px;
+            }}
         }}
     </style>
 </head>
 <body>
     <div class="terminal-container">
 
-        <!-- TERMINAL HEADER -->
         <div class="terminal-header">
             <div class="terminal-title">
                 <span class="terminal-badge">MI // PRO</span>
                 <span>MARKET INTELLIGENCE TERMINAL</span>
             </div>
+
             <div class="terminal-status">
                 <span>FEED: <span class="status-tag">LIVE_ONLINE</span></span>
                 <span>SYS_DATE: {datetime.today().strftime('%Y-%m-%d')}</span>
             </div>
         </div>
 
-        <!-- ================= SEA SECTION ================= -->
         <div class="section-bar">
             <span>// 01. MARITIME LOGISTICS & FREIGHT (SEA)</span>
             <span class="sub">REAL-TIME CONTAINER / BULK / BUNKER / FORWARDING DATA</span>
         </div>
+
         <div class="grid-4">
 
-            <!-- 1. Shipping Index -->
             <div class="panel">
                 <div class="panel-header">
                     <span class="panel-headline">SHIPPING INDEX</span>
-                    <a href="ShippingIndex/index.html" class="panel-link">INDEX ></a>
+                    <a href="Shipping%20Index/index.html" class="panel-link">INDEX &gt;</a>
                 </div>
+
                 <div class="panel-body">
                     <div class="metric-cell">
                         <div class="metric-top">
                             <span class="metric-label">SCFI COMPOSITE</span>
                             <span class="metric-delta {shipping['scfi']['class']}">{shipping['scfi']['arrow']} {shipping['scfi']['delta']}</span>
                         </div>
+
                         <div class="metric-value-row">
-                            <span class="metric-value large">{shipping['scfi']['price']} <span class="unit">PTS</span></span>
+                            <span class="metric-value large">
+                                {shipping['scfi']['price']}
+                                <span class="unit">PTS</span>
+                            </span>
                         </div>
                     </div>
+
                     <div class="metric-cell">
                         <div class="metric-top">
                             <span class="metric-label">BALTIC DRY (BDI)</span>
                             <span class="metric-delta {shipping['bdi']['class']}">{shipping['bdi']['arrow']} {shipping['bdi']['delta']}</span>
                         </div>
+
                         <div class="metric-value-row">
-                            <span class="metric-value large">{shipping['bdi']['price']} <span class="unit">PTS</span></span>
+                            <span class="metric-value large">
+                                {shipping['bdi']['price']}
+                                <span class="unit">PTS</span>
+                            </span>
                         </div>
                     </div>
                 </div>
+
                 <div class="panel-footer">
                     <span>AS OF: {shipping['date']}</span>
-                    <span class="footer-tag">SSE / BALTIC</span>
+                    <span class="footer-tag">SCFI / BALTIC</span>
                 </div>
             </div>
 
-            <!-- 2. Alphaliner TOP 100 -->
             <div class="panel">
                 <div class="panel-header">
                     <span class="panel-headline">ALPHALINER FLEET</span>
-                    <a href="Alphaliner/index.html" class="panel-link">FLEET ></a>
+                    <a href="Alphaliner/index.html" class="panel-link">FLEET &gt;</a>
                 </div>
+
                 <div class="panel-body">
                     <div class="metric-cell compact">
                         <span class="metric-label">TOTAL OPERATING FLEET</span>
@@ -861,12 +1263,14 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                             <span class="metric-value">{alphaliner['total_ships']}</span>
                         </div>
                     </div>
+
                     <div class="metric-cell compact">
                         <span class="metric-label">GLOBAL TEU CAPACITY</span>
                         <div class="metric-value-row" style="margin-top:2px;">
                             <span class="metric-value">{alphaliner['total_teu']}</span>
                         </div>
                     </div>
+
                     <div class="metric-cell compact">
                         <span class="metric-label">TOP 10 CARRIER SHARE</span>
                         <div class="metric-value-row" style="margin-top:2px;">
@@ -875,18 +1279,19 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                         </div>
                     </div>
                 </div>
+
                 <div class="panel-footer">
                     <span>AS OF: {alphaliner['date']}</span>
                     <span class="footer-tag">ALPHALINER</span>
                 </div>
             </div>
 
-            <!-- 3. Bunker Price Unified Card -->
             <div class="panel">
                 <div class="panel-header">
                     <span class="panel-headline">BUNKER & CRUDE OIL</span>
-                    <a href="BunkerPrice/index.html" class="panel-link">OIL ></a>
+                    <a href="BunkerPrice/index.html" class="panel-link">OIL &gt;</a>
                 </div>
+
                 <div class="panel-body" style="padding: 6px 10px;">
                     <table class="dense-table">
                         <thead>
@@ -896,34 +1301,38 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                                 <th style="text-align:right;">CHG (%)</th>
                             </tr>
                         </thead>
+
                         <tbody>
-                            <!-- VLSFO Group -->
                             <tr>
                                 <td class="table-row-name">RTM VLSFO</td>
                                 <td class="table-row-val">{bunker['vlsfo']['Rotterdam']['price']}</td>
                                 <td class="table-row-delta {bunker['vlsfo']['Rotterdam']['class']}">{bunker['vlsfo']['Rotterdam']['arrow']} {bunker['vlsfo']['Rotterdam']['delta']}</td>
                             </tr>
+
                             <tr>
                                 <td class="table-row-name">FUJ VLSFO</td>
                                 <td class="table-row-val">{bunker['vlsfo']['Fujairah']['price']}</td>
                                 <td class="table-row-delta {bunker['vlsfo']['Fujairah']['class']}">{bunker['vlsfo']['Fujairah']['arrow']} {bunker['vlsfo']['Fujairah']['delta']}</td>
                             </tr>
+
                             <tr>
                                 <td class="table-row-name">SIN VLSFO</td>
                                 <td class="table-row-val">{bunker['vlsfo']['Singapore']['price']}</td>
                                 <td class="table-row-delta {bunker['vlsfo']['Singapore']['class']}">{bunker['vlsfo']['Singapore']['arrow']} {bunker['vlsfo']['Singapore']['delta']}</td>
                             </tr>
-                            <!-- Crude Oil Group -->
+
                             <tr>
                                 <td class="table-row-name" style="color:var(--bb-amber);">DUBAI CRUDE</td>
                                 <td class="table-row-val">{bunker['crude']['Dubai']['price']}</td>
                                 <td class="table-row-delta {bunker['crude']['Dubai']['class']}">{bunker['crude']['Dubai']['arrow']} {bunker['crude']['Dubai']['delta']}</td>
                             </tr>
+
                             <tr>
                                 <td class="table-row-name" style="color:var(--bb-amber);">BRENT CRUDE</td>
                                 <td class="table-row-val">{bunker['crude']['Brent']['price']}</td>
                                 <td class="table-row-delta {bunker['crude']['Brent']['class']}">{bunker['crude']['Brent']['arrow']} {bunker['crude']['Brent']['delta']}</td>
                             </tr>
+
                             <tr>
                                 <td class="table-row-name" style="color:var(--bb-amber);">WTI CRUDE</td>
                                 <td class="table-row-val">{bunker['crude']['WTI']['price']}</td>
@@ -932,31 +1341,36 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                         </tbody>
                     </table>
                 </div>
+
                 <div class="panel-footer">
                     <span>DATE: {bunker['date']}</span>
                     <span class="footer-tag">USD/MT & USD/BBL</span>
                 </div>
             </div>
 
-            <!-- 4. Global Top 25 Forwarders -->
             <div class="panel">
                 <div class="panel-header">
                     <span class="panel-headline">TOP 25 FORWARDERS</span>
-                    <a href="Forwarder/index.html" class="panel-link">FWD ></a>
+                    <a href="Forwarder/index.html" class="panel-link">FWD &gt;</a>
                 </div>
+
                 <div class="panel-body">
                     <div class="metric-cell compact">
                         <span class="metric-label">RANK 1 OPERATOR</span>
                         <div class="metric-value-row" style="margin-top:2px;">
-                            <span class="metric-value" style="font-size:14px; color:var(--bb-amber);">{forwarder['top_forwarder']}</span>
+                            <span class="metric-value" style="font-size:14px; color:var(--bb-amber);">
+                                {forwarder['top_forwarder']}
+                            </span>
                         </div>
                     </div>
+
                     <div class="metric-cell compact">
                         <span class="metric-label">TOTAL OCEAN FREIGHT</span>
                         <div class="metric-value-row" style="margin-top:2px;">
                             <span class="metric-value">{forwarder['total_ocean_teu']}</span>
                         </div>
                     </div>
+
                     <div class="metric-cell compact">
                         <span class="metric-label">TOTAL AIR TONNAGE</span>
                         <div class="metric-value-row" style="margin-top:2px;">
@@ -964,6 +1378,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                         </div>
                     </div>
                 </div>
+
                 <div class="panel-footer">
                     <span>PERIOD: {forwarder['date']}</span>
                     <span class="footer-tag">A&A TOP 25</span>
@@ -972,19 +1387,19 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
 
         </div>
 
-        <!-- ================= AIR & GLOBAL SECTIONS ================= -->
         <div class="section-bar">
             <span>// 02. AIR CARGO & GLOBAL MACRO INTELLIGENCE</span>
             <span class="sub">TAC AIR FREIGHT CORRIDORS & GSCPI SUPPLY CHAIN PRESSURES</span>
         </div>
+
         <div class="grid-2">
 
-            <!-- 5. Air Freight Rate (TAC Index) -->
             <div class="panel">
                 <div class="panel-header">
                     <span class="panel-headline">AIR FREIGHT RATE</span>
-                    <a href="TAC%20Index/index.html" class="panel-link">TAC ></a>
+                    <a href="TAC%20Index/index.html" class="panel-link">TAC &gt;</a>
                 </div>
+
                 <div class="panel-body" style="padding: 8px 10px;">
                     <table class="dense-table">
                         <thead>
@@ -994,17 +1409,20 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                                 <th style="text-align:right;">CHANGE (%)</th>
                             </tr>
                         </thead>
+
                         <tbody>
                             <tr>
                                 <td class="table-row-name">FRANKFURT - NORTH AMERICA (FRA-NAM)</td>
                                 <td class="table-row-val">{tac['routes']['FRA - NAM']['price']}</td>
                                 <td class="table-row-delta {tac['routes']['FRA - NAM']['class']}">{tac['routes']['FRA - NAM']['arrow']} {tac['routes']['FRA - NAM']['delta']}</td>
                             </tr>
+
                             <tr>
                                 <td class="table-row-name">HONG KONG - EUROPE (HKG-EUR)</td>
                                 <td class="table-row-val">{tac['routes']['HKG - EUR']['price']}</td>
                                 <td class="table-row-delta {tac['routes']['HKG - EUR']['class']}">{tac['routes']['HKG - EUR']['arrow']} {tac['routes']['HKG - EUR']['delta']}</td>
                             </tr>
+
                             <tr>
                                 <td class="table-row-name">HONG KONG - NORTH AMERICA (HKG-NAM)</td>
                                 <td class="table-row-val">{tac['routes']['HKG - NAM']['price']}</td>
@@ -1013,18 +1431,19 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                         </tbody>
                     </table>
                 </div>
+
                 <div class="panel-footer">
                     <span>AS OF: {tac['date']}</span>
-                    <span class="footer-tag">BALTIC AIRFREIGHT</span>
+                    <span class="footer-tag">TAC INDEX</span>
                 </div>
             </div>
 
-            <!-- 6. Macro Economies & GSCPI -->
             <div class="panel">
                 <div class="panel-header">
                     <span class="panel-headline">MACRO ECONOMIES & GSCPI</span>
-                    <a href="MacroEconomies/index.html" class="panel-link">MACRO ></a>
+                    <a href="MacroEconomies/index.html" class="panel-link">MACRO &gt;</a>
                 </div>
+
                 <div class="panel-body" style="padding: 8px 10px;">
                     <table class="dense-table">
                         <thead>
@@ -1034,17 +1453,23 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                                 <th style="text-align:right;">CHANGE (%)</th>
                             </tr>
                         </thead>
+
                         <tbody>
                             <tr>
                                 <td class="table-row-name">GLOBAL SUPPLY CHAIN PRESSURE (GSCPI)</td>
-                                <td class="table-row-val">{macro['gscpi']['value']} <span style="font-size:9px; color:var(--bb-cyan);">PTS</span></td>
+                                <td class="table-row-val">
+                                    {macro['gscpi']['value']}
+                                    <span style="font-size:9px; color:var(--bb-cyan);">PTS</span>
+                                </td>
                                 <td class="table-row-delta {macro['gscpi']['class']}">{macro['gscpi']['arrow']} {macro['gscpi']['delta']}</td>
                             </tr>
+
                             <tr>
                                 <td class="table-row-name">US REAL GDP GROWTH (QOQ ANNUALIZED)</td>
                                 <td class="table-row-val">{macro['us_gdp']['value']}</td>
                                 <td class="table-row-delta {macro['us_gdp']['class']}">{macro['us_gdp']['arrow']} {macro['us_gdp']['delta']}</td>
                             </tr>
+
                             <tr>
                                 <td class="table-row-name">US HEADLINE CPI INFLATION (YOY)</td>
                                 <td class="table-row-val">{macro['us_cpi']['value']}</td>
@@ -1053,6 +1478,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                         </tbody>
                     </table>
                 </div>
+
                 <div class="panel-footer">
                     <span>AS OF: {macro['date']}</span>
                     <span class="footer-tag">NY FED / BEA / BLS</span>
@@ -1072,6 +1498,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
 # ==========================================
 def main():
     print("[INFO] Fetching module metrics from verified DB schemas...")
+
     shipping_data = fetch_shipping_data()
     alphaliner_data = fetch_alphaliner_data()
     bunker_data = fetch_bunker_and_crude_data()
@@ -1079,21 +1506,22 @@ def main():
     tac_data = fetch_tac_data()
     macro_data = fetch_macro_data()
 
-    # 1. Generate Root index.html
     print(f"[INFO] Generating Bloomberg Terminal HTML -> {OUTPUT_HTML}")
-    html_content = generate_html(
-        shipping_data,
-        alphaliner_data,
-        bunker_data,
-        forwarder_data,
-        tac_data,
-        macro_data,
-    )
-    with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
-        f.write(html_content)
 
-    # 2. Generate dashboard_summary.json
+    html_content = generate_html(
+        shipping=shipping_data,
+        alphaliner=alphaliner_data,
+        bunker=bunker_data,
+        forwarder=forwarder_data,
+        tac=tac_data,
+        macro=macro_data,
+    )
+
+    with open(OUTPUT_HTML, "w", encoding="utf-8") as file:
+        file.write(html_content)
+
     print(f"[INFO] Exporting summary JSON -> {OUTPUT_JSON}")
+
     summary_data = {
         "generated_at": datetime.now().isoformat(),
         "shipping": shipping_data,
@@ -1103,8 +1531,14 @@ def main():
         "tac": tac_data,
         "macro": macro_data,
     }
-    with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
-        json.dump(summary_data, f, ensure_ascii=False, indent=2)
+
+    with open(OUTPUT_JSON, "w", encoding="utf-8") as file:
+        json.dump(
+            summary_data,
+            file,
+            ensure_ascii=False,
+            indent=2,
+        )
 
     print("[SUCCESS] Market Intelligence root dashboard generated successfully.")
 
