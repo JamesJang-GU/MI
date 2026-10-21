@@ -1,15 +1,15 @@
 {
-  "generated_at": "2026-10-21 04:07:44",
+  "generated_at": "2026-10-21 04:34:50",
   "shipping": {
     "title": "Shipping Index (SCFI / BDI)",
     "path": "Shipping Index/index.html",
     "category": "Sea",
     "scfi_latest": "3,679.6",
     "scfi_date": "2026-10-16",
-    "scfi_delta_html": "<span class=\"delta-up\">WoW +15.5 (+0.4%) ↗</span>",
-    "bdi_latest": "2,546",
-    "bdi_date": "2026-10-19",
-    "bdi_delta_html": "<span class=\"delta-up\">WoW +35 (+1.4%) ↗</span>",
+    "scfi_delta_html": "<span class=\"delta-up\">WoW +15.5 (+0.42%) ↗</span>",
+    "bdi_latest": "2,593",
+    "bdi_date": "2026-10-20",
+    "bdi_delta_html": "<span class=\"delta-up\">WoW +47 (+1.85%) ↗</span>",
     "status": "Active"
   },
   "alphaliner": {
@@ -24,15 +24,29 @@
     "status": "Active"
   },
   "bunker": {
-    "title": "Bunker Price (VLSFO)",
+    "title": "Bunker Price",
     "path": "BunkerPrice/index.html",
     "category": "Sea",
     "latest_date": "2026-10-20",
     "rotterdam": "765.00 USD/MT",
+    "rotterdam_delta_html": "<span class=\"delta-up\">+9.50 (+1.26%) ↗</span>",
     "fujairah": "979.50 USD/MT",
+    "fujairah_delta_html": "<span class=\"delta-up\">+6.50 (+0.67%) ↗</span>",
     "singapore": "932.50 USD/MT",
-    "market_average": "892.33 USD/MT",
-    "available_ports": 3,
+    "singapore_delta_html": "<span class=\"delta-down\">-1.50 (-0.16%) ↘</span>",
+    "status": "Active"
+  },
+  "oil": {
+    "title": "Crude Oil",
+    "path": "BunkerPrice/OilPrice/index.html",
+    "category": "Sea",
+    "latest_date": "2026-10-20",
+    "dubai": "110.70 USD/BBL",
+    "dubai_delta_html": "<span class=\"delta-up\">+3.60 (+3.36%) ↗</span>",
+    "brent": "108.79 USD/BBL",
+    "brent_delta_html": "<span class=\"delta-down\">-0.76 (-0.69%) ↘</span>",
+    "wti": "101.79 USD/BBL",
+    "wti_delta_html": "<span class=\"delta-down\">-1.87 (-1.80%) ↘</span>",
     "status": "Active"
   },
   "forwarder": {

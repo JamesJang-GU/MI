@@ -107,9 +107,10 @@
       color: var(--text-dim);
     }
 
-    .grid-4 {
+    /* Sea 영역: 5개 카드 5열 배치 (와이드 화면) */
+    .grid-sea {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: 10px;
     }
 
@@ -123,7 +124,7 @@
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      min-height: 205px;
+      min-height: 185px;
       padding: 10px 12px;
       border: 1px solid var(--border);
       border-top: 2px solid var(--border-light);
@@ -215,22 +216,9 @@
     .kpi-val.amber { color: var(--amber-bright); }
     .small-value { font-size: 10px; }
 
-    /* Delta & Arrow Styles */
-    .delta-sub {
-      margin-top: 4px;
-      font-family: var(--mono);
-      font-size: 9.5px;
-      font-weight: 700;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .delta-up { color: #00e676; }
-    .delta-down { color: #ff5252; }
-    .delta-neutral { color: var(--text-dim); }
-
-    .bunker-section-label {
-      margin: 8px 0 5px;
+    /* 3열 카드 전용 (Bunker / Crude Oil) */
+    .section-sublabel {
+      margin: 4px 0 6px;
       color: var(--amber);
       font-family: var(--mono);
       font-size: 8.5px;
@@ -238,14 +226,30 @@
       letter-spacing: 0.5px;
     }
 
-    .bunker-grid {
+    .grid-triple {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 5px;
     }
-    .bunker-grid .kpi-item { padding: 6px; }
-    .bunker-grid .kpi-label { font-size: 8px; }
-    .bunker-grid .kpi-val { font-size: 9.5px; letter-spacing: -0.4px; }
+    .grid-triple .kpi-item { padding: 6px 5px; }
+    .grid-triple .kpi-label { font-size: 8px; }
+    .grid-triple .kpi-val { font-size: 10px; letter-spacing: -0.3px; }
+
+    /* Delta & Arrow Styles */
+    .delta-sub {
+      margin-top: 4px;
+      font-family: var(--mono);
+      font-size: 8.5px;
+      font-weight: 700;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      letter-spacing: -0.3px;
+    }
+    .delta-up { color: #00e676; }
+    .delta-down { color: #ff5252; }
+    .delta-neutral { color: var(--text-dim); }
 
     .card-footer {
       display: flex;
@@ -279,13 +283,18 @@
       font-size: 9px;
     }
 
-    @media (max-width: 1240px) {
-      .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    @media (max-width: 1400px) {
+      .grid-sea { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
 
-    @media (max-width: 760px) {
+    @media (max-width: 900px) {
+      .grid-sea { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 600px) {
       body { padding: 8px; }
-      .grid-4, .grid-2 { grid-template-columns: 1fr; }
+      .grid-sea, .grid-2 { grid-template-columns: 1fr; }
       .top-bar {
         align-items: flex-start;
         flex-direction: column;
@@ -305,14 +314,14 @@
         <span class="title-main">MARKET INTELLIGENCE // MAIN PORTAL</span>
       </div>
       <div class="updated-at">
-        UPDATED: <span>2026-10-21 04:07:44</span>
+        UPDATED: <span>2026-10-21 04:34:50</span>
       </div>
     </header>
 
     <section class="section-group">
       <div class="section-title">Sea</div>
 
-      <div class="grid-4">
+      <div class="grid-sea">
 
         <!-- 1. Shipping Index -->
         <a href="Shipping Index/index.html" class="card">
@@ -326,19 +335,19 @@
               <div class="kpi-item">
                 <div class="kpi-label">SCFI Composite</div>
                 <div class="kpi-val highlight">3,679.6</div>
-                <div class="delta-sub"><span class="delta-up">WoW +15.5 (+0.4%) ↗</span></div>
+                <div class="delta-sub"><span class="delta-up">WoW +15.5 (+0.42%) ↗</span></div>
               </div>
 
               <div class="kpi-item">
                 <div class="kpi-label">BDI Composite</div>
-                <div class="kpi-val amber">2,546</div>
-                <div class="delta-sub"><span class="delta-up">WoW +35 (+1.4%) ↗</span></div>
+                <div class="kpi-val amber">2,593</div>
+                <div class="delta-sub"><span class="delta-up">WoW +47 (+1.85%) ↗</span></div>
               </div>
             </div>
           </div>
 
           <div class="card-footer">
-            <span>Date: 2026-10-19</span>
+            <span>Date: 2026-10-20</span>
             <span class="arrow">OPEN &rarr;</span>
           </div>
         </a>
@@ -380,39 +389,32 @@
           </div>
         </a>
 
-        <!-- 3. Bunker Price -->
+        <!-- 3. Bunker Price (VLSFO Rotterdam / Fujairah / Singapore) -->
         <a href="BunkerPrice/index.html" class="card">
           <div>
             <div class="card-header">
-              <span class="card-title">Bunker Price (VLSFO)</span>
+              <span class="card-title">Bunker Price</span>
               <span class="badge active">Active</span>
             </div>
 
-            <div class="bunker-section-label">SHIP &amp; BUNKER / LATEST VLSFO</div>
-            <div class="bunker-grid">
+            <div class="section-sublabel">VLSFO / LATEST PRICE &amp; CHANGE</div>
+            <div class="grid-triple">
               <div class="kpi-item">
                 <div class="kpi-label">Rotterdam</div>
                 <div class="kpi-val highlight">765.00 USD/MT</div>
+                <div class="delta-sub"><span class="delta-up">+9.50 (+1.26%) ↗</span></div>
               </div>
+
               <div class="kpi-item">
                 <div class="kpi-label">Fujairah</div>
                 <div class="kpi-val">979.50 USD/MT</div>
+                <div class="delta-sub"><span class="delta-up">+6.50 (+0.67%) ↗</span></div>
               </div>
+
               <div class="kpi-item">
                 <div class="kpi-label">Singapore</div>
                 <div class="kpi-val amber">932.50 USD/MT</div>
-              </div>
-            </div>
-
-            <div class="bunker-section-label">THREE-PORT MARKET INDICATOR</div>
-            <div class="kpi-group">
-              <div class="kpi-item">
-                <div class="kpi-label">VLSFO Average</div>
-                <div class="kpi-val highlight">892.33 USD/MT</div>
-              </div>
-              <div class="kpi-item">
-                <div class="kpi-label">Available Ports</div>
-                <div class="kpi-val amber">3 / 3</div>
+                <div class="delta-sub"><span class="delta-down">-1.50 (-0.16%) ↘</span></div>
               </div>
             </div>
           </div>
@@ -423,7 +425,43 @@
           </div>
         </a>
 
-        <!-- 4. Top 25 Forwarders -->
+        <!-- 4. Crude Oil (Dubai / Brent / WTI) -->
+        <a href="BunkerPrice/OilPrice/index.html" class="card">
+          <div>
+            <div class="card-header">
+              <span class="card-title">Crude Oil</span>
+              <span class="badge active">Active</span>
+            </div>
+
+            <div class="section-sublabel">OPINET / LATEST PRICE &amp; CHANGE</div>
+            <div class="grid-triple">
+              <div class="kpi-item">
+                <div class="kpi-label">Dubai</div>
+                <div class="kpi-val highlight">110.70 USD/BBL</div>
+                <div class="delta-sub"><span class="delta-up">+3.60 (+3.36%) ↗</span></div>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-label">Brent</div>
+                <div class="kpi-val">108.79 USD/BBL</div>
+                <div class="delta-sub"><span class="delta-down">-0.76 (-0.69%) ↘</span></div>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-label">WTI</div>
+                <div class="kpi-val amber">101.79 USD/BBL</div>
+                <div class="delta-sub"><span class="delta-down">-1.87 (-1.80%) ↘</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card-footer">
+            <span>Date: 2026-10-20</span>
+            <span class="arrow">OPEN &rarr;</span>
+          </div>
+        </a>
+
+        <!-- 5. Top 25 Forwarders -->
         <a href="Forwarder/index.html" class="card">
           <div>
             <div class="card-header">
