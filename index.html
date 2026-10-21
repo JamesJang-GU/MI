@@ -107,7 +107,7 @@
       color: var(--text-dim);
     }
 
-    /* Sea 영역: 5개 카드 5열 배치 (와이드 화면) */
+    /* Sea 영역: 5개 카드 배치 */
     .grid-sea {
       display: grid;
       grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -235,6 +235,49 @@
     .grid-triple .kpi-label { font-size: 8px; }
     .grid-triple .kpi-val { font-size: 10px; letter-spacing: -0.3px; }
 
+    /* TAC Corridor 전용 그리드 레이아웃 */
+    .tac-corridor-label {
+      margin: 8px 0 6px;
+      color: var(--amber);
+      font-family: var(--mono);
+      font-size: 8.5px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+
+    .tac-corridor-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 5px;
+    }
+
+    .tac-corridor-grid .kpi-item {
+      padding: 6px 6px;
+    }
+
+    .tac-corridor-grid .kpi-label {
+      min-height: 22px;
+      margin-bottom: 4px;
+      overflow: visible;
+      white-space: normal;
+      font-size: 8px;
+      line-height: 1.3;
+    }
+
+    .tac-corridor-grid .kpi-val {
+      font-size: 10px;
+      letter-spacing: -0.35px;
+    }
+
+    .tac-corridor-grid .delta-sub {
+      font-size: 8px;
+      letter-spacing: -0.45px;
+    }
+
+    .tac-card {
+      min-height: 285px;
+    }
+
     /* Delta & Arrow Styles */
     .delta-sub {
       margin-top: 4px;
@@ -295,6 +338,8 @@
     @media (max-width: 600px) {
       body { padding: 8px; }
       .grid-sea, .grid-2 { grid-template-columns: 1fr; }
+      .tac-corridor-grid { grid-template-columns: 1fr; }
+      .tac-card { min-height: 0; }
       .top-bar {
         align-items: flex-start;
         flex-direction: column;
@@ -314,7 +359,7 @@
         <span class="title-main">MARKET INTELLIGENCE // MAIN PORTAL</span>
       </div>
       <div class="updated-at">
-        UPDATED: <span>2026-10-21 05:05:34</span>
+        UPDATED: <span>2026-10-21 05:27:11</span>
       </div>
     </header>
 
@@ -499,10 +544,11 @@
     </section>
 
     <div class="grid-2">
+      <!-- Air Section -->
       <section class="section-group">
         <div class="section-title">Air</div>
 
-        <a href="TAC Index/index.html" class="card">
+        <a href="TAC Index/index.html" class="card tac-card">
           <div>
             <div class="card-header">
               <span class="card-title">Air Freight (TAC Index)</span>
@@ -521,6 +567,27 @@
                 <div class="delta-sub"><span class="delta-neutral">O-D Tracked</span></div>
               </div>
             </div>
+
+            <div class="tac-corridor-label">LATEST RATE / MONTH-ON-MONTH CHANGE</div>
+            <div class="tac-corridor-grid">
+              <div class="kpi-item">
+                <div class="kpi-label">Frankfurt-North America</div>
+                <div class="kpi-val highlight">-</div>
+                <div class="delta-sub"><span class="delta-neutral">MoM -</span></div>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-label">Hong Kong-Europe</div>
+                <div class="kpi-val">-</div>
+                <div class="delta-sub"><span class="delta-neutral">MoM -</span></div>
+              </div>
+
+              <div class="kpi-item">
+                <div class="kpi-label">Hong Kong-North America</div>
+                <div class="kpi-val amber">-</div>
+                <div class="delta-sub"><span class="delta-neutral">MoM -</span></div>
+              </div>
+            </div>
           </div>
 
           <div class="card-footer">
@@ -530,10 +597,11 @@
         </a>
       </section>
 
+      <!-- Global Section -->
       <section class="section-group">
         <div class="section-title">Global</div>
 
-        <a href="GDP&amp;Inflation/index.html" class="card">
+        <a href="GDP&amp;Inflation/index.html" class="card tac-card">
           <div>
             <div class="card-header">
               <span class="card-title">Macro Economies &amp; GSCPI</span>
