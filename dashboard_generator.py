@@ -12,7 +12,7 @@ Market Intelligence Portal - Main Dashboard Generator
   - Crude Oil (Dubai, Brent, WTI with Delta ↗/↘)
   - Global Top 25 Forwarders
 - Air
-  - TAC Air Freight Index
+  - TAC Air Freight Index (Overall Index & WoW Delta ↗/↘)
 - Global
   - Macro Economies & GSCPI
 """
@@ -52,8 +52,30 @@ logging.basicConfig(
 logger = logging.getLogger("dashboard_generator")
 
 # =============================================================================
-# 2. Common Utilities
+# 2. Common Utilities & Safety Checks
 # =============================================================================
+
+def validate_environment():
+    """
+    루트 포털 생성기가 하위 모듈 폴더 내에서 오실행되어
+    개별 모듈의 index.html을 덮어쓰는 사고를 원천 방지한다.
+    """
+    forbidden_module_names = {
+        "tac index",
+        "shipping index",
+        "alphaliner",
+        "bunkerprice",
+        "forwarder",
+        "gdp&inflation",
+    }
+
+    if BASE_DIR.name.lower() in forbidden_module_names:
+        error_msg = (
+            f"[CRITICAL ERROR] dashboard_generator.py is located inside a submodule folder: {BASE_DIR}. "
+            "It must be placed at the repository root to prevent overwriting module-specific index.html files."
+        )
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
 
 def table_exists(cursor, table_name):
     """SQLite 테이블 존재 여부를 확인한다."""
@@ -640,14 +662,14 @@ def get_forwarder_summary():
 # =============================================================================
 
 def get_tac_summary():
-    """TAC Air Freight Index 최신 데이터를 읽는다."""
+    """TAC Air Freight Index 최신 지수 및 전주 대비 증감률(↗/↘)을 읽는다."""
     summary = {
         "title": "Air Freight (TAC Index)",
         "path": "TAC Index/index.html",
         "category": "Air",
         "latest_date": "-",
         "overall_index": "-",
-        "weekly_change": "-",
+        "weekly_change_html": '<span class="delta-neutral">-</span>',
         "route_count": "-",
         "status": "No Data",
     }
@@ -674,9 +696,18 @@ def get_tac_summary():
         if row:
             data_date, overall_index, weekly_change, route_count = row
             summary["latest_date"] = str(data_date or "-")[:10]
-            summary["overall_index"] = f"{float(overall_index):,.2f}" if overall_index is not None else "-"
-            summary["weekly_change"] = f"{float(weekly_change):+.2f}%" if weekly_change is not None else "-"
-            summary["route_count"] = str(route_count) if route_count is not None else "-"
+            summary["overall_index"] = f"${float(overall_index):,.2f} USD/kg" if overall_index is not None else "-"
+            summary["route_count"] = f"{int(route_count)} Routes" if route_count is not None else "-"
+
+            if weekly_change is not None:
+                chg = float(weekly_change)
+                if chg > 0:
+                    summary["weekly_change_html"] = f'<span class="delta-up">+{chg:.2f}% ↗</span>'
+                elif chg < 0:
+                    summary["weekly_change_html"] = f'<span class="delta-down">{chg:.2f}% ↘</span>'
+                else:
+                    summary["weekly_change_html"] = '<span class="delta-neutral">0.00% →</span>'
+
             summary["status"] = "Active"
 
     except Exception as error:
@@ -1248,16 +1279,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
               <div class="kpi-item">
                 <div class="kpi-label">Overall Index</div>
                 <div class="kpi-val highlight">__TAC_INDEX__</div>
+                <div class="delta-sub">__TAC_WEEKLY_DELTA__</div>
               </div>
               <div class="kpi-item">
-                <div class="kpi-label">Weekly Change</div>
-                <div class="kpi-val amber">__TAC_WEEKLY__</div>
+                <div class="kpi-label">Corridors</div>
+                <div class="kpi-val amber">__TAC_ROUTES__</div>
+                <div class="delta-sub"><span class="delta-neutral">O-D Tracked</span></div>
               </div>
             </div>
           </div>
 
           <div class="card-footer">
-            <span>Date: __TAC_DATE__ / Routes: __TAC_ROUTES__</span>
+            <span>Date: __TAC_DATE__</span>
             <span class="arrow">OPEN &rarr;</span>
           </div>
         </a>
@@ -1308,6 +1341,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 def main():
     """모든 모듈 DB에서 최신 요약을 읽고 루트 포털을 생성한다."""
+    validate_environment()
+
     logger.info("Building Market Intelligence Portal Dashboard...")
 
     shipping = get_shipping_summary()
@@ -1402,7 +1437,7 @@ def main():
     html_output = replace_template_value(html_output, "__TAC_STATUS__", tac["status"])
     html_output = html_output.replace("__TAC_STATUS_CLASS__", get_status_class(tac["status"]))
     html_output = replace_template_value(html_output, "__TAC_INDEX__", tac["overall_index"])
-    html_output = replace_template_value(html_output, "__TAC_WEEKLY__", tac["weekly_change"])
+    html_output = html_output.replace("__TAC_WEEKLY_DELTA__", tac["weekly_change_html"])
     html_output = replace_template_value(html_output, "__TAC_DATE__", tac["latest_date"])
     html_output = replace_template_value(html_output, "__TAC_ROUTES__", tac["route_count"])
 
@@ -1416,7 +1451,7 @@ def main():
     html_output = replace_template_value(html_output, "__MACRO_DATE__", macro["latest_date"])
 
     # -------------------------------------------------------------------------
-    # Write Files
+    # Write Files (Atomic write)
     # -------------------------------------------------------------------------
     temp_html_path = OUTPUT_HTML.with_suffix(".html.tmp")
     temp_html_path.write_text(html_output, encoding="utf-8")
