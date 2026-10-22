@@ -1,27 +1,27 @@
 {
-  "generated_at": "2026-10-21T09:23:13.668982",
+  "generated_at": "2026-10-22T01:12:45.016509",
   "shipping": {
     "scfi": {
-      "price": "N/A",
-      "delta": "-",
-      "class": "neutral",
-      "arrow": "",
-      "date": "-"
+      "price": "3,679.58",
+      "delta": "+15.47 (+0.42%)",
+      "class": "up",
+      "arrow": "▲",
+      "date": "2026-10-16"
     },
     "bdi": {
-      "price": "N/A",
-      "delta": "-",
-      "class": "neutral",
-      "arrow": "",
-      "date": "-"
+      "price": "2,593",
+      "delta": "+47 (+1.85%)",
+      "class": "up",
+      "arrow": "▲",
+      "date": "2026-10-20"
     },
-    "date": "2026-10-21"
+    "date": "2026-10-16"
   },
   "alphaliner": {
     "total_ships": "7,670 Ships",
     "total_teu": "34,946,761 TEU",
     "top10_share": "85.0%",
-    "date": "2026-10-21"
+    "date": "2026-10-22"
   },
   "bunker": {
     "date": "2026-10-20",
@@ -47,20 +47,20 @@
     },
     "crude": {
       "Dubai": {
-        "price": "110.70",
-        "delta": "+3.60 (+3.36%)",
+        "price": "110.98",
+        "delta": "+0.28 (+0.25%)",
         "class": "up",
         "arrow": "▲"
       },
       "Brent": {
-        "price": "108.79",
-        "delta": "-0.76 (-0.69%)",
-        "class": "down",
-        "arrow": "▼"
+        "price": "108.82",
+        "delta": "+0.03 (+0.03%)",
+        "class": "up",
+        "arrow": "▲"
       },
       "WTI": {
-        "price": "101.79",
-        "delta": "-1.87 (-1.80%)",
+        "price": "97.15",
+        "delta": "-4.64 (-4.56%)",
         "class": "down",
         "arrow": "▼"
       }
@@ -70,7 +70,7 @@
     "top_forwarder": "DSV",
     "total_ocean_teu": "36,630,328 TEU",
     "total_air_tons": "15,670,405 MT",
-    "date": "2026-10-21"
+    "date": "2026-10-22"
   },
   "tac": {
     "date": "2026-09-01",
@@ -117,6 +117,6 @@
       "class": "down",
       "arrow": "▼"
     },
-    "date": "2026-10-21"
+    "date": "2026-10-22"
   }
 }
