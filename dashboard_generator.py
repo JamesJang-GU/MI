@@ -1469,7 +1469,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
 
         <div class="section-bar">
             <span> 01. MARITIME LOGISTICS & FREIGHT (SEA)</span>
-            <span class="sub">REAL-TIME CONTAINER / BULK / BUNKER / FORWARDING DATA</span>
+            <span class="sub">#필요시 각 섹션에 대한 설명 입력</span>
         </div>
 
         <div class="grid-4">
@@ -1685,7 +1685,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
 
         <div class="section-bar">
             <span> 02. AIR CARGO & GLOBAL MACRO INTELLIGENCE</span>
-            <span class="sub">TAC AIR FREIGHT CORRIDORS & GSCPI SUPPLY CHAIN PRESSURES</span>
+            <span class="sub">#필요시 각 섹션에 대한 설명 입력</span>
         </div>
 
         <div class="grid-2">
