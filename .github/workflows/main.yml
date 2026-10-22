@@ -172,7 +172,6 @@ jobs:
 
           echo "Forwarder Bloomberg/MI Terminal dashboard verification passed."
 
-
       # =====================================================
       # 8-3. Bunker Price / Crude Oil 크롤링 및 정적 파일 생성
       # =====================================================
@@ -218,7 +217,29 @@ jobs:
           echo "Bunker Price Bloomberg-style dashboard verification passed."
 
       # =====================================================
-      # 8-5. 메인 포털 대시보드(루트 index.html) 생성
+      # 8-5. Linerlytica 크롤링 및 정적 파일 생성
+      # =====================================================
+      - name: Crawl Linerlytica and generate static dashboard
+        env:
+          CHROME_BINARY: ${{ steps.setup-chrome.outputs.chrome-path }}
+        run: |
+          python "Linerlytica/Linerlytica.py"
+
+      # =====================================================
+      # 8-6. Linerlytica 생성 결과 확인
+      # =====================================================
+      - name: Verify Linerlytica generated files
+        run: |
+          echo "===== Linerlytica files ====="
+          ls -alh "Linerlytica"
+
+          test -f "Linerlytica/Linerlytica.db"
+          test -f "Linerlytica/index.html"
+
+          echo "Linerlytica verification passed."
+
+      # =====================================================
+      # 8-7. 메인 포털 대시보드(루트 index.html) 생성
       # =====================================================
       - name: Generate Main Portal Dashboard
         run: |
@@ -240,7 +261,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           # 생성된 파일의 추가·수정·삭제를 모두 스테이징
-          # bunker_forecast.csv가 없는 경우에도 오류가 발생하지 않음
           git add -A
 
           if git diff --cached --quiet; then
