@@ -1468,7 +1468,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
         </div>
 
         <div class="section-bar">
-            <span>// 01. MARITIME LOGISTICS & FREIGHT (SEA)</span>
+            <span> 01. MARITIME LOGISTICS & FREIGHT (SEA)</span>
             <span class="sub">REAL-TIME CONTAINER / BULK / BUNKER / FORWARDING DATA</span>
         </div>
 
@@ -1684,7 +1684,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
         </div>
 
         <div class="section-bar">
-            <span>// 02. AIR CARGO & GLOBAL MACRO INTELLIGENCE</span>
+            <span> 02. AIR CARGO & GLOBAL MACRO INTELLIGENCE</span>
             <span class="sub">TAC AIR FREIGHT CORRIDORS & GSCPI SUPPLY CHAIN PRESSURES</span>
         </div>
 
