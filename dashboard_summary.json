@@ -1,14 +1,14 @@
 {
-  "generated_at": "2026-10-22 07:21:11",
+  "generated_at": "2026-10-22 07:37:32",
   "shipping": {
     "scfi": {
       "current": "3,679.58",
-      "change": "+15.47 (+0.42%)",
+      "change": "↗ +15.47 (+0.42%)",
       "dir": "up"
     },
     "bdi": {
       "current": "2,680",
-      "change": "+87 (+3.36%)",
+      "change": "↗ +87 (+3%)",
       "dir": "up"
     }
   },
@@ -44,24 +44,93 @@
   },
   "alphaliner": {
     "date": "-",
-    "top5": []
+    "top5": [
+      {
+        "rank": 1,
+        "carrier": "Mediterranean Shg Co",
+        "teu": "7,453,718",
+        "share": "-"
+      },
+      {
+        "rank": 1,
+        "carrier": "Mediterranean Shg Co",
+        "teu": "7,453,718",
+        "share": "-"
+      },
+      {
+        "rank": 1,
+        "carrier": "Mediterranean Shg Co",
+        "teu": "7,453,718",
+        "share": "21.5%"
+      },
+      {
+        "rank": 1,
+        "carrier": "Mediterranean Shg Co",
+        "teu": "7,453,718",
+        "share": "21.5%"
+      },
+      {
+        "rank": 2,
+        "carrier": "Maersk",
+        "teu": "4,728,084",
+        "share": "-"
+      }
+    ]
   },
   "forwarder": {
     "date": "-",
     "top5": []
   },
   "tac": {
-    "date": "2026-09-01",
+    "date": "-",
     "routes": []
   },
   "bunker": {
     "vlsfo": {
       "date": "2026-10-21 00:00:00",
-      "ports": []
+      "ports": [
+        {
+          "port": "Rotterdam",
+          "price": "$759.0",
+          "delta": "↘ -6.0 (-0.8%)",
+          "dir": "down"
+        },
+        {
+          "port": "Fujairah",
+          "price": "$968.0",
+          "delta": "↘ -11.5 (-1.2%)",
+          "dir": "down"
+        },
+        {
+          "port": "Singapore",
+          "price": "$932.0",
+          "delta": "↘ -0.5 (-0.1%)",
+          "dir": "down"
+        }
+      ]
     },
     "crude": {
-      "date": "-",
-      "benchmarks": []
+      "date": "2026-10-21",
+      "benchmarks": [
+        {
+          "name": "Dubai",
+          "price": "$110.98",
+          "delta": "↗ +0.28 (+0.25%)",
+          "dir": "up"
+        },
+        {
+          "name": "Brent",
+          "price": "$108.82",
+          "delta": "↗ +0.03 (+0.03%)",
+          "dir": "up"
+        },
+        {
+          "name": "WTI",
+          "price": "$97.15",
+          "delta": "↘ -4.64 (-4.56%)",
+          "dir": "down"
+        }
+      ]
     }
   }
 }
