@@ -1486,7 +1486,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                         <!-- SCFI -->
                         <div class="shipping-index-column">
                             <div class="shipping-index-label">
-                                SCFI COMPOSITE
+                                SCFI COMPOSITE INDEX
                             </div>
 
                             <div class="shipping-chart-meta">
@@ -1513,7 +1513,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                         <!-- BDI -->
                         <div class="shipping-index-column">
                             <div class="shipping-index-label">
-                                BALTIC DRY<br>(BDI)
+                                BALTIC DRY INDEX<br>
                             </div>
 
                             <div class="shipping-chart-meta">
