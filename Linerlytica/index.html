@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Linerlytica | Market Intelligence Terminal</title>
+
+<style>
+:root {
+    --bg: #070b10;
+    --panel: #0e151d;
+    --panel-2: #111b25;
+    --line: #243545;
+    --text: #d8e2eb;
+    --muted: #7f96a8;
+    --cyan: #26d9e8;
+    --amber: #ffb000;
+    --green: #49d17d;
+    --red: #ff5c6c;
+    --white: #f6fbff;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Consolas", "SFMono-Regular", "Menlo", monospace;
+    font-size: 13px;
+}
+
+a {
+    color: var(--cyan);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+.header {
+    border-bottom: 1px solid var(--line);
+    background: #0a1118;
+    padding: 14px 22px;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+
+.header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+}
+
+.brand {
+    color: var(--amber);
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: .6px;
+}
+
+.brand span {
+    color: var(--cyan);
+}
+
+.timestamp {
+    color: var(--muted);
+    font-size: 11px;
+    text-align: right;
+}
+
+.search-row {
+    margin-top: 12px;
+    display: flex;
+    gap: 10px;
+}
+
+.search-box {
+    width: 100%;
+    color: var(--white);
+    background: #05090d;
+    border: 1px solid #294051;
+    padding: 11px 12px;
+    outline: none;
+    font-family: inherit;
+}
+
+.search-box:focus {
+    border-color: var(--cyan);
+    box-shadow: 0 0 0 2px rgba(38, 217, 232, .1);
+}
+
+.filter-button {
+    padding: 10px 12px;
+    white-space: nowrap;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.filter-button.active {
+    border-color: var(--amber);
+    color: var(--amber);
+}
+
+.container {
+    width: min(1600px, calc(100% - 32px));
+    margin: 18px auto 50px;
+}
+
+.section-label {
+    margin: 21px 0 9px;
+    color: var(--amber);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 1.2px;
+}
+
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.kpi {
+    min-height: 88px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-top: 2px solid var(--cyan);
+    background: var(--panel);
+}
+
+.kpi-label {
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: .8px;
+}
+
+.kpi-value {
+    margin-top: 11px;
+    color: var(--white);
+    font-size: 22px;
+    font-weight: 800;
+}
+
+.kpi-value.good {
+    color: var(--green);
+}
+
+.kpi-value.amber {
+    color: var(--amber);
+}
+
+.kpi-sub {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 10px;
+}
+
+.status-strip {
+    border: 1px solid var(--line);
+    padding: 9px 12px;
+    color: var(--muted);
+    background: var(--panel);
+    font-size: 11px;
+}
+
+.status-ok {
+    color: var(--green);
+}
+
+.status-warning {
+    color: var(--amber);
+}
+
+.result-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 11px;
+    margin-bottom: 9px;
+}
+
+.result-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.card {
+    display: flex;
+    flex-direction: column;
+    min-height: 250px;
+    padding: 15px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+}
+
+.card:hover {
+    background: var(--panel-2);
+    border-color: #3a586e;
+}
+
+.card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.card-title {
+    color: var(--white);
+    font-size: 15px;
+    line-height: 1.45;
+    font-weight: 800;
+}
+
+.tag {
+    flex: 0 0 auto;
+    border: 1px solid #426176;
+    color: var(--cyan);
+    padding: 3px 6px;
+    font-size: 9px;
+    letter-spacing: .5px;
+}
+
+.card-date {
+    margin-top: 9px;
+    color: var(--muted);
+    font-size: 10px;
+}
+
+.card-excerpt {
+    margin: 14px 0 10px;
+    color: #b7c6d2;
+    line-height: 1.65;
+}
+
+.heading-list {
+    margin: 5px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.heading-list li {
+    overflow: hidden;
+    padding: 3px 0;
+    color: #91b9c4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+}
+
+.heading-list li::before {
+    content: "› ";
+    color: var(--amber);
+}
+
+.table-preview {
+    overflow: auto;
+    margin-top: 10px;
+    border: 1px solid #213441;
+    max-height: 175px;
+}
+
+.table-preview table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+}
+
+.table-preview td {
+    padding: 5px 6px;
+    border-bottom: 1px solid #1b2b37;
+    color: #b9c8d2;
+}
+
+.table-preview tr:first-child td {
+    position: sticky;
+    top: 0;
+    color: var(--amber);
+    background: #0a1118;
+    font-weight: 700;
+}
+
+.card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 14px;
+    color: var(--muted);
+    font-size: 10px;
+}
+
+.empty {
+    grid-column: 1 / -1;
+    padding: 40px;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    text-align: center;
+    background: var(--panel);
+}
+
+.footer {
+    margin-top: 24px;
+    border-top: 1px solid var(--line);
+    padding: 16px 0;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.7;
+}
+
+.hidden {
+    display: none !important;
+}
+
+@media (max-width: 1050px) {
+    .kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .result-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 600px) {
+    .container {
+        width: min(100% - 20px, 1600px);
+    }
+
+    .header {
+        padding: 12px 10px;
+    }
+
+    .header-top {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .timestamp {
+        text-align: left;
+    }
+
+    .kpi-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .search-row {
+        flex-wrap: wrap;
+    }
+}
+</style>
+</head>
+
+<body>
+<header class="header">
+    <div class="header-top">
+        <div class="brand">
+            LINERLYTICA <span>/ MARKET INTELLIGENCE</span>
+        </div>
+        <div class="timestamp" id="generatedAt"></div>
+    </div>
+
+    <div class="search-row">
+        <input
+            id="searchInput"
+            class="search-box"
+            type="search"
+            placeholder="SEARCH TITLE / SUMMARY / HEADING / URL ..."
+            autocomplete="off"
+        >
+        <button class="filter-button active" data-filter="ALL">ALL</button>
+        <button class="filter-button" data-filter="Article">ARTICLE</button>
+        <button class="filter-button" data-filter="Page">PAGE</button>
+        <button class="filter-button" data-filter="Category">CATEGORY</button>
+    </div>
+</header>
+
+<main class="container">
+    <div class="section-label">SYSTEM OVERVIEW</div>
+
+    <section class="kpi-grid">
+        <div class="kpi">
+            <div class="kpi-label">PUBLIC PAGES INDEXED</div>
+            <div class="kpi-value" id="totalPages">-</div>
+            <div class="kpi-sub">SQLite current-page records</div>
+        </div>
+
+        <div class="kpi">
+            <div class="kpi-label">CONTENT TYPES</div>
+            <div class="kpi-value amber" id="pageTypes">-</div>
+            <div class="kpi-sub">Article / Page / Category etc.</div>
+        </div>
+
+        <div class="kpi">
+            <div class="kpi-label">CHANGED SNAPSHOTS · 7D</div>
+            <div class="kpi-value good" id="changedPages">-</div>
+            <div class="kpi-sub">New or updated public content</div>
+        </div>
+
+        <div class="kpi">
+            <div class="kpi-label">LAST COLLECTION</div>
+            <div class="kpi-value" style="font-size:14px" id="lastUpdate">-</div>
+            <div class="kpi-sub" id="runStatus">-</div>
+        </div>
+    </section>
+
+    <div class="section-label">COLLECTION STATUS</div>
+    <div class="status-strip" id="statusStrip">Loading dashboard data...</div>
+
+    <div class="section-label">PUBLIC CONTENT INDEX</div>
+    <div class="result-meta">
+        <span id="resultCount">0 records</span>
+        <span>Source: linerlytica.com · Click title to open original page</span>
+    </div>
+
+    <section class="result-grid" id="resultGrid"></section>
+
+    <footer class="footer">
+        <strong>DATA NOTICE:</strong>
+        This dashboard indexes publicly accessible HTML metadata and text for internal market-intelligence workflow.
+        Validate Linerlytica terms of use, robots.txt directives, subscription conditions, copyright and redistribution rights
+        before publishing, sharing or commercially using collected content.
+        Restricted, authenticated, paid or CAPTCHA-protected content is not collected by this script.
+    </footer>
+</main>
+
+<script>
+const DASHBOARD_DATA = {"generated_at": "2026-10-22T02:33:02+00:00", "summary": {"total_pages": 3, "page_types": 1, "latest_update": "2026-10-22T02:33:02+00:00", "changed_last_7_days": 3, "last_run_status": "SUCCESS", "last_run_collected": 3}, "pages": [{"page_id": 2, "url": "https://www.linerlytica.com/about/", "title": "About Us", "description": "With a full database of over 9,500 ships operating in the container trades since 1956, LINERLYTICA is the most comprehensive information platform for the container shipping market.", "author": "HJ", "published_at": "2020-06-13T02:32:15.000+00:00", "modified_at": "2025-01-08T01:33:06.000+00:00", "page_type": "Page", "excerpt": "With a full database of over 9,500 ships operating in the container trades since 1956, LINERLYTICA is the most comprehensive information platform for the container shipping market.", "headings": ["About Us"], "tables": [], "image_count": 1, "last_success_at": "2026-10-22T02:33:00+00:00"}, {"page_id": 3, "url": "https://www.linerlytica.com/app/logout/?redirectUrl=%2Fapp%2Flogin", "title": "Untitled Page", "description": "", "author": "", "published_at": "", "modified_at": "", "page_type": "Page", "excerpt": "Home News About Us Register Subscribe Login Linerlytica MENU Â© 2026 Linerlytica (ver. 1.2.3). All rights reserved. Liner Analytics Pte. Ltd. Home Privacy Policy Terms of Service", "headings": [], "tables": [], "image_count": 1, "last_success_at": "2026-10-22T02:33:02+00:00"}, {"page_id": 1, "url": "https://www.linerlytica.com/", "title": "Untitled Page", "description": "", "author": "", "published_at": "", "modified_at": "", "page_type": "Page", "excerpt": "Home News About Us Register Subscribe Login Linerlytica MENU Â© 2026 Linerlytica (ver. 1.2.3). All rights reserved. Liner Analytics Pte. Ltd. Home Privacy Policy Terms of Service", "headings": [], "tables": [], "image_count": 1, "last_success_at": "2026-10-22T02:32:58+00:00"}]};
+
+const state = {
+    filter: "ALL",
+    query: ""
+};
+
+function escapeHtml(value) {
+    return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+}
+
+function formatDate(value) {
+    if (!value) return "N/A";
+
+    try {
+        const date = new Date(value);
+
+        if (Number.isNaN(date.getTime())) {
+            return value;
+        }
+
+        return date.toLocaleString("ko-KR", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+        });
+    } catch (_) {
+        return value;
+    }
+}
+
+function tableToHtml(table) {
+    if (!table || !table.rows || !table.rows.length) return "";
+
+    const caption = table.caption
+        ? `<div style="padding:6px;color:#7f96a8;font-size:10px">${escapeHtml(table.caption)}</div>`
+        : "";
+
+    const rows = table.rows.map(row => {
+        const cells = row.map(cell => `<td>${escapeHtml(cell)}</td>`).join("");
+        return `<tr>${cells}</tr>`;
+    }).join("");
+
+    return `
+        <div class="table-preview">
+            ${caption}
+            <table><tbody>${rows}</tbody></table>
+        </div>
+    `;
+}
+
+function buildCard(page) {
+    const headings = (page.headings || [])
+        .slice(0, 5)
+        .map(item => `<li>${escapeHtml(item)}</li>`)
+        .join("");
+
+    const headingBlock = headings
+        ? `<ul class="heading-list">${headings}</ul>`
+        : "";
+
+    const tableBlock = (page.tables || [])
+        .slice(0, 1)
+        .map(tableToHtml)
+        .join("");
+
+    const dateValue = page.published_at || page.modified_at || page.last_success_at;
+
+    return `
+        <article class="card"
+            data-type="${escapeHtml(page.page_type)}"
+            data-search="${escapeHtml([
+                page.title,
+                page.description,
+                page.excerpt,
+                page.url,
+                ...(page.headings || [])
+            ].join(" ").toLowerCase())}">
+            <div class="card-top">
+                <a class="card-title"
+                    href="${escapeHtml(page.url)}"
+                    target="_blank"
+                    rel="noopener noreferrer">
+                    ${escapeHtml(page.title)}
+                </a>
+                <span class="tag">${escapeHtml(page.page_type)}</span>
+            </div>
+
+            <div class="card-date">
+                DATE: ${escapeHtml(formatDate(dateValue))}
+                ${page.author ? ` | AUTHOR: ${escapeHtml(page.author)}` : ""}
+            </div>
+
+            <div class="card-excerpt">${escapeHtml(page.excerpt || "No extractable visible text.")}</div>
+
+            ${headingBlock}
+            ${tableBlock}
+
+            <div class="card-footer">
+                <span>IMAGES DETECTED: ${page.image_count || 0}</span>
+                <a href="${escapeHtml(page.url)}" target="_blank" rel="noopener noreferrer">
+                    OPEN SOURCE ↗
+                </a>
+            </div>
+        </article>
+    `;
+}
+
+function render() {
+    const grid = document.getElementById("resultGrid");
+    const query = state.query.trim().toLowerCase();
+
+    const filtered = DASHBOARD_DATA.pages.filter(page => {
+        const typeMatch = state.filter === "ALL" || page.page_type === state.filter;
+
+        const searchable = [
+            page.title,
+            page.description,
+            page.excerpt,
+            page.url,
+            ...(page.headings || [])
+        ].join(" ").toLowerCase();
+
+        const textMatch = !query || searchable.includes(query);
+
+        return typeMatch && textMatch;
+    });
+
+    document.getElementById("resultCount").textContent =
+        `${filtered.length.toLocaleString()} / ${DASHBOARD_DATA.pages.length.toLocaleString()} records`;
+
+    if (!filtered.length) {
+        grid.innerHTML = `
+            <div class="empty">
+                NO MATCHING RECORDS.<br>
+                Try a different keyword or content filter.
+            </div>
+        `;
+        return;
+    }
+
+    grid.innerHTML = filtered.map(buildCard).join("");
+}
+
+function initialize() {
+    const summary = DASHBOARD_DATA.summary || {};
+
+    document.getElementById("generatedAt").textContent =
+        `DASHBOARD GENERATED: ${formatDate(DASHBOARD_DATA.generated_at)}`;
+
+    document.getElementById("totalPages").textContent =
+        Number(summary.total_pages || 0).toLocaleString();
+
+    document.getElementById("pageTypes").textContent =
+        Number(summary.page_types || 0).toLocaleString();
+
+    document.getElementById("changedPages").textContent =
+        Number(summary.changed_last_7_days || 0).toLocaleString();
+
+    document.getElementById("lastUpdate").textContent =
+        formatDate(summary.latest_update);
+
+    document.getElementById("runStatus").textContent =
+        `LAST RUN: ${summary.last_run_status || "N/A"} | COLLECTED: ${summary.last_run_collected || 0}`;
+
+    const statusClass = summary.last_run_status === "SUCCESS"
+        ? "status-ok"
+        : "status-warning";
+
+    document.getElementById("statusStrip").innerHTML = `
+        <span class="${statusClass}">
+            STATUS: ${escapeHtml(summary.last_run_status || "N/A")}
+        </span>
+        &nbsp;|&nbsp;
+        Indexed public pages are stored in <strong>Linerlytica.db</strong>.
+        The dashboard displays excerpts and extracted structural elements; source links remain authoritative.
+    `;
+
+    document.getElementById("searchInput").addEventListener("input", event => {
+        state.query = event.target.value;
+        render();
+    });
+
+    document.querySelectorAll(".filter-button").forEach(button => {
+        button.addEventListener("click", () => {
+            state.filter = button.dataset.filter;
+
+            document.querySelectorAll(".filter-button").forEach(item => {
+                item.classList.remove("active");
+            });
+
+            button.classList.add("active");
+            render();
+        });
+    });
+
+    render();
+}
+
+initialize();
+</script>
+</body>
+</html>
