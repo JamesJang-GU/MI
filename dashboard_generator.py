@@ -13,7 +13,7 @@ Reads verified module SQLite databases and generates:
 import json
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ==========================================
 # PATH CONFIGURATION
@@ -118,6 +118,101 @@ def calculate_delta(curr, prev, is_int=False):
 
     return f"{diff_str} ({pct_str})", css_class, arrow
 
+def build_sparkline_svg(values, color, chart_name):
+    """
+    Build a compact one-year SVG sparkline.
+    Values must be ordered from oldest to newest.
+    """
+    if not values:
+        return """
+        <div class="sparkline-empty">
+            NO 1Y HISTORY
+        </div>
+        """
+
+    chart_width = 100
+    chart_height = 44
+    padding_top = 3
+    padding_bottom = 4
+    usable_height = chart_height - padding_top - padding_bottom
+
+    min_value = min(values)
+    max_value = max(values)
+    value_range = max_value - min_value
+
+    if value_range == 0:
+        value_range = 1.0
+
+    point_count = len(values)
+    points = []
+
+    for index, value in enumerate(values):
+        if point_count == 1:
+            x = chart_width / 2
+        else:
+            x = (index / (point_count - 1)) * chart_width
+
+        y = padding_top + (
+            (max_value - value) / value_range
+        ) * usable_height
+
+        points.append(f"{x:.2f},{y:.2f}")
+
+    point_string = " ".join(points)
+    area_points = (
+        f"0,{chart_height} "
+        f"{point_string} "
+        f"{chart_width},{chart_height}"
+    )
+
+    return f"""
+    <svg
+        class="shipping-sparkline-svg"
+        viewBox="0 0 {chart_width} {chart_height}"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label="{chart_name} one-year trend"
+    >
+        <line
+            x1="0"
+            y1="11"
+            x2="{chart_width}"
+            y2="11"
+            class="sparkline-grid"
+        />
+        <line
+            x1="0"
+            y1="22"
+            x2="{chart_width}"
+            y2="22"
+            class="sparkline-grid"
+        />
+        <line
+            x1="0"
+            y1="33"
+            x2="{chart_width}"
+            y2="33"
+            class="sparkline-grid"
+        />
+
+        <polygon
+            points="{area_points}"
+            fill="{color}"
+            fill-opacity="0.10"
+        />
+
+        <polyline
+            points="{point_string}"
+            fill="none"
+            stroke="{color}"
+            stroke-width="1.6"
+            vector-effect="non-scaling-stroke"
+            stroke-linecap="square"
+            stroke-linejoin="round"
+        />
+    </svg>
+    """
+
 # ==========================================
 # DATA FETCHERS
 # ==========================================
@@ -142,6 +237,8 @@ def fetch_shipping_data():
             "class": "neutral",
             "arrow": "",
             "date": "-",
+            "sparkline": "",
+            "history_points": 0,
         },
         "bdi": {
             "price": "N/A",
@@ -149,6 +246,8 @@ def fetch_shipping_data():
             "class": "neutral",
             "arrow": "",
             "date": "-",
+            "sparkline": "",
+            "history_points": 0,
         },
         "date": "-",
     }
@@ -167,16 +266,27 @@ def fetch_shipping_data():
                 print("[WARN] Shipping table 'index_raw' not found.")
                 return data
 
-            def load_index(index_name, region, is_int=False):
+            def parse_observation_date(raw_date):
+                if raw_date is None:
+                    return None
+                date_text = str(raw_date)[:10]
+                try:
+                    return datetime.strptime(date_text, "%Y-%m-%d")
+                except ValueError:
+                    return None
+
+            def load_index(index_name, region, is_int=False, color="#FF9900"):
                 cursor.execute(
                     """
-                    SELECT dt, value
+                    SELECT
+                        dt,
+                        value,
+                        created_at
                     FROM index_raw
                     WHERE index_name = ?
                       AND region = ?
                       AND value IS NOT NULL
-                    ORDER BY dt DESC
-                    LIMIT 2
+                    ORDER BY dt ASC, created_at DESC
                     """,
                     (index_name, region),
                 )
@@ -190,12 +300,36 @@ def fetch_shipping_data():
                     )
                     return None
 
-                latest_date = str(rows[0][0])[:10]
-                current_value = float(rows[0][1])
+                observations_by_date = {}
 
-                previous_value = None
-                if len(rows) > 1 and rows[1][1] is not None:
-                    previous_value = float(rows[1][1])
+                for raw_date, raw_value, _created_at in rows:
+                    parsed_date = parse_observation_date(raw_date)
+
+                    if parsed_date is None or raw_value is None:
+                        continue
+
+                    date_key = parsed_date.strftime("%Y-%m-%d")
+
+                    if date_key not in observations_by_date:
+                        observations_by_date[date_key] = {
+                            "date": parsed_date,
+                            "value": float(raw_value),
+                        }
+
+                observations = sorted(
+                    observations_by_date.values(),
+                    key=lambda item: item["date"],
+                )
+
+                if not observations:
+                    return None
+
+                latest = observations[-1]
+                previous = observations[-2] if len(observations) > 1 else None
+
+                latest_date = latest["date"].strftime("%Y-%m-%d")
+                current_value = latest["value"]
+                previous_value = previous["value"] if previous else None
 
                 delta_str, css_class, arrow = calculate_delta(
                     current_value,
@@ -208,24 +342,42 @@ def fetch_shipping_data():
                 else:
                     price_str = f"{current_value:,.2f}"
 
+                one_year_ago = latest["date"] - timedelta(days=365)
+
+                one_year_values = [
+                    item["value"]
+                    for item in observations
+                    if item["date"] >= one_year_ago
+                ]
+
+                sparkline_svg = build_sparkline_svg(
+                    values=one_year_values,
+                    color=color,
+                    chart_name=f"{index_name} {region}",
+                )
+
                 return {
                     "price": price_str,
                     "delta": delta_str,
                     "class": css_class,
                     "arrow": arrow,
                     "date": latest_date,
+                    "sparkline": sparkline_svg,
+                    "history_points": len(one_year_values),
                 }
 
             scfi_result = load_index(
                 index_name="SCFI",
                 region="종합",
                 is_int=False,
+                color="#FF9900",
             )
 
             bdi_result = load_index(
                 index_name="BDI",
                 region="BDI",
                 is_int=True,
+                color="#00E5FF",
             )
 
             if scfi_result:
@@ -1163,6 +1315,120 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             font-weight: 700;
         }}
 
+        /* ==========================================
+           SHIPPING INDEX: SCFI / BDI SPLIT VIEW
+        ========================================== */
+
+        .shipping-panel .panel-body {{
+            padding: 8px;
+            display: block;
+            min-height: 0;
+        }}
+
+        .shipping-split {{
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            height: 100%;
+        }}
+
+        .shipping-index-column {{
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            padding: 2px 8px 3px 8px;
+        }}
+
+        .shipping-index-column:first-child {{
+            padding-left: 2px;
+        }}
+
+        .shipping-index-column + .shipping-index-column {{
+            border-left: 1px solid var(--panel-border);
+            padding-right: 2px;
+        }}
+
+        .shipping-index-label {{
+            min-height: 26px;
+            font-size: 10px;
+            font-weight: 800;
+            color: var(--bb-gray);
+            letter-spacing: 0.04em;
+            line-height: 1.3;
+        }}
+
+        .shipping-chart-meta {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 2px 0;
+            font-size: 8px;
+            font-weight: 700;
+            color: var(--bb-gray-dim);
+            letter-spacing: 0.06em;
+        }}
+
+        .shipping-sparkline {{
+            height: 48px;
+            margin-bottom: 6px;
+            border-top: 1px solid #111820;
+            border-bottom: 1px solid #111820;
+            background: #06090D;
+            overflow: hidden;
+        }}
+
+        .shipping-sparkline-svg {{
+            display: block;
+            width: 100%;
+            height: 100%;
+        }}
+
+        .sparkline-grid {{
+            stroke: #17212B;
+            stroke-width: 0.45;
+            vector-effect: non-scaling-stroke;
+        }}
+
+        .sparkline-empty {{
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 8px;
+            font-weight: 700;
+            color: var(--bb-gray-dim);
+            letter-spacing: 0.05em;
+        }}
+
+        .shipping-metric-bottom {{
+            margin-top: auto;
+            padding-top: 2px;
+        }}
+
+        .shipping-metric-value {{
+            display: block;
+            color: var(--bb-white);
+            font-size: 16px;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            white-space: nowrap;
+        }}
+
+        .shipping-metric-value .unit {{
+            margin-left: 2px;
+            font-size: 8px;
+            font-weight: 600;
+            color: var(--bb-cyan);
+            letter-spacing: 0;
+        }}
+
+        .shipping-metric-delta {{
+            display: block;
+            margin-top: 2px;
+            font-size: 9px;
+            font-weight: 700;
+            white-space: nowrap;
+        }}
+
         @media (max-width: 1200px) {{
             .grid-4 {{
                 grid-template-columns: repeat(2, 1fr);
@@ -1208,45 +1474,75 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
 
         <div class="grid-4">
 
-            <div class="panel">
+            <div class="panel shipping-panel">
                 <div class="panel-header">
                     <span class="panel-headline">SHIPPING INDEX</span>
                     <a href="Shipping%20Index/index.html" class="panel-link">INDEX &gt;</a>
                 </div>
 
                 <div class="panel-body">
-                    <div class="metric-cell">
-                        <div class="metric-top">
-                            <span class="metric-label">SCFI COMPOSITE</span>
-                            <span class="metric-delta {shipping['scfi']['class']}">{shipping['scfi']['arrow']} {shipping['scfi']['delta']}</span>
+                    <div class="shipping-split">
+
+                        <!-- SCFI -->
+                        <div class="shipping-index-column">
+                            <div class="shipping-index-label">
+                                SCFI COMPOSITE
+                            </div>
+
+                            <div class="shipping-chart-meta">
+                                <span>1Y TREND</span>
+                                <span>{shipping['scfi']['history_points']} OBS</span>
+                            </div>
+
+                            <div class="shipping-sparkline">
+                                {shipping['scfi']['sparkline']}
+                            </div>
+
+                            <div class="shipping-metric-bottom">
+                                <span class="shipping-metric-value">
+                                    {shipping['scfi']['price']}
+                                    <span class="unit">PTS</span>
+                                </span>
+
+                                <span class="shipping-metric-delta {shipping['scfi']['class']}">
+                                    {shipping['scfi']['arrow']} {shipping['scfi']['delta']}
+                                </span>
+                            </div>
                         </div>
 
-                        <div class="metric-value-row">
-                            <span class="metric-value large">
-                                {shipping['scfi']['price']}
-                                <span class="unit">PTS</span>
-                            </span>
-                        </div>
-                    </div>
+                        <!-- BDI -->
+                        <div class="shipping-index-column">
+                            <div class="shipping-index-label">
+                                BALTIC DRY<br>(BDI)
+                            </div>
 
-                    <div class="metric-cell">
-                        <div class="metric-top">
-                            <span class="metric-label">BALTIC DRY (BDI)</span>
-                            <span class="metric-delta {shipping['bdi']['class']}">{shipping['bdi']['arrow']} {shipping['bdi']['delta']}</span>
+                            <div class="shipping-chart-meta">
+                                <span>1Y TREND</span>
+                                <span>{shipping['bdi']['history_points']} OBS</span>
+                            </div>
+
+                            <div class="shipping-sparkline">
+                                {shipping['bdi']['sparkline']}
+                            </div>
+
+                            <div class="shipping-metric-bottom">
+                                <span class="shipping-metric-value">
+                                    {shipping['bdi']['price']}
+                                    <span class="unit">PTS</span>
+                                </span>
+
+                                <span class="shipping-metric-delta {shipping['bdi']['class']}">
+                                    {shipping['bdi']['arrow']} {shipping['bdi']['delta']}
+                                </span>
+                            </div>
                         </div>
 
-                        <div class="metric-value-row">
-                            <span class="metric-value large">
-                                {shipping['bdi']['price']}
-                                <span class="unit">PTS</span>
-                            </span>
-                        </div>
                     </div>
                 </div>
 
                 <div class="panel-footer">
                     <span>AS OF: {shipping['date']}</span>
-                    <span class="footer-tag">SCFI / BALTIC</span>
+                    <span class="footer-tag">SCFI / BALTIC · 1Y</span>
                 </div>
             </div>
 
