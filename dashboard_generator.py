@@ -10,6 +10,7 @@ Reads verified module SQLite databases and generates:
 - dashboard_summary.json
 """
 
+import html
 import json
 import os
 import sqlite3
@@ -21,29 +22,37 @@ from datetime import datetime, timedelta
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 DB_PATHS = {
-    # Actual schema:
     # index_raw(dt, region, value, index_name, source_file, created_at)
     "shipping": os.path.join(
         BASE_DIR,
         "Shipping Index",
         "index_history.db",
     ),
+    # alphaliner_master / alphaliner_detail
     "alphaliner": os.path.join(
         BASE_DIR,
         "Alphaliner",
         "alphaliner_history.db",
     ),
+    # fleet_snapshot(snapshot_date, ship_status, ships, teu, source_url, collected_at)
+    "linerlytica": os.path.join(
+        BASE_DIR,
+        "Linerlytica",
+        "Linerlytica.db",
+    ),
+    # product_vlsfo / oil_prices
     "bunker": os.path.join(
         BASE_DIR,
         "BunkerPrice",
         "bunker_price_data.db",
     ),
+    # forwarders(date, rank, provider, teu, air_tons, ...)
     "forwarder": os.path.join(
         BASE_DIR,
         "Forwarder",
         "freight_forwarders_data.db",
     ),
-    # Actual TAC DB filename
+    # tac_master / tac_detail
     "tac": os.path.join(
         BASE_DIR,
         "TAC Index",
@@ -81,8 +90,17 @@ def get_table_columns(cursor, table_name):
     cursor.execute(f'PRAGMA table_info("{table_name}")')
     return {row[1].lower() for row in cursor.fetchall()}
 
+def safe_float(value):
+    """Safely convert value to float or return None."""
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
 # ==========================================
-# DELTA FORMATTING HELPER
+# DELTA & SPARKLINE FORMATTING HELPERS
 # ==========================================
 def calculate_delta(curr, prev, is_int=False):
     """
@@ -152,18 +170,11 @@ def build_sparkline_svg(values, color, chart_name):
         else:
             x = (index / (point_count - 1)) * chart_width
 
-        y = padding_top + (
-            (max_value - value) / value_range
-        ) * usable_height
-
+        y = padding_top + ((max_value - value) / value_range) * usable_height
         points.append(f"{x:.2f},{y:.2f}")
 
     point_string = " ".join(points)
-    area_points = (
-        f"0,{chart_height} "
-        f"{point_string} "
-        f"{chart_width},{chart_height}"
-    )
+    area_points = f"0,{chart_height} {point_string} {chart_width},{chart_height}"
 
     return f"""
     <svg
@@ -171,29 +182,11 @@ def build_sparkline_svg(values, color, chart_name):
         viewBox="0 0 {chart_width} {chart_height}"
         preserveAspectRatio="none"
         role="img"
-        aria-label="{chart_name} one-year trend"
+        aria-label="{html.escape(chart_name)} one-year trend"
     >
-        <line
-            x1="0"
-            y1="11"
-            x2="{chart_width}"
-            y2="11"
-            class="sparkline-grid"
-        />
-        <line
-            x1="0"
-            y1="22"
-            x2="{chart_width}"
-            y2="22"
-            class="sparkline-grid"
-        />
-        <line
-            x1="0"
-            y1="33"
-            x2="{chart_width}"
-            y2="33"
-            class="sparkline-grid"
-        />
+        <line x1="0" y1="11" x2="{chart_width}" y2="11" class="sparkline-grid" />
+        <line x1="0" y1="22" x2="{chart_width}" y2="22" class="sparkline-grid" />
+        <line x1="0" y1="33" x2="{chart_width}" y2="33" class="sparkline-grid" />
 
         <polygon
             points="{area_points}"
@@ -218,17 +211,7 @@ def build_sparkline_svg(values, color, chart_name):
 # ==========================================
 def fetch_shipping_data():
     """
-    Fetch SCFI Composite and BDI Composite.
-
-    Actual DB:
-      Shipping Index/index_history.db
-
-    Actual table:
-      index_raw(dt, region, value, index_name, source_file, created_at)
-
-    Required filters:
-      SCFI: index_name='SCFI' AND region='종합'
-      BDI : index_name='BDI'  AND region='BDI'
+    Fetch SCFI Composite and BDI Composite from index_raw table.
     """
     data = {
         "scfi": {
@@ -278,10 +261,7 @@ def fetch_shipping_data():
             def load_index(index_name, region, is_int=False, color="#FF9900"):
                 cursor.execute(
                     """
-                    SELECT
-                        dt,
-                        value,
-                        created_at
+                    SELECT dt, value, created_at
                     FROM index_raw
                     WHERE index_name = ?
                       AND region = ?
@@ -292,24 +272,17 @@ def fetch_shipping_data():
                 )
 
                 rows = cursor.fetchall()
-
                 if not rows:
-                    print(
-                        f"[WARN] Shipping data not found: "
-                        f"index_name={index_name}, region={region}"
-                    )
+                    print(f"[WARN] Shipping data not found: {index_name} {region}")
                     return None
 
                 observations_by_date = {}
-
                 for raw_date, raw_value, _created_at in rows:
                     parsed_date = parse_observation_date(raw_date)
-
                     if parsed_date is None or raw_value is None:
                         continue
 
                     date_key = parsed_date.strftime("%Y-%m-%d")
-
                     if date_key not in observations_by_date:
                         observations_by_date[date_key] = {
                             "date": parsed_date,
@@ -337,13 +310,9 @@ def fetch_shipping_data():
                     is_int=is_int,
                 )
 
-                if is_int:
-                    price_str = f"{int(current_value):,}"
-                else:
-                    price_str = f"{current_value:,.2f}"
+                price_str = f"{int(current_value):,}" if is_int else f"{current_value:,.2f}"
 
                 one_year_ago = latest["date"] - timedelta(days=365)
-
                 one_year_values = [
                     item["value"]
                     for item in observations
@@ -366,19 +335,8 @@ def fetch_shipping_data():
                     "history_points": len(one_year_values),
                 }
 
-            scfi_result = load_index(
-                index_name="SCFI",
-                region="종합",
-                is_int=False,
-                color="#FF9900",
-            )
-
-            bdi_result = load_index(
-                index_name="BDI",
-                region="BDI",
-                is_int=True,
-                color="#00E5FF",
-            )
+            scfi_result = load_index(index_name="SCFI", region="종합", is_int=False, color="#FF9900")
+            bdi_result = load_index(index_name="BDI", region="BDI", is_int=True, color="#00E5FF")
 
             if scfi_result:
                 data["scfi"] = scfi_result
@@ -386,15 +344,11 @@ def fetch_shipping_data():
 
             if bdi_result:
                 data["bdi"] = bdi_result
-
                 if data["date"] == "-":
                     data["date"] = bdi_result["date"]
 
-    except sqlite3.Error as error:
-        print(f"[WARN] Shipping data load error: {error}")
-
     except Exception as error:
-        print(f"[WARN] Unexpected shipping data error: {error}")
+        print(f"[WARN] Shipping data load error: {error}")
 
     return data
 
@@ -419,12 +373,8 @@ def fetch_alphaliner_data():
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
 
-            if not table_exists(cursor, "alphaliner_master"):
-                print("[WARN] Alphaliner table 'alphaliner_master' not found.")
-                return data
-
-            if not table_exists(cursor, "alphaliner_detail"):
-                print("[WARN] Alphaliner table 'alphaliner_detail' not found.")
+            if not table_exists(cursor, "alphaliner_master") or not table_exists(cursor, "alphaliner_detail"):
+                print("[WARN] Alphaliner required tables not found.")
                 return data
 
             cursor.execute(
@@ -443,7 +393,6 @@ def fetch_alphaliner_data():
             )
 
             row = cursor.fetchone()
-
             if not row:
                 return data
 
@@ -458,17 +407,8 @@ def fetch_alphaliner_data():
 
             data["date"] = str(data_date)[:10] if data_date else "N/A"
 
-            ships = (
-                global_ships
-                if global_ships is not None and global_ships > 0
-                else total_ships
-            )
-
-            teu = (
-                global_teu
-                if global_teu is not None and global_teu > 0
-                else total_teu
-            )
+            ships = global_ships if (global_ships is not None and global_ships > 0) else total_ships
+            teu = global_teu if (global_teu is not None and global_teu > 0) else total_teu
 
             if ships is not None:
                 data["total_ships"] = f"{int(ships):,} Ships"
@@ -487,198 +427,131 @@ def fetch_alphaliner_data():
             )
 
             share_row = cursor.fetchone()
-
             if share_row and share_row[0] is not None:
                 data["top10_share"] = f"{float(share_row[0]):.1f}%"
 
-    except sqlite3.Error as error:
-        print(f"[WARN] Alphaliner data load error: {error}")
-
     except Exception as error:
-        print(f"[WARN] Unexpected Alphaliner data error: {error}")
+        print(f"[WARN] Alphaliner data load error: {error}")
 
     return data
 
-def fetch_bunker_and_crude_data():
+def fetch_linerlytica_data():
     """
-    Fetch VLSFO prices:
-    - Rotterdam
-    - Fujairah
-    - Singapore
+    Fetch the latest Linerlytica Global Containership Fleet Snapshot.
 
-    Fetch crude oil prices:
-    - Dubai
-    - Brent
-    - WTI
+    Verified schema:
+        fleet_snapshot(
+            snapshot_date TEXT,
+            ship_status TEXT,
+            ships INTEGER,
+            teu INTEGER,
+            source_url TEXT,
+            collected_at TEXT,
+            PRIMARY KEY(snapshot_date, ship_status)
+        )
+
+    Target categories:
+    - Active Ships
+    - Ships at port
+    - Ships at anchorage
+    - Ships in shipyard
+    - Inactive Ships
+
+    Sort order:
+    - Ships DESC, TEU DESC
     """
     data = {
         "date": "N/A",
-        "vlsfo": {
-            "Rotterdam": {
-                "price": "N/A",
-                "delta": "-",
-                "class": "neutral",
-                "arrow": "",
-            },
-            "Fujairah": {
-                "price": "N/A",
-                "delta": "-",
-                "class": "neutral",
-                "arrow": "",
-            },
-            "Singapore": {
-                "price": "N/A",
-                "delta": "-",
-                "class": "neutral",
-                "arrow": "",
-            },
-        },
-        "crude": {
-            "Dubai": {
-                "price": "N/A",
-                "delta": "-",
-                "class": "neutral",
-                "arrow": "",
-            },
-            "Brent": {
-                "price": "N/A",
-                "delta": "-",
-                "class": "neutral",
-                "arrow": "",
-            },
-            "WTI": {
-                "price": "N/A",
-                "delta": "-",
-                "class": "neutral",
-                "arrow": "",
-            },
-        },
+        "rows": [],
+        "source_table": "fleet_snapshot",
     }
 
-    db_path = DB_PATHS["bunker"]
+    db_path = DB_PATHS["linerlytica"]
 
     if not os.path.exists(db_path):
-        print(f"[WARN] Bunker DB not found: {db_path}")
+        print(f"[WARN] Linerlytica DB not found: {db_path}")
         return data
+
+    target_statuses = [
+        "Ships at port",
+        "Active Ships",
+        "Inactive Ships",
+        "Ships at anchorage",
+        "Ships in shipyard",
+    ]
 
     try:
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
 
-            if table_exists(cursor, "product_vlsfo"):
-                for port in ["Rotterdam", "Fujairah", "Singapore"]:
-                    cursor.execute(
-                        """
-                        SELECT date_str, price
-                        FROM product_vlsfo
-                        WHERE port = ?
-                          AND price IS NOT NULL
-                        ORDER BY date_str DESC, timestamp_ms DESC
-                        LIMIT 2
-                        """,
-                        (port,),
-                    )
+            if not table_exists(cursor, "fleet_snapshot"):
+                print("[WARN] Linerlytica table 'fleet_snapshot' not found.")
+                return data
 
-                    rows = cursor.fetchall()
+            cursor.execute(
+                """
+                SELECT MAX(snapshot_date)
+                FROM fleet_snapshot
+                WHERE snapshot_date IS NOT NULL
+                """
+            )
 
-                    if not rows:
-                        continue
+            latest_date_row = cursor.fetchone()
+            latest_date = latest_date_row[0] if latest_date_row else None
 
-                    latest_date = str(rows[0][0])[:10]
-                    current_value = float(rows[0][1])
+            if not latest_date:
+                print("[WARN] Linerlytica fleet_snapshot contains no snapshot date.")
+                return data
 
-                    previous_value = None
-                    if len(rows) > 1 and rows[1][1] is not None:
-                        previous_value = float(rows[1][1])
+            placeholders = ", ".join(["?"] * len(target_statuses))
 
-                    delta_str, css_class, arrow = calculate_delta(
-                        current_value,
-                        previous_value,
-                    )
+            cursor.execute(
+                f"""
+                SELECT
+                    ship_status,
+                    ships,
+                    teu
+                FROM fleet_snapshot
+                WHERE snapshot_date = ?
+                  AND ship_status IN ({placeholders})
+                ORDER BY
+                    ships DESC,
+                    teu DESC,
+                    ship_status ASC
+                """,
+                (latest_date, *target_statuses),
+            )
 
-                    data["vlsfo"][port] = {
-                        "price": f"{current_value:.1f}",
-                        "delta": delta_str,
-                        "class": css_class,
-                        "arrow": arrow,
-                    }
+            rows = cursor.fetchall()
+            if not rows:
+                print("[WARN] Linerlytica latest snapshot has no matching status records.")
+                return data
 
-                    if data["date"] == "N/A":
-                        data["date"] = latest_date
+            data["date"] = str(latest_date)[:10]
+            data["rows"] = [
+                {
+                    "status": str(ship_status).strip(),
+                    "ships": int(ships) if ships is not None else 0,
+                    "teu": int(teu) if teu is not None else 0,
+                }
+                for ship_status, ships, teu in rows
+            ]
 
-            else:
-                print("[WARN] Bunker table 'product_vlsfo' not found.")
-
-            if table_exists(cursor, "oil_prices"):
-                cursor.execute(
-                    """
-                    SELECT DATE, Dubai, Brent, WTI
-                    FROM oil_prices
-                    ORDER BY DATE DESC
-                    LIMIT 2
-                    """
-                )
-
-                oil_rows = cursor.fetchall()
-
-                if oil_rows:
-                    current_row = oil_rows[0]
-                    previous_row = oil_rows[1] if len(oil_rows) > 1 else None
-
-                    oil_indices = {
-                        "Dubai": 1,
-                        "Brent": 2,
-                        "WTI": 3,
-                    }
-
-                    for oil_name, column_index in oil_indices.items():
-                        current_value = (
-                            float(current_row[column_index])
-                            if current_row[column_index] is not None
-                            else None
-                        )
-
-                        previous_value = (
-                            float(previous_row[column_index])
-                            if (
-                                previous_row is not None
-                                and previous_row[column_index] is not None
-                            )
-                            else None
-                        )
-
-                        if current_value is None:
-                            continue
-
-                        delta_str, css_class, arrow = calculate_delta(
-                            current_value,
-                            previous_value,
-                        )
-
-                        data["crude"][oil_name] = {
-                            "price": f"{current_value:.2f}",
-                            "delta": delta_str,
-                            "class": css_class,
-                            "arrow": arrow,
-                        }
-
-            else:
-                print("[WARN] Bunker table 'oil_prices' not found.")
+            print(
+                f"[INFO] Linerlytica latest fleet snapshot loaded: "
+                f"date={data['date']}, records={len(data['rows'])}"
+            )
 
     except sqlite3.Error as error:
-        print(f"[WARN] Bunker & Crude load error: {error}")
-
+        print(f"[WARN] Linerlytica SQLite load error: {error}")
     except Exception as error:
-        print(f"[WARN] Unexpected Bunker & Crude error: {error}")
+        print(f"[WARN] Unexpected Linerlytica data error: {error}")
 
     return data
 
 def fetch_forwarder_data():
     """
-    Fetch latest Top 25 Forwarder results:
-    - Rank 1 provider
-    - Total Ocean TEU
-    - Total Air Tons
+    Fetch latest Top 25 Forwarder results from forwarders table.
     """
     data = {
         "top_forwarder": "N/A",
@@ -722,15 +595,12 @@ def fetch_forwarder_data():
             )
 
             top_row = cursor.fetchone()
-
             if top_row and top_row[0]:
                 data["top_forwarder"] = str(top_row[0])
 
             cursor.execute(
                 """
-                SELECT
-                    SUM(teu),
-                    SUM(air_tons)
+                SELECT SUM(teu), SUM(air_tons)
                 FROM forwarders
                 WHERE date = ?
                 """,
@@ -738,30 +608,20 @@ def fetch_forwarder_data():
             )
 
             sum_row = cursor.fetchone()
-
             if sum_row:
                 if sum_row[0] is not None:
                     data["total_ocean_teu"] = f"{int(sum_row[0]):,} TEU"
-
                 if sum_row[1] is not None:
                     data["total_air_tons"] = f"{int(sum_row[1]):,} MT"
 
-    except sqlite3.Error as error:
-        print(f"[WARN] Forwarder data load error: {error}")
-
     except Exception as error:
-        print(f"[WARN] Unexpected Forwarder data error: {error}")
+        print(f"[WARN] Forwarder data load error: {error}")
 
     return data
 
 def fetch_tac_data():
     """
-    Fetch three TAC air freight corridors.
-
-    Important:
-    - Data recency is based on tac_master.data_date.
-    - snapshot_id must not be used as a time sequence because historical
-      backfill processing may create non-chronological snapshot IDs.
+    Fetch three TAC air freight corridors sorted chronologically by tac_master.data_date.
     """
     data = {
         "date": "N/A",
@@ -800,29 +660,14 @@ def fetch_tac_data():
         "FRA - NAM": {
             "origin": "frankfurt",
             "destination": "north america",
-            "route_patterns": [
-                "%fra%nam%",
-                "%fra%north america%",
-                "%frankfurt%north america%",
-            ],
         },
         "HKG - EUR": {
             "origin": "hong kong",
             "destination": "europe",
-            "route_patterns": [
-                "%hkg%eur%",
-                "%hkg%europe%",
-                "%hong kong%europe%",
-            ],
         },
         "HKG - NAM": {
             "origin": "hong kong",
             "destination": "north america",
-            "route_patterns": [
-                "%hkg%nam%",
-                "%hkg%north america%",
-                "%hong kong%north america%",
-            ],
         },
     }
 
@@ -830,82 +675,13 @@ def fetch_tac_data():
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
 
-            if not table_exists(cursor, "tac_master"):
-                print("[WARN] TAC table 'tac_master' not found.")
+            if not table_exists(cursor, "tac_master") or not table_exists(cursor, "tac_detail"):
+                print("[WARN] TAC tables not found.")
                 return data
-
-            if not table_exists(cursor, "tac_detail"):
-                print("[WARN] TAC table 'tac_detail' not found.")
-                return data
-
-            master_columns = get_table_columns(cursor, "tac_master")
-            detail_columns = get_table_columns(cursor, "tac_detail")
-
-            required_master_columns = {"snapshot_id", "data_date"}
-            required_detail_columns = {"snapshot_id", "index_value"}
-
-            if not required_master_columns.issubset(master_columns):
-                print(
-                    "[WARN] TAC master schema missing required columns: "
-                    "snapshot_id and/or data_date."
-                )
-                return data
-
-            if not required_detail_columns.issubset(detail_columns):
-                print(
-                    "[WARN] TAC detail schema missing required columns: "
-                    "snapshot_id and/or index_value."
-                )
-                return data
-
-            has_origin = "origin" in detail_columns
-            has_destination = "destination" in detail_columns
-            has_route_code = "route_code" in detail_columns
 
             for route_key, target in corridor_targets.items():
-                query_conditions = []
-                query_params = []
-
-                if has_origin and has_destination:
-                    query_conditions.append(
-                        """
-                        (
-                            LOWER(COALESCE(d.origin, '')) LIKE ?
-                            AND LOWER(COALESCE(d.destination, '')) LIKE ?
-                        )
-                        """
-                    )
-                    query_params.extend(
-                        [
-                            f"%{target['origin']}%",
-                            f"%{target['destination']}%",
-                        ]
-                    )
-
-                if has_route_code:
-                    route_pattern_conditions = []
-
-                    for pattern in target["route_patterns"]:
-                        route_pattern_conditions.append(
-                            "LOWER(COALESCE(d.route_code, '')) LIKE ?"
-                        )
-                        query_params.append(pattern)
-
-                    if route_pattern_conditions:
-                        query_conditions.append(
-                            "(" + " OR ".join(route_pattern_conditions) + ")"
-                        )
-
-                if not query_conditions:
-                    print(
-                        f"[WARN] TAC route columns unavailable for {route_key}."
-                    )
-                    continue
-
-                where_clause = " OR ".join(query_conditions)
-
                 cursor.execute(
-                    f"""
+                    """
                     SELECT
                         m.data_date,
                         d.index_value
@@ -913,27 +689,22 @@ def fetch_tac_data():
                     JOIN tac_master m
                       ON d.snapshot_id = m.snapshot_id
                     WHERE d.index_value IS NOT NULL
-                      AND ({where_clause})
+                      AND LOWER(COALESCE(d.origin, '')) LIKE ?
+                      AND LOWER(COALESCE(d.destination, '')) LIKE ?
                     ORDER BY m.data_date DESC, m.snapshot_id DESC
-                    LIMIT 10
                     """,
-                    tuple(query_params),
+                    (f"%{target['origin']}%", f"%{target['destination']}%"),
                 )
 
                 raw_rows = cursor.fetchall()
-
                 if not raw_rows:
-                    print(f"[WARN] TAC data not found for route: {route_key}")
                     continue
 
-                # Same data_date can have duplicate crawler snapshots.
-                # Keep only one latest record per data_date.
                 unique_rows = []
                 seen_dates = set()
 
                 for row_date, row_value in raw_rows:
                     normalized_date = str(row_date)[:10]
-
                     if normalized_date in seen_dates:
                         continue
 
@@ -953,10 +724,7 @@ def fetch_tac_data():
                 if len(unique_rows) > 1 and unique_rows[1][1] is not None:
                     previous_value = float(unique_rows[1][1])
 
-                delta_str, css_class, arrow = calculate_delta(
-                    current_value,
-                    previous_value,
-                )
+                delta_str, css_class, arrow = calculate_delta(current_value, previous_value)
 
                 data["routes"][route_key] = {
                     "name": data["routes"][route_key]["name"],
@@ -969,18 +737,118 @@ def fetch_tac_data():
                 if data["date"] == "N/A":
                     data["date"] = latest_date
 
-    except sqlite3.Error as error:
+    except Exception as error:
         print(f"[WARN] TAC data load error: {error}")
 
+    return data
+
+def fetch_bunker_and_crude_data():
+    """
+    Fetch VLSFO prices (Rotterdam, Fujairah, Singapore)
+    and Crude oil prices (Dubai, Brent, WTI).
+    """
+    data = {
+        "date": "N/A",
+        "vlsfo": {
+            "Rotterdam": {"price": "N/A", "delta": "-", "class": "neutral", "arrow": ""},
+            "Fujairah": {"price": "N/A", "delta": "-", "class": "neutral", "arrow": ""},
+            "Singapore": {"price": "N/A", "delta": "-", "class": "neutral", "arrow": ""},
+        },
+        "crude": {
+            "Dubai": {"price": "N/A", "delta": "-", "class": "neutral", "arrow": ""},
+            "Brent": {"price": "N/A", "delta": "-", "class": "neutral", "arrow": ""},
+            "WTI": {"price": "N/A", "delta": "-", "class": "neutral", "arrow": ""},
+        },
+    }
+
+    db_path = DB_PATHS["bunker"]
+
+    if not os.path.exists(db_path):
+        print(f"[WARN] Bunker DB not found: {db_path}")
+        return data
+
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+
+            if table_exists(cursor, "product_vlsfo"):
+                for port in ["Rotterdam", "Fujairah", "Singapore"]:
+                    cursor.execute(
+                        """
+                        SELECT date_str, price
+                        FROM product_vlsfo
+                        WHERE port = ?
+                          AND price IS NOT NULL
+                        ORDER BY date_str DESC, timestamp_ms DESC
+                        LIMIT 2
+                        """,
+                        (port,),
+                    )
+
+                    rows = cursor.fetchall()
+                    if not rows:
+                        continue
+
+                    latest_date = str(rows[0][0])[:10]
+                    current_value = float(rows[0][1])
+
+                    previous_value = None
+                    if len(rows) > 1 and rows[1][1] is not None:
+                        previous_value = float(rows[1][1])
+
+                    delta_str, css_class, arrow = calculate_delta(current_value, previous_value)
+
+                    data["vlsfo"][port] = {
+                        "price": f"{current_value:.1f}",
+                        "delta": delta_str,
+                        "class": css_class,
+                        "arrow": arrow,
+                    }
+
+                    if data["date"] == "N/A":
+                        data["date"] = latest_date
+
+            if table_exists(cursor, "oil_prices"):
+                cursor.execute(
+                    """
+                    SELECT DATE, Dubai, Brent, WTI
+                    FROM oil_prices
+                    ORDER BY DATE DESC
+                    LIMIT 2
+                    """
+                )
+
+                oil_rows = cursor.fetchall()
+                if oil_rows:
+                    current_row = oil_rows[0]
+                    previous_row = oil_rows[1] if len(oil_rows) > 1 else None
+
+                    oil_indices = {"Dubai": 1, "Brent": 2, "WTI": 3}
+
+                    for oil_name, column_index in oil_indices.items():
+                        current_value = safe_float(current_row[column_index])
+                        previous_value = safe_float(previous_row[column_index]) if previous_row else None
+
+                        if current_value is None:
+                            continue
+
+                        delta_str, css_class, arrow = calculate_delta(current_value, previous_value)
+
+                        data["crude"][oil_name] = {
+                            "price": f"{current_value:.2f}",
+                            "delta": delta_str,
+                            "class": css_class,
+                            "arrow": arrow,
+                        }
+
     except Exception as error:
-        print(f"[WARN] Unexpected TAC data error: {error}")
+        print(f"[WARN] Bunker & Crude load error: {error}")
 
     return data
 
 def fetch_macro_data():
     """
-    Macro module schema integration is not defined in this version.
-    Current display values are retained from the original dashboard logic.
+    Macro module placeholder values.
     """
     return {
         "gscpi": {
@@ -1007,8 +875,39 @@ def fetch_macro_data():
 # ==========================================
 # BLOOMBERG TERMINAL HTML GENERATOR
 # ==========================================
-def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
-    html = f"""<!DOCTYPE html>
+def build_linerlytica_rows(linerlytica):
+    """Build high-density HTML table rows for Linerlytica ship statuses."""
+    if not linerlytica["rows"]:
+        return """
+        <tr>
+            <td colspan="3" class="linerlytica-empty">
+                DATA UNAVAILABLE
+            </td>
+        </tr>
+        """
+
+    output = []
+    for row in linerlytica["rows"]:
+        status = html.escape(row["status"].upper())
+        ships = f"{row['ships']:,}"
+        teu = f"{row['teu']:,}"
+
+        output.append(
+            f"""
+            <tr>
+                <td class="table-row-name">{status}</td>
+                <td class="table-row-val">{ships}<span class="inline-unit">SHIPS</span></td>
+                <td class="table-row-val">{teu}<span class="inline-unit">TEU</span></td>
+            </tr>
+            """
+        )
+
+    return "\n".join(output)
+
+def generate_html(shipping, alphaliner, linerlytica, forwarder, tac, bunker, macro):
+    linerlytica_rows_html = build_linerlytica_rows(linerlytica)
+
+    html_content = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
@@ -1123,13 +1022,21 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
 
         .grid-4 {{
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 10px;
+            align-items: stretch;
         }}
 
         .grid-2 {{
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            align-items: stretch;
+        }}
+
+        .grid-1 {{
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
             gap: 10px;
         }}
 
@@ -1139,6 +1046,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             display: flex;
             flex-direction: column;
             justify-content: space-between;
+            min-width: 0;
         }}
 
         .panel-header {{
@@ -1184,18 +1092,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
         .metric-cell {{
             background: var(--panel-inner);
             border: 1px solid #141C24;
-            padding: 8px 10px;
-        }}
-
-        .metric-cell.compact {{
             padding: 6px 8px;
-        }}
-
-        .metric-top {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 4px;
         }}
 
         .metric-label {{
@@ -1210,6 +1107,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             display: flex;
             justify-content: space-between;
             align-items: baseline;
+            margin-top: 2px;
         }}
 
         .metric-value {{
@@ -1218,44 +1116,15 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             color: var(--bb-white);
         }}
 
-        .metric-value.large {{
-            font-size: 18px;
-        }}
-
-        .metric-value .unit {{
-            font-size: 9px;
-            font-weight: 500;
-            color: var(--bb-cyan);
-            margin-left: 4px;
-        }}
-
-        .metric-delta {{
-            font-size: 10px;
-            font-weight: 700;
-            white-space: nowrap;
-        }}
-
-        .metric-delta.up {{
-            color: var(--bb-green);
-        }}
-
-        .metric-delta.down {{
-            color: var(--bb-red);
-        }}
-
-        .metric-delta.neutral {{
-            color: var(--bb-neutral);
-        }}
-
         .dense-table {{
             width: 100%;
             border-collapse: collapse;
-            font-size: 11px;
+            font-size: 10px;
         }}
 
         .dense-table th {{
             text-align: left;
-            padding: 3px 6px;
+            padding: 4px 6px;
             font-size: 9px;
             color: var(--bb-gray);
             border-bottom: 1px solid var(--panel-border);
@@ -1263,7 +1132,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
         }}
 
         .dense-table td {{
-            padding: 5px 6px;
+            padding: 6px;
             border-bottom: 1px solid #0F151C;
         }}
 
@@ -1280,24 +1149,25 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             font-weight: 800;
             text-align: right;
             color: var(--bb-white);
+            white-space: nowrap;
         }}
 
         .table-row-delta {{
             text-align: right;
             font-weight: 700;
+            white-space: nowrap;
         }}
 
-        .up {{
-            color: var(--bb-green);
+        .inline-unit {{
+            font-size: 8px;
+            font-weight: 600;
+            color: var(--bb-cyan);
+            margin-left: 3px;
         }}
 
-        .down {{
-            color: var(--bb-red);
-        }}
-
-        .neutral {{
-            color: var(--bb-neutral);
-        }}
+        .up {{ color: var(--bb-green); }}
+        .down {{ color: var(--bb-red); }}
+        .neutral {{ color: var(--bb-neutral); }}
 
         .panel-footer {{
             background: #090C10;
@@ -1315,10 +1185,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             font-weight: 700;
         }}
 
-        /* ==========================================
-           SHIPPING INDEX: SCFI / BDI SPLIT VIEW
-        ========================================== */
-
+        /* SHIPPING INDEX SPLIT VIEW */
         .shipping-panel .panel-body {{
             padding: 8px;
             display: block;
@@ -1429,9 +1296,15 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             white-space: nowrap;
         }}
 
+        .linerlytica-empty {{
+            text-align: center;
+            color: var(--bb-gray);
+            padding: 32px 8px !important;
+        }}
+
         @media (max-width: 1200px) {{
             .grid-4 {{
-                grid-template-columns: repeat(2, 1fr);
+                grid-template-columns: repeat(2, minmax(0, 1fr));
             }}
         }}
 
@@ -1467,13 +1340,17 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
             </div>
         </div>
 
+        <!-- ================================================= -->
+        <!-- 01. SEA                                           -->
+        <!-- ================================================= -->
         <div class="section-bar">
-            <span> 01. MARITIME LOGISTICS & FREIGHT (SEA)</span>
-            <span class="sub">#필요시 각 섹션에 대한 설명 입력</span>
+            <span>01. SEA</span>
+            <span class="sub">MARITIME LOGISTICS & FREIGHT</span>
         </div>
 
         <div class="grid-4">
 
+            <!-- 1. SHIPPING INDEX -->
             <div class="panel shipping-panel">
                 <div class="panel-header">
                     <span class="panel-headline">SHIPPING INDEX</span>
@@ -1513,7 +1390,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                         <!-- BDI -->
                         <div class="shipping-index-column">
                             <div class="shipping-index-label">
-                                BALTIC DRY INDEX<br>
+                                BALTIC DRY INDEX
                             </div>
 
                             <div class="shipping-chart-meta">
@@ -1546,6 +1423,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                 </div>
             </div>
 
+            <!-- 2. ALPHALINER FLEET -->
             <div class="panel">
                 <div class="panel-header">
                     <span class="panel-headline">ALPHALINER FLEET</span>
@@ -1553,23 +1431,23 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                 </div>
 
                 <div class="panel-body">
-                    <div class="metric-cell compact">
+                    <div class="metric-cell">
                         <span class="metric-label">TOTAL OPERATING FLEET</span>
-                        <div class="metric-value-row" style="margin-top:2px;">
+                        <div class="metric-value-row">
                             <span class="metric-value">{alphaliner['total_ships']}</span>
                         </div>
                     </div>
 
-                    <div class="metric-cell compact">
+                    <div class="metric-cell">
                         <span class="metric-label">GLOBAL TEU CAPACITY</span>
-                        <div class="metric-value-row" style="margin-top:2px;">
+                        <div class="metric-value-row">
                             <span class="metric-value">{alphaliner['total_teu']}</span>
                         </div>
                     </div>
 
-                    <div class="metric-cell compact">
+                    <div class="metric-cell">
                         <span class="metric-label">TOP 10 CARRIER SHARE</span>
-                        <div class="metric-value-row" style="margin-top:2px;">
+                        <div class="metric-value-row">
                             <span class="metric-value">{alphaliner['top10_share']}</span>
                             <span style="font-size:9px; color:var(--bb-gray);">AGGREGATE</span>
                         </div>
@@ -1582,68 +1460,36 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                 </div>
             </div>
 
+            <!-- 3. LINERLYTICA -->
             <div class="panel">
                 <div class="panel-header">
-                    <span class="panel-headline">BUNKER & CRUDE OIL</span>
-                    <a href="BunkerPrice/index.html" class="panel-link">OIL &gt;</a>
+                    <span class="panel-headline">LINERLYTICA</span>
+                    <a href="Linerlytica/index.html" class="panel-link">FLEET &gt;</a>
                 </div>
 
                 <div class="panel-body" style="padding: 6px 10px;">
                     <table class="dense-table">
                         <thead>
                             <tr>
-                                <th>FUEL / GRADE</th>
-                                <th style="text-align:right;">PRICE</th>
-                                <th style="text-align:right;">CHG (%)</th>
+                                <th>SHIP STATUS</th>
+                                <th style="text-align:right;">SHIPS</th>
+                                <th style="text-align:right;">CAPACITY</th>
                             </tr>
                         </thead>
 
                         <tbody>
-                            <tr>
-                                <td class="table-row-name">RTM VLSFO</td>
-                                <td class="table-row-val">{bunker['vlsfo']['Rotterdam']['price']}</td>
-                                <td class="table-row-delta {bunker['vlsfo']['Rotterdam']['class']}">{bunker['vlsfo']['Rotterdam']['arrow']} {bunker['vlsfo']['Rotterdam']['delta']}</td>
-                            </tr>
-
-                            <tr>
-                                <td class="table-row-name">FUJ VLSFO</td>
-                                <td class="table-row-val">{bunker['vlsfo']['Fujairah']['price']}</td>
-                                <td class="table-row-delta {bunker['vlsfo']['Fujairah']['class']}">{bunker['vlsfo']['Fujairah']['arrow']} {bunker['vlsfo']['Fujairah']['delta']}</td>
-                            </tr>
-
-                            <tr>
-                                <td class="table-row-name">SIN VLSFO</td>
-                                <td class="table-row-val">{bunker['vlsfo']['Singapore']['price']}</td>
-                                <td class="table-row-delta {bunker['vlsfo']['Singapore']['class']}">{bunker['vlsfo']['Singapore']['arrow']} {bunker['vlsfo']['Singapore']['delta']}</td>
-                            </tr>
-
-                            <tr>
-                                <td class="table-row-name" style="color:var(--bb-amber);">DUBAI CRUDE</td>
-                                <td class="table-row-val">{bunker['crude']['Dubai']['price']}</td>
-                                <td class="table-row-delta {bunker['crude']['Dubai']['class']}">{bunker['crude']['Dubai']['arrow']} {bunker['crude']['Dubai']['delta']}</td>
-                            </tr>
-
-                            <tr>
-                                <td class="table-row-name" style="color:var(--bb-amber);">BRENT CRUDE</td>
-                                <td class="table-row-val">{bunker['crude']['Brent']['price']}</td>
-                                <td class="table-row-delta {bunker['crude']['Brent']['class']}">{bunker['crude']['Brent']['arrow']} {bunker['crude']['Brent']['delta']}</td>
-                            </tr>
-
-                            <tr>
-                                <td class="table-row-name" style="color:var(--bb-amber);">WTI CRUDE</td>
-                                <td class="table-row-val">{bunker['crude']['WTI']['price']}</td>
-                                <td class="table-row-delta {bunker['crude']['WTI']['class']}">{bunker['crude']['WTI']['arrow']} {bunker['crude']['WTI']['delta']}</td>
-                            </tr>
+                            {linerlytica_rows_html}
                         </tbody>
                     </table>
                 </div>
 
                 <div class="panel-footer">
-                    <span>DATE: {bunker['date']}</span>
-                    <span class="footer-tag">USD/MT & USD/BBL</span>
+                    <span>AS OF: {linerlytica['date']}</span>
+                    <span class="footer-tag">LINERLYTICA</span>
                 </div>
             </div>
 
+            <!-- 4. TOP 25 FORWARDERS -->
             <div class="panel">
                 <div class="panel-header">
                     <span class="panel-headline">TOP 25 FORWARDERS</span>
@@ -1651,25 +1497,25 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                 </div>
 
                 <div class="panel-body">
-                    <div class="metric-cell compact">
+                    <div class="metric-cell">
                         <span class="metric-label">RANK 1 OPERATOR</span>
-                        <div class="metric-value-row" style="margin-top:2px;">
+                        <div class="metric-value-row">
                             <span class="metric-value" style="font-size:14px; color:var(--bb-amber);">
-                                {forwarder['top_forwarder']}
+                                {html.escape(forwarder['top_forwarder'])}
                             </span>
                         </div>
                     </div>
 
-                    <div class="metric-cell compact">
+                    <div class="metric-cell">
                         <span class="metric-label">TOTAL OCEAN FREIGHT</span>
-                        <div class="metric-value-row" style="margin-top:2px;">
+                        <div class="metric-value-row">
                             <span class="metric-value">{forwarder['total_ocean_teu']}</span>
                         </div>
                     </div>
 
-                    <div class="metric-cell compact">
+                    <div class="metric-cell">
                         <span class="metric-label">TOTAL AIR TONNAGE</span>
-                        <div class="metric-value-row" style="margin-top:2px;">
+                        <div class="metric-value-row">
                             <span class="metric-value">{forwarder['total_air_tons']}</span>
                         </div>
                     </div>
@@ -1683,12 +1529,15 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
 
         </div>
 
+        <!-- ================================================= -->
+        <!-- 02. AIR                                           -->
+        <!-- ================================================= -->
         <div class="section-bar">
-            <span> 02. AIR CARGO & GLOBAL MACRO INTELLIGENCE</span>
-            <span class="sub">#필요시 각 섹션에 대한 설명 입력</span>
+            <span>02. AIR</span>
+            <span class="sub">AIR FREIGHT RATE</span>
         </div>
 
-        <div class="grid-2">
+        <div class="grid-1">
 
             <div class="panel">
                 <div class="panel-header">
@@ -1710,19 +1559,25 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                             <tr>
                                 <td class="table-row-name">FRANKFURT - NORTH AMERICA (FRA-NAM)</td>
                                 <td class="table-row-val">{tac['routes']['FRA - NAM']['price']}</td>
-                                <td class="table-row-delta {tac['routes']['FRA - NAM']['class']}">{tac['routes']['FRA - NAM']['arrow']} {tac['routes']['FRA - NAM']['delta']}</td>
+                                <td class="table-row-delta {tac['routes']['FRA - NAM']['class']}">
+                                    {tac['routes']['FRA - NAM']['arrow']} {tac['routes']['FRA - NAM']['delta']}
+                                </td>
                             </tr>
 
                             <tr>
                                 <td class="table-row-name">HONG KONG - EUROPE (HKG-EUR)</td>
                                 <td class="table-row-val">{tac['routes']['HKG - EUR']['price']}</td>
-                                <td class="table-row-delta {tac['routes']['HKG - EUR']['class']}">{tac['routes']['HKG - EUR']['arrow']} {tac['routes']['HKG - EUR']['delta']}</td>
+                                <td class="table-row-delta {tac['routes']['HKG - EUR']['class']}">
+                                    {tac['routes']['HKG - EUR']['arrow']} {tac['routes']['HKG - EUR']['delta']}
+                                </td>
                             </tr>
 
                             <tr>
                                 <td class="table-row-name">HONG KONG - NORTH AMERICA (HKG-NAM)</td>
                                 <td class="table-row-val">{tac['routes']['HKG - NAM']['price']}</td>
-                                <td class="table-row-delta {tac['routes']['HKG - NAM']['class']}">{tac['routes']['HKG - NAM']['arrow']} {tac['routes']['HKG - NAM']['delta']}</td>
+                                <td class="table-row-delta {tac['routes']['HKG - NAM']['class']}">
+                                    {tac['routes']['HKG - NAM']['arrow']} {tac['routes']['HKG - NAM']['delta']}
+                                </td>
                             </tr>
                         </tbody>
                     </table>
@@ -1734,6 +1589,94 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                 </div>
             </div>
 
+        </div>
+
+        <!-- ================================================= -->
+        <!-- 03. MACRO                                         -->
+        <!-- ================================================= -->
+        <div class="section-bar">
+            <span>03. MACRO</span>
+            <span class="sub">ENERGY, MACROECONOMICS & SUPPLY CHAIN</span>
+        </div>
+
+        <div class="grid-2">
+
+            <!-- 1. BUNKER & CRUDE OIL -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-headline">BUNKER & CRUDE OIL</span>
+                    <a href="BunkerPrice/index.html" class="panel-link">OIL &gt;</a>
+                </div>
+
+                <div class="panel-body" style="padding: 6px 10px;">
+                    <table class="dense-table">
+                        <thead>
+                            <tr>
+                                <th>FUEL / GRADE</th>
+                                <th style="text-align:right;">PRICE</th>
+                                <th style="text-align:right;">CHG (%)</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            <tr>
+                                <td class="table-row-name">RTM VLSFO</td>
+                                <td class="table-row-val">{bunker['vlsfo']['Rotterdam']['price']}</td>
+                                <td class="table-row-delta {bunker['vlsfo']['Rotterdam']['class']}">
+                                    {bunker['vlsfo']['Rotterdam']['arrow']} {bunker['vlsfo']['Rotterdam']['delta']}
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td class="table-row-name">FUJ VLSFO</td>
+                                <td class="table-row-val">{bunker['vlsfo']['Fujairah']['price']}</td>
+                                <td class="table-row-delta {bunker['vlsfo']['Fujairah']['class']}">
+                                    {bunker['vlsfo']['Fujairah']['arrow']} {bunker['vlsfo']['Fujairah']['delta']}
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td class="table-row-name">SIN VLSFO</td>
+                                <td class="table-row-val">{bunker['vlsfo']['Singapore']['price']}</td>
+                                <td class="table-row-delta {bunker['vlsfo']['Singapore']['class']}">
+                                    {bunker['vlsfo']['Singapore']['arrow']} {bunker['vlsfo']['Singapore']['delta']}
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td class="table-row-name" style="color:var(--bb-amber);">DUBAI CRUDE</td>
+                                <td class="table-row-val">{bunker['crude']['Dubai']['price']}</td>
+                                <td class="table-row-delta {bunker['crude']['Dubai']['class']}">
+                                    {bunker['crude']['Dubai']['arrow']} {bunker['crude']['Dubai']['delta']}
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td class="table-row-name" style="color:var(--bb-amber);">BRENT CRUDE</td>
+                                <td class="table-row-val">{bunker['crude']['Brent']['price']}</td>
+                                <td class="table-row-delta {bunker['crude']['Brent']['class']}">
+                                    {bunker['crude']['Brent']['arrow']} {bunker['crude']['Brent']['delta']}
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td class="table-row-name" style="color:var(--bb-amber);">WTI CRUDE</td>
+                                <td class="table-row-val">{bunker['crude']['WTI']['price']}</td>
+                                <td class="table-row-delta {bunker['crude']['WTI']['class']}">
+                                    {bunker['crude']['WTI']['arrow']} {bunker['crude']['WTI']['delta']}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="panel-footer">
+                    <span>AS OF: {bunker['date']}</span>
+                    <span class="footer-tag">USD/MT & USD/BBL</span>
+                </div>
+            </div>
+
+            <!-- 2. MACRO ECONOMIES & GSCPI -->
             <div class="panel">
                 <div class="panel-header">
                     <span class="panel-headline">MACRO ECONOMIES & GSCPI</span>
@@ -1755,21 +1698,27 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
                                 <td class="table-row-name">GLOBAL SUPPLY CHAIN PRESSURE (GSCPI)</td>
                                 <td class="table-row-val">
                                     {macro['gscpi']['value']}
-                                    <span style="font-size:9px; color:var(--bb-cyan);">PTS</span>
+                                    <span class="inline-unit">PTS</span>
                                 </td>
-                                <td class="table-row-delta {macro['gscpi']['class']}">{macro['gscpi']['arrow']} {macro['gscpi']['delta']}</td>
+                                <td class="table-row-delta {macro['gscpi']['class']}">
+                                    {macro['gscpi']['arrow']} {macro['gscpi']['delta']}
+                                </td>
                             </tr>
 
                             <tr>
                                 <td class="table-row-name">US REAL GDP GROWTH (QOQ ANNUALIZED)</td>
                                 <td class="table-row-val">{macro['us_gdp']['value']}</td>
-                                <td class="table-row-delta {macro['us_gdp']['class']}">{macro['us_gdp']['arrow']} {macro['us_gdp']['delta']}</td>
+                                <td class="table-row-delta {macro['us_gdp']['class']}">
+                                    {macro['us_gdp']['arrow']} {macro['us_gdp']['delta']}
+                                </td>
                             </tr>
 
                             <tr>
                                 <td class="table-row-name">US HEADLINE CPI INFLATION (YOY)</td>
                                 <td class="table-row-val">{macro['us_cpi']['value']}</td>
-                                <td class="table-row-delta {macro['us_cpi']['class']}">{macro['us_cpi']['arrow']} {macro['us_cpi']['delta']}</td>
+                                <td class="table-row-delta {macro['us_cpi']['class']}">
+                                    {macro['us_cpi']['arrow']} {macro['us_cpi']['delta']}
+                                </td>
                             </tr>
                         </tbody>
                     </table>
@@ -1787,7 +1736,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
 </body>
 </html>
 """
-    return html
+    return html_content
 
 # ==========================================
 # MAIN EXECUTION
@@ -1797,9 +1746,10 @@ def main():
 
     shipping_data = fetch_shipping_data()
     alphaliner_data = fetch_alphaliner_data()
-    bunker_data = fetch_bunker_and_crude_data()
+    linerlytica_data = fetch_linerlytica_data()
     forwarder_data = fetch_forwarder_data()
     tac_data = fetch_tac_data()
+    bunker_data = fetch_bunker_and_crude_data()
     macro_data = fetch_macro_data()
 
     print(f"[INFO] Generating Bloomberg Terminal HTML -> {OUTPUT_HTML}")
@@ -1807,9 +1757,10 @@ def main():
     html_content = generate_html(
         shipping=shipping_data,
         alphaliner=alphaliner_data,
-        bunker=bunker_data,
+        linerlytica=linerlytica_data,
         forwarder=forwarder_data,
         tac=tac_data,
+        bunker=bunker_data,
         macro=macro_data,
     )
 
@@ -1822,9 +1773,10 @@ def main():
         "generated_at": datetime.now().isoformat(),
         "shipping": shipping_data,
         "alphaliner": alphaliner_data,
-        "bunker": bunker_data,
+        "linerlytica": linerlytica_data,
         "forwarder": forwarder_data,
         "tac": tac_data,
+        "bunker": bunker_data,
         "macro": macro_data,
     }
 
