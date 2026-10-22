@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BLOOMBERG TERMINAL // MARKET INTELLIGENCE</title>
+
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
     <style>
         :root {
             --terminal-bg: #000000;
@@ -12,14 +14,12 @@
             --panel-inner: #05070A;
             --panel-border: #1E2630;
             --panel-border-bright: #323F4B;
-
             --bb-amber: #FF9900;
             --bb-amber-dim: #D97706;
             --bb-cyan: #00E5FF;
             --bb-white: #FFFFFF;
             --bb-gray: #8295A5;
             --bb-gray-dim: #485664;
-
             --bb-green: #00FF66;
             --bb-red: #FF3344;
             --bb-neutral: #8295A5;
@@ -36,7 +36,7 @@
         body {
             background-color: var(--terminal-bg);
             color: var(--bb-white);
-            padding: 16px 20px 40px 20px;
+            padding: 16px 20px 40px;
             font-size: 12px;
             line-height: 1.4;
         }
@@ -72,12 +72,10 @@
             font-size: 10px;
             font-weight: 800;
             padding: 2px 6px;
-            letter-spacing: 0.05em;
         }
 
         .terminal-status {
             display: flex;
-            align-items: center;
             gap: 16px;
             font-size: 11px;
             color: var(--bb-gray);
@@ -99,10 +97,13 @@
             font-weight: 800;
             color: var(--bb-amber);
             letter-spacing: 0.1em;
-            margin: 18px 0 10px 0;
             display: flex;
             justify-content: space-between;
             align-items: center;
+        }
+
+        .sea-section-bar {
+            margin: 18px 0 10px;
         }
 
         .section-bar span.sub {
@@ -118,18 +119,41 @@
             align-items: stretch;
         }
 
-        /* 02. AIR & 03. MACRO 50:50 SPLIT GRID */
-        .grid-split-air-macro {
+        /*
+         * 하단 레이아웃
+         * 열 1: 02. AIR / AIR FREIGHT RATE
+         * 열 2~3: 03. MACRO / BUNKER / MACRO ECONOMIES
+         */
+        .air-macro-layout {
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
             gap: 12px;
+            margin-top: 18px;
             align-items: start;
         }
 
-        .column-stack {
+        .air-column,
+        .macro-column {
+            min-width: 0;
             display: flex;
             flex-direction: column;
             gap: 10px;
+        }
+
+        .air-column .section-bar,
+        .macro-column .section-bar {
+            margin: 0;
+        }
+
+        .macro-card-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            align-items: stretch;
+        }
+
+        .macro-card-grid .panel {
+            height: 100%;
         }
 
         .panel {
@@ -162,7 +186,6 @@
             text-decoration: none;
             font-size: 10px;
             font-weight: 700;
-            letter-spacing: 0.05em;
             padding: 1px 5px;
             border: 1px solid rgba(255, 153, 0, 0.4);
             background: rgba(255, 153, 0, 0.08);
@@ -192,7 +215,6 @@
             font-weight: 700;
             color: var(--bb-gray);
             text-transform: uppercase;
-            letter-spacing: 0.04em;
         }
 
         .metric-value-row {
@@ -269,7 +291,6 @@
             color: var(--bb-gray-dim);
             display: flex;
             justify-content: space-between;
-            align-items: center;
         }
 
         .footer-tag {
@@ -277,24 +298,21 @@
             font-weight: 700;
         }
 
-        /* SHIPPING INDEX SPLIT VIEW */
         .shipping-panel .panel-body {
             padding: 8px;
             display: block;
-            min-height: 0;
         }
 
         .shipping-split {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
-            height: 100%;
         }
 
         .shipping-index-column {
             min-width: 0;
             display: flex;
             flex-direction: column;
-            padding: 2px 8px 3px 8px;
+            padding: 2px 8px 3px;
         }
 
         .shipping-index-column:first-child {
@@ -311,19 +329,15 @@
             font-size: 10px;
             font-weight: 800;
             color: var(--bb-gray);
-            letter-spacing: 0.04em;
-            line-height: 1.3;
         }
 
         .shipping-chart-meta {
             display: flex;
             justify-content: space-between;
-            align-items: center;
             margin: 2px 0;
             font-size: 8px;
             font-weight: 700;
             color: var(--bb-gray-dim);
-            letter-spacing: 0.06em;
         }
 
         .shipping-sparkline {
@@ -344,23 +358,19 @@
         .sparkline-grid {
             stroke: #17212B;
             stroke-width: 0.45;
-            vector-effect: non-scaling-stroke;
         }
 
         .sparkline-empty {
             height: 100%;
             display: flex;
-            align-items: center;
             justify-content: center;
+            align-items: center;
             font-size: 8px;
-            font-weight: 700;
             color: var(--bb-gray-dim);
-            letter-spacing: 0.05em;
         }
 
         .shipping-metric-bottom {
             margin-top: auto;
-            padding-top: 2px;
         }
 
         .shipping-metric-value {
@@ -368,7 +378,6 @@
             color: var(--bb-white);
             font-size: 16px;
             font-weight: 800;
-            letter-spacing: -0.03em;
             white-space: nowrap;
         }
 
@@ -377,7 +386,6 @@
             font-size: 8px;
             font-weight: 600;
             color: var(--bb-cyan);
-            letter-spacing: 0;
         }
 
         .shipping-metric-delta {
@@ -398,14 +406,19 @@
             .grid-4 {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
-            .grid-split-air-macro {
+
+            .air-macro-layout {
                 grid-template-columns: 1fr;
+            }
+
+            .macro-card-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
             }
         }
 
         @media (max-width: 768px) {
             .grid-4,
-            .grid-split-air-macro {
+            .macro-card-grid {
                 grid-template-columns: 1fr;
             }
 
@@ -420,6 +433,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="terminal-container">
 
@@ -435,17 +449,13 @@
             </div>
         </div>
 
-        <!-- ================================================= -->
-        <!-- 01. SEA                                           -->
-        <!-- ================================================= -->
-        <div class="section-bar">
+        <div class="section-bar sea-section-bar">
             <span>01. SEA</span>
             <span class="sub">MARITIME LOGISTICS & FREIGHT</span>
         </div>
 
         <div class="grid-4">
 
-            <!-- 1. SHIPPING INDEX (1Y TREND CHART PRESERVED) -->
             <div class="panel shipping-panel">
                 <div class="panel-header">
                     <span class="panel-headline">SHIPPING INDEX</span>
@@ -454,18 +464,12 @@
 
                 <div class="panel-body">
                     <div class="shipping-split">
-
-                        <!-- SCFI -->
                         <div class="shipping-index-column">
-                            <div class="shipping-index-label">
-                                SCFI COMPOSITE INDEX
-                            </div>
-
+                            <div class="shipping-index-label">SCFI COMPOSITE INDEX</div>
                             <div class="shipping-chart-meta">
                                 <span>1Y TREND</span>
                                 <span>51 OBS</span>
                             </div>
-
                             <div class="shipping-sparkline">
                                 
     <svg
@@ -497,30 +501,22 @@
     </svg>
     
                             </div>
-
                             <div class="shipping-metric-bottom">
                                 <span class="shipping-metric-value">
-                                    3,679.58
-                                    <span class="unit">PTS</span>
+                                    3,679.58 <span class="unit">PTS</span>
                                 </span>
-
                                 <span class="shipping-metric-delta up">
                                     ▲ +15.47 (+0.42%)
                                 </span>
                             </div>
                         </div>
 
-                        <!-- BDI -->
                         <div class="shipping-index-column">
-                            <div class="shipping-index-label">
-                                BALTIC DRY INDEX
-                            </div>
-
+                            <div class="shipping-index-label">BALTIC DRY INDEX</div>
                             <div class="shipping-chart-meta">
                                 <span>1Y TREND</span>
                                 <span>250 OBS</span>
                             </div>
-
                             <div class="shipping-sparkline">
                                 
     <svg
@@ -552,19 +548,15 @@
     </svg>
     
                             </div>
-
                             <div class="shipping-metric-bottom">
                                 <span class="shipping-metric-value">
-                                    2,680
-                                    <span class="unit">PTS</span>
+                                    2,680 <span class="unit">PTS</span>
                                 </span>
-
                                 <span class="shipping-metric-delta up">
                                     ▲ +87 (+3.36%)
                                 </span>
                             </div>
                         </div>
-
                     </div>
                 </div>
 
@@ -574,7 +566,6 @@
                 </div>
             </div>
 
-            <!-- 2. LINERLYTICA (MOVED TO 2ND POSITION) -->
             <div class="panel">
                 <div class="panel-header">
                     <span class="panel-headline">LINERLYTICA</span>
@@ -590,7 +581,6 @@
                                 <th style="text-align:right;">CAPACITY</th>
                             </tr>
                         </thead>
-
                         <tbody>
                             
             <tr>
@@ -637,7 +627,6 @@
                 </div>
             </div>
 
-            <!-- 3. ALPHALINER FLEET -->
             <div class="panel">
                 <div class="panel-header">
                     <span class="panel-headline">ALPHALINER FLEET</span>
@@ -663,7 +652,7 @@
                         <span class="metric-label">TOP 10 CARRIER SHARE</span>
                         <div class="metric-value-row">
                             <span class="metric-value">85.0%</span>
-                            <span style="font-size:9px; color:var(--bb-gray);">AGGREGATE</span>
+                            <span style="font-size:9px;color:var(--bb-gray);">AGGREGATE</span>
                         </div>
                     </div>
                 </div>
@@ -674,7 +663,6 @@
                 </div>
             </div>
 
-            <!-- 4. TOP 25 FORWARDERS -->
             <div class="panel">
                 <div class="panel-header">
                     <span class="panel-headline">TOP 25 FORWARDERS</span>
@@ -685,7 +673,7 @@
                     <div class="metric-cell">
                         <span class="metric-label">RANK 1 OPERATOR</span>
                         <div class="metric-value-row">
-                            <span class="metric-value" style="font-size:14px; color:var(--bb-amber);">
+                            <span class="metric-value" style="font-size:14px;color:var(--bb-amber);">
                                 DSV
                             </span>
                         </div>
@@ -715,12 +703,12 @@
         </div>
 
         <!-- ================================================= -->
-        <!-- 02. AIR & 03. MACRO (OPTION A: SIDE-BY-SIDE GRID) -->
+        <!-- 02. AIR / 03. MACRO : SAME HORIZONTAL ROW       -->
         <!-- ================================================= -->
-        <div class="grid-split-air-macro">
+        <div class="air-macro-layout">
 
-            <!-- LEFT COLUMN: 02. AIR -->
-            <div class="column-stack">
+            <!-- LEFT 1/3 : 02. AIR -->
+            <div class="air-column">
                 <div class="section-bar">
                     <span>02. AIR</span>
                     <span class="sub">AIR FREIGHT RATE</span>
@@ -732,35 +720,32 @@
                         <a href="TAC%20Index/index.html" class="panel-link">TAC &gt;</a>
                     </div>
 
-                    <div class="panel-body" style="padding: 8px 10px;">
+                    <div class="panel-body" style="padding:8px 10px;">
                         <table class="dense-table">
                             <thead>
                                 <tr>
                                     <th>AIR TRADE CORRIDOR</th>
-                                    <th style="text-align:right;">RATE (USD/KG)</th>
-                                    <th style="text-align:right;">CHANGE (%)</th>
+                                    <th style="text-align:right;">RATE</th>
+                                    <th style="text-align:right;">CHANGE</th>
                                 </tr>
                             </thead>
-
                             <tbody>
                                 <tr>
-                                    <td class="table-row-name">FRANKFURT - NORTH AMERICA (FRA-NAM)</td>
+                                    <td class="table-row-name">FRANKFURT - NORTH AMERICA</td>
                                     <td class="table-row-val">2.40</td>
                                     <td class="table-row-delta up">
                                         ▲ +0.02 (+0.84%)
                                     </td>
                                 </tr>
-
                                 <tr>
-                                    <td class="table-row-name">HONG KONG - EUROPE (HKG-EUR)</td>
+                                    <td class="table-row-name">HONG KONG - EUROPE</td>
                                     <td class="table-row-val">4.80</td>
                                     <td class="table-row-delta up">
                                         ▲ +0.22 (+4.80%)
                                     </td>
                                 </tr>
-
                                 <tr>
-                                    <td class="table-row-name">HONG KONG - NORTH AMERICA (HKG-NAM)</td>
+                                    <td class="table-row-name">HONG KONG - NORTH AMERICA</td>
                                     <td class="table-row-val">7.02</td>
                                     <td class="table-row-delta up">
                                         ▲ +0.04 (+0.57%)
@@ -777,142 +762,133 @@
                 </div>
             </div>
 
-            <!-- RIGHT COLUMN: 03. MACRO (VERTICAL STACK) -->
-            <div class="column-stack">
+            <!-- RIGHT 2/3 : 03. MACRO -->
+            <div class="macro-column">
                 <div class="section-bar">
                     <span>03. MACRO</span>
                     <span class="sub">ENERGY, MACROECONOMICS & SUPPLY CHAIN</span>
                 </div>
 
-                <!-- 1. BUNKER & CRUDE OIL -->
-                <div class="panel">
-                    <div class="panel-header">
-                        <span class="panel-headline">BUNKER & CRUDE OIL</span>
-                        <a href="BunkerPrice/index.html" class="panel-link">OIL &gt;</a>
+                <div class="macro-card-grid">
+
+                    <div class="panel">
+                        <div class="panel-header">
+                            <span class="panel-headline">BUNKER & CRUDE OIL</span>
+                            <a href="BunkerPrice/index.html" class="panel-link">OIL &gt;</a>
+                        </div>
+
+                        <div class="panel-body" style="padding:6px 10px;">
+                            <table class="dense-table">
+                                <thead>
+                                    <tr>
+                                        <th>FUEL / GRADE</th>
+                                        <th style="text-align:right;">PRICE</th>
+                                        <th style="text-align:right;">CHG</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td class="table-row-name">RTM VLSFO</td>
+                                        <td class="table-row-val">759.0</td>
+                                        <td class="table-row-delta down">
+                                            ▼ -6.00 (-0.78%)
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-row-name">FUJ VLSFO</td>
+                                        <td class="table-row-val">968.0</td>
+                                        <td class="table-row-delta down">
+                                            ▼ -11.50 (-1.17%)
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-row-name">SIN VLSFO</td>
+                                        <td class="table-row-val">932.0</td>
+                                        <td class="table-row-delta down">
+                                            ▼ -0.50 (-0.05%)
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-row-name" style="color:var(--bb-amber);">DUBAI CRUDE</td>
+                                        <td class="table-row-val">110.98</td>
+                                        <td class="table-row-delta up">
+                                            ▲ +0.28 (+0.25%)
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-row-name" style="color:var(--bb-amber);">BRENT CRUDE</td>
+                                        <td class="table-row-val">108.82</td>
+                                        <td class="table-row-delta up">
+                                            ▲ +0.03 (+0.03%)
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-row-name" style="color:var(--bb-amber);">WTI CRUDE</td>
+                                        <td class="table-row-val">97.15</td>
+                                        <td class="table-row-delta down">
+                                            ▼ -4.64 (-4.56%)
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="panel-footer">
+                            <span>AS OF: 2026-10-21</span>
+                            <span class="footer-tag">USD/MT & USD/BBL</span>
+                        </div>
                     </div>
 
-                    <div class="panel-body" style="padding: 6px 10px;">
-                        <table class="dense-table">
-                            <thead>
-                                <tr>
-                                    <th>FUEL / GRADE</th>
-                                    <th style="text-align:right;">PRICE</th>
-                                    <th style="text-align:right;">CHG (%)</th>
-                                </tr>
-                            </thead>
+                    <div class="panel">
+                        <div class="panel-header">
+                            <span class="panel-headline">MACRO ECONOMIES & GSCPI</span>
+                            <a href="MacroEconomies/index.html" class="panel-link">MACRO &gt;</a>
+                        </div>
 
-                            <tbody>
-                                <tr>
-                                    <td class="table-row-name">RTM VLSFO</td>
-                                    <td class="table-row-val">759.0</td>
-                                    <td class="table-row-delta down">
-                                        ▼ -6.00 (-0.78%)
-                                    </td>
-                                </tr>
+                        <div class="panel-body" style="padding:8px 10px;">
+                            <table class="dense-table">
+                                <thead>
+                                    <tr>
+                                        <th>ECONOMIC INDICATOR</th>
+                                        <th style="text-align:right;">VALUE</th>
+                                        <th style="text-align:right;">CHANGE</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td class="table-row-name">GLOBAL SUPPLY CHAIN PRESSURE</td>
+                                        <td class="table-row-val">
+                                            -0.15<span class="inline-unit">PTS</span>
+                                        </td>
+                                        <td class="table-row-delta down">
+                                            ▼ -0.04 (-21.05%)
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-row-name">US REAL GDP GROWTH</td>
+                                        <td class="table-row-val">2.8%</td>
+                                        <td class="table-row-delta up">
+                                            ▲ +0.2% (+7.69%)
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-row-name">US HEADLINE CPI INFLATION</td>
+                                        <td class="table-row-val">2.4%</td>
+                                        <td class="table-row-delta down">
+                                            ▼ -0.1% (-4.00%)
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
 
-                                <tr>
-                                    <td class="table-row-name">FUJ VLSFO</td>
-                                    <td class="table-row-val">968.0</td>
-                                    <td class="table-row-delta down">
-                                        ▼ -11.50 (-1.17%)
-                                    </td>
-                                </tr>
-
-                                <tr>
-                                    <td class="table-row-name">SIN VLSFO</td>
-                                    <td class="table-row-val">932.0</td>
-                                    <td class="table-row-delta down">
-                                        ▼ -0.50 (-0.05%)
-                                    </td>
-                                </tr>
-
-                                <tr>
-                                    <td class="table-row-name" style="color:var(--bb-amber);">DUBAI CRUDE</td>
-                                    <td class="table-row-val">110.98</td>
-                                    <td class="table-row-delta up">
-                                        ▲ +0.28 (+0.25%)
-                                    </td>
-                                </tr>
-
-                                <tr>
-                                    <td class="table-row-name" style="color:var(--bb-amber);">BRENT CRUDE</td>
-                                    <td class="table-row-val">108.82</td>
-                                    <td class="table-row-delta up">
-                                        ▲ +0.03 (+0.03%)
-                                    </td>
-                                </tr>
-
-                                <tr>
-                                    <td class="table-row-name" style="color:var(--bb-amber);">WTI CRUDE</td>
-                                    <td class="table-row-val">97.15</td>
-                                    <td class="table-row-delta down">
-                                        ▼ -4.64 (-4.56%)
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
+                        <div class="panel-footer">
+                            <span>AS OF: 2026-10-22</span>
+                            <span class="footer-tag">NY FED / BEA / BLS</span>
+                        </div>
                     </div>
 
-                    <div class="panel-footer">
-                        <span>AS OF: 2026-10-21</span>
-                        <span class="footer-tag">USD/MT & USD/BBL</span>
-                    </div>
                 </div>
-
-                <!-- 2. MACRO ECONOMIES & GSCPI -->
-                <div class="panel">
-                    <div class="panel-header">
-                        <span class="panel-headline">MACRO ECONOMIES & GSCPI</span>
-                        <a href="MacroEconomies/index.html" class="panel-link">MACRO &gt;</a>
-                    </div>
-
-                    <div class="panel-body" style="padding: 8px 10px;">
-                        <table class="dense-table">
-                            <thead>
-                                <tr>
-                                    <th>ECONOMIC INDICATOR</th>
-                                    <th style="text-align:right;">VALUE</th>
-                                    <th style="text-align:right;">CHANGE (%)</th>
-                                </tr>
-                            </thead>
-
-                            <tbody>
-                                <tr>
-                                    <td class="table-row-name">GLOBAL SUPPLY CHAIN PRESSURE (GSCPI)</td>
-                                    <td class="table-row-val">
-                                        -0.15
-                                        <span class="inline-unit">PTS</span>
-                                    </td>
-                                    <td class="table-row-delta down">
-                                        ▼ -0.04 (-21.05%)
-                                    </td>
-                                </tr>
-
-                                <tr>
-                                    <td class="table-row-name">US REAL GDP GROWTH (QOQ ANNUALIZED)</td>
-                                    <td class="table-row-val">2.8%</td>
-                                    <td class="table-row-delta up">
-                                        ▲ +0.2% (+7.69%)
-                                    </td>
-                                </tr>
-
-                                <tr>
-                                    <td class="table-row-name">US HEADLINE CPI INFLATION (YOY)</td>
-                                    <td class="table-row-val">2.4%</td>
-                                    <td class="table-row-delta down">
-                                        ▼ -0.1% (-4.00%)
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div class="panel-footer">
-                        <span>AS OF: 2026-10-22</span>
-                        <span class="footer-tag">NY FED / BEA / BLS</span>
-                    </div>
-                </div>
-
             </div>
 
         </div>
