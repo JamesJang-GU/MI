@@ -2,1793 +2,867 @@
 # -*- coding: utf-8 -*-
 
 """
-Market Intelligence Portal - Root Dashboard Generator
-Bloomberg Professional Terminal High-Density Interface
-
-Reads verified module SQLite databases and generates:
-- index.html
-- dashboard_summary.json
+Market Intelligence Portal Dashboard Generator
+- Data Sources: Shipping Index, Linerlytica, Alphaliner, Forwarder, TAC Index, Bunker Price / Crude Oil
+- Output: index.html (Root Portal Dashboard), dashboard_summary.json
+- Theme: Bloomberg / MI Terminal Dark Theme
 """
 
-import html
-import json
 import os
+import sys
+import json
 import sqlite3
-from datetime import datetime, timedelta
+import datetime
+from pathlib import Path
 
-# ==========================================
-# PATH CONFIGURATION
-# ==========================================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Paths Configuration
+BASE_DIR = Path(__file__).resolve().parent
 
 DB_PATHS = {
-    # index_raw(dt, region, value, index_name, source_file, created_at)
-    "shipping": os.path.join(
-        BASE_DIR,
-        "Shipping Index",
-        "index_history.db",
-    ),
-    # alphaliner_master / alphaliner_detail
-    "alphaliner": os.path.join(
-        BASE_DIR,
-        "Alphaliner",
-        "alphaliner_history.db",
-    ),
-    # fleet_snapshot(snapshot_date, ship_status, ships, teu, source_url, collected_at)
-    "linerlytica": os.path.join(
-        BASE_DIR,
-        "Linerlytica",
-        "Linerlytica.db",
-    ),
-    # product_vlsfo / oil_prices
-    "bunker": os.path.join(
-        BASE_DIR,
-        "BunkerPrice",
-        "bunker_price_data.db",
-    ),
-    # forwarders(date, rank, provider, teu, air_tons, ...)
-    "forwarder": os.path.join(
-        BASE_DIR,
-        "Forwarder",
-        "freight_forwarders_data.db",
-    ),
-    # tac_master / tac_detail
-    "tac": os.path.join(
-        BASE_DIR,
-        "TAC Index",
-        "TAC_Index.db",
-    ),
-    "macro": os.path.join(
-        BASE_DIR,
-        "MacroEconomies",
-        "macro_data.db",
-    ),
+    "shipping": BASE_DIR / "Shipping Index" / "index_history.db",
+    "linerlytica": BASE_DIR / "Linerlytica" / "Linerlytica.db",
+    "alphaliner": BASE_DIR / "Alphaliner" / "alphaliner_data.db",
+    "forwarder": BASE_DIR / "Forwarder" / "freight_forwarders_data.db",
+    "tac": BASE_DIR / "TAC Index" / "TAC_Index.db",
+    "bunker": BASE_DIR / "BunkerPrice" / "bunker_price_data.db",
 }
 
-OUTPUT_HTML = os.path.join(BASE_DIR, "index.html")
-OUTPUT_JSON = os.path.join(BASE_DIR, "dashboard_summary.json")
+OUTPUT_HTML = BASE_DIR / "index.html"
+OUTPUT_JSON = BASE_DIR / "dashboard_summary.json"
 
-# ==========================================
-# COMMON DATABASE HELPERS
-# ==========================================
-def table_exists(cursor, table_name):
-    """Return True when the SQLite table exists."""
-    cursor.execute(
-        """
-        SELECT 1
-        FROM sqlite_master
-        WHERE type = 'table'
-          AND name = ?
-        LIMIT 1
-        """,
-        (table_name,),
-    )
-    return cursor.fetchone() is not None
-
-def get_table_columns(cursor, table_name):
-    """Return the table columns as a lower-case set."""
-    cursor.execute(f'PRAGMA table_info("{table_name}")')
-    return {row[1].lower() for row in cursor.fetchall()}
-
-def safe_float(value):
-    """Safely convert value to float or return None."""
+def get_db_connection(db_path: Path):
+    if not db_path.exists():
+        return None
     try:
-        if value is None:
-            return None
-        return float(value)
-    except (TypeError, ValueError):
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        return conn
+    except Exception as e:
+        print(f"[Warning] Failed to connect to {db_path}: {e}")
         return None
 
-# ==========================================
-# DELTA & SPARKLINE FORMATTING HELPERS
-# ==========================================
-def calculate_delta(curr, prev, is_int=False):
-    """
-    Calculate absolute and percentage deltas
-    with Bloomberg-style directional indicators.
-    """
-    if curr is None:
-        return "-", "neutral", ""
+# ==============================================================================
+# Data Loaders
+# ==============================================================================
 
-    if prev is None or prev == 0:
-        return "-", "neutral", ""
-
-    diff = curr - prev
-    pct = (diff / prev) * 100.0
-
-    if diff > 0:
-        arrow = "▲"
-        css_class = "up"
-        diff_str = f"+{int(diff):,}" if is_int else f"+{diff:.2f}"
-        pct_str = f"+{pct:.2f}%"
-
-    elif diff < 0:
-        arrow = "▼"
-        css_class = "down"
-        diff_str = f"{int(diff):,}" if is_int else f"{diff:.2f}"
-        pct_str = f"{pct:.2f}%"
-
-    else:
-        arrow = "■"
-        css_class = "neutral"
-        diff_str = "0" if is_int else "0.00"
-        pct_str = "0.00%"
-
-    return f"{diff_str} ({pct_str})", css_class, arrow
-
-def build_sparkline_svg(values, color, chart_name):
-    """
-    Build a compact one-year SVG sparkline.
-    Values must be ordered from oldest to newest.
-    """
-    if not values:
-        return """
-        <div class="sparkline-empty">
-            NO 1Y HISTORY
-        </div>
-        """
-
-    chart_width = 100
-    chart_height = 44
-    padding_top = 3
-    padding_bottom = 4
-    usable_height = chart_height - padding_top - padding_bottom
-
-    min_value = min(values)
-    max_value = max(values)
-    value_range = max_value - min_value
-
-    if value_range == 0:
-        value_range = 1.0
-
-    point_count = len(values)
-    points = []
-
-    for index, value in enumerate(values):
-        if point_count == 1:
-            x = chart_width / 2
-        else:
-            x = (index / (point_count - 1)) * chart_width
-
-        y = padding_top + ((max_value - value) / value_range) * usable_height
-        points.append(f"{x:.2f},{y:.2f}")
-
-    point_string = " ".join(points)
-    area_points = f"0,{chart_height} {point_string} {chart_width},{chart_height}"
-
-    return f"""
-    <svg
-        class="shipping-sparkline-svg"
-        viewBox="0 0 {chart_width} {chart_height}"
-        preserveAspectRatio="none"
-        role="img"
-        aria-label="{html.escape(chart_name)} one-year trend"
-    >
-        <line x1="0" y1="11" x2="{chart_width}" y2="11" class="sparkline-grid" />
-        <line x1="0" y1="22" x2="{chart_width}" y2="22" class="sparkline-grid" />
-        <line x1="0" y1="33" x2="{chart_width}" y2="33" class="sparkline-grid" />
-
-        <polygon
-            points="{area_points}"
-            fill="{color}"
-            fill-opacity="0.10"
-        />
-
-        <polyline
-            points="{point_string}"
-            fill="none"
-            stroke="{color}"
-            stroke-width="1.6"
-            vector-effect="non-scaling-stroke"
-            stroke-linecap="square"
-            stroke-linejoin="round"
-        />
-    </svg>
-    """
-
-# ==========================================
-# DATA FETCHERS
-# ==========================================
-def fetch_shipping_data():
-    """
-    Fetch SCFI Composite and BDI Composite from index_raw table.
-    """
-    data = {
-        "scfi": {
-            "price": "N/A",
-            "delta": "-",
-            "class": "neutral",
-            "arrow": "",
-            "date": "-",
-            "sparkline": "",
-            "history_points": 0,
-        },
-        "bdi": {
-            "price": "N/A",
-            "delta": "-",
-            "class": "neutral",
-            "arrow": "",
-            "date": "-",
-            "sparkline": "",
-            "history_points": 0,
-        },
-        "date": "-",
-    }
-
-    db_path = DB_PATHS["shipping"]
-
-    if not os.path.exists(db_path):
-        print(f"[WARN] Shipping DB not found: {db_path}")
+def load_shipping_index_data():
+    data = {"scfi": {"current": "-", "change": "-", "dir": ""}, "bdi": {"current": "-", "change": "-", "dir": ""}}
+    conn = get_db_connection(DB_PATHS["shipping"])
+    if not conn:
         return data
 
     try:
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
+        cur = conn.cursor()
+        # SCFI 종합
+        cur.execute("""
+            SELECT dt, value FROM index_raw
+            WHERE index_name = 'SCFI' AND region = '종합'
+            ORDER BY dt DESC LIMIT 2
+        """)
+        scfi_rows = cur.fetchall()
+        if scfi_rows:
+            curr_val = float(scfi_rows[0]["value"])
+            data["scfi"]["current"] = f"{curr_val:,.2f}"
+            if len(scfi_rows) > 1:
+                prev_val = float(scfi_rows[1]["value"])
+                diff = curr_val - prev_val
+                pct = (diff / prev_val) * 100 if prev_val else 0
+                sign = "+" if diff > 0 else ""
+                data["scfi"]["change"] = f"{sign}{diff:,.2f} ({sign}{pct:.2f}%)"
+                data["scfi"]["dir"] = "up" if diff > 0 else ("down" if diff < 0 else "neutral")
 
-            if not table_exists(cursor, "index_raw"):
-                print("[WARN] Shipping table 'index_raw' not found.")
-                return data
-
-            def parse_observation_date(raw_date):
-                if raw_date is None:
-                    return None
-                date_text = str(raw_date)[:10]
-                try:
-                    return datetime.strptime(date_text, "%Y-%m-%d")
-                except ValueError:
-                    return None
-
-            def load_index(index_name, region, is_int=False, color="#FF9900"):
-                cursor.execute(
-                    """
-                    SELECT dt, value, created_at
-                    FROM index_raw
-                    WHERE index_name = ?
-                      AND region = ?
-                      AND value IS NOT NULL
-                    ORDER BY dt ASC, created_at DESC
-                    """,
-                    (index_name, region),
-                )
-
-                rows = cursor.fetchall()
-                if not rows:
-                    print(f"[WARN] Shipping data not found: {index_name} {region}")
-                    return None
-
-                observations_by_date = {}
-                for raw_date, raw_value, _created_at in rows:
-                    parsed_date = parse_observation_date(raw_date)
-                    if parsed_date is None or raw_value is None:
-                        continue
-
-                    date_key = parsed_date.strftime("%Y-%m-%d")
-                    if date_key not in observations_by_date:
-                        observations_by_date[date_key] = {
-                            "date": parsed_date,
-                            "value": float(raw_value),
-                        }
-
-                observations = sorted(
-                    observations_by_date.values(),
-                    key=lambda item: item["date"],
-                )
-
-                if not observations:
-                    return None
-
-                latest = observations[-1]
-                previous = observations[-2] if len(observations) > 1 else None
-
-                latest_date = latest["date"].strftime("%Y-%m-%d")
-                current_value = latest["value"]
-                previous_value = previous["value"] if previous else None
-
-                delta_str, css_class, arrow = calculate_delta(
-                    current_value,
-                    previous_value,
-                    is_int=is_int,
-                )
-
-                price_str = f"{int(current_value):,}" if is_int else f"{current_value:,.2f}"
-
-                one_year_ago = latest["date"] - timedelta(days=365)
-                one_year_values = [
-                    item["value"]
-                    for item in observations
-                    if item["date"] >= one_year_ago
-                ]
-
-                sparkline_svg = build_sparkline_svg(
-                    values=one_year_values,
-                    color=color,
-                    chart_name=f"{index_name} {region}",
-                )
-
-                return {
-                    "price": price_str,
-                    "delta": delta_str,
-                    "class": css_class,
-                    "arrow": arrow,
-                    "date": latest_date,
-                    "sparkline": sparkline_svg,
-                    "history_points": len(one_year_values),
-                }
-
-            scfi_result = load_index(index_name="SCFI", region="종합", is_int=False, color="#FF9900")
-            bdi_result = load_index(index_name="BDI", region="BDI", is_int=True, color="#00E5FF")
-
-            if scfi_result:
-                data["scfi"] = scfi_result
-                data["date"] = scfi_result["date"]
-
-            if bdi_result:
-                data["bdi"] = bdi_result
-                if data["date"] == "-":
-                    data["date"] = bdi_result["date"]
-
-    except Exception as error:
-        print(f"[WARN] Shipping data load error: {error}")
-
+        # BDI 종합
+        cur.execute("""
+            SELECT dt, value FROM index_raw
+            WHERE index_name = 'BDI' AND region = 'BDI'
+            ORDER BY dt DESC LIMIT 2
+        """)
+        bdi_rows = cur.fetchall()
+        if bdi_rows:
+            curr_val = float(bdi_rows[0]["value"])
+            data["bdi"]["current"] = f"{curr_val:,.0f}"
+            if len(bdi_rows) > 1:
+                prev_val = float(bdi_rows[1]["value"])
+                diff = curr_val - prev_val
+                pct = (diff / prev_val) * 100 if prev_val else 0
+                sign = "+" if diff > 0 else ""
+                data["bdi"]["change"] = f"{sign}{diff:,.0f} ({sign}{pct:.2f}%)"
+                data["bdi"]["dir"] = "up" if diff > 0 else ("down" if diff < 0 else "neutral")
+    except Exception as e:
+        print(f"[Error] load_shipping_index_data: {e}")
+    finally:
+        conn.close()
     return data
 
-def fetch_alphaliner_data():
-    """
-    Read the latest Alphaliner snapshot and Top 10 aggregate market share.
-    """
-    data = {
-        "total_ships": "N/A",
-        "total_teu": "N/A",
-        "top10_share": "N/A",
-        "date": "N/A",
-    }
-
-    db_path = DB_PATHS["alphaliner"]
-
-    if not os.path.exists(db_path):
-        print(f"[WARN] Alphaliner DB not found: {db_path}")
+def load_linerlytica_data():
+    data = {"date": "-", "fleet": []}
+    conn = get_db_connection(DB_PATHS["linerlytica"])
+    if not conn:
         return data
 
     try:
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-
-            if not table_exists(cursor, "alphaliner_master") or not table_exists(cursor, "alphaliner_detail"):
-                print("[WARN] Alphaliner required tables not found.")
-                return data
-
-            cursor.execute(
-                """
-                SELECT
-                    snapshot_id,
-                    data_date,
-                    global_ships,
-                    total_ships,
-                    global_teu,
-                    total_teu
-                FROM alphaliner_master
-                ORDER BY data_date DESC, snapshot_id DESC
-                LIMIT 1
-                """
-            )
-
-            row = cursor.fetchone()
-            if not row:
-                return data
-
-            (
-                snapshot_id,
-                data_date,
-                global_ships,
-                total_ships,
-                global_teu,
-                total_teu,
-            ) = row
-
-            data["date"] = str(data_date)[:10] if data_date else "N/A"
-
-            ships = global_ships if (global_ships is not None and global_ships > 0) else total_ships
-            teu = global_teu if (global_teu is not None and global_teu > 0) else total_teu
-
-            if ships is not None:
-                data["total_ships"] = f"{int(ships):,} Ships"
-
-            if teu is not None:
-                data["total_teu"] = f"{int(teu):,} TEU"
-
-            cursor.execute(
-                """
-                SELECT SUM(market_share)
-                FROM alphaliner_detail
-                WHERE snapshot_id = ?
-                  AND rank <= 10
-                """,
-                (snapshot_id,),
-            )
-
-            share_row = cursor.fetchone()
-            if share_row and share_row[0] is not None:
-                data["top10_share"] = f"{float(share_row[0]):.1f}%"
-
-    except Exception as error:
-        print(f"[WARN] Alphaliner data load error: {error}")
-
-    return data
-
-def fetch_linerlytica_data():
-    """
-    Fetch the latest Linerlytica Global Containership Fleet Snapshot.
-
-    Verified schema:
-        fleet_snapshot(
-            snapshot_date TEXT,
-            ship_status TEXT,
-            ships INTEGER,
-            teu INTEGER,
-            source_url TEXT,
-            collected_at TEXT,
-            PRIMARY KEY(snapshot_date, ship_status)
-        )
-
-    Target categories:
-    - Active Ships
-    - Ships at port
-    - Ships at anchorage
-    - Ships in shipyard
-    - Inactive Ships
-
-    Sort order:
-    - Ships DESC, TEU DESC
-    """
-    data = {
-        "date": "N/A",
-        "rows": [],
-        "source_table": "fleet_snapshot",
-    }
-
-    db_path = DB_PATHS["linerlytica"]
-
-    if not os.path.exists(db_path):
-        print(f"[WARN] Linerlytica DB not found: {db_path}")
-        return data
-
-    target_statuses = [
-        "Ships at port",
-        "Active Ships",
-        "Inactive Ships",
-        "Ships at anchorage",
-        "Ships in shipyard",
-    ]
-
-    try:
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-
-            if not table_exists(cursor, "fleet_snapshot"):
-                print("[WARN] Linerlytica table 'fleet_snapshot' not found.")
-                return data
-
-            cursor.execute(
-                """
-                SELECT MAX(snapshot_date)
-                FROM fleet_snapshot
-                WHERE snapshot_date IS NOT NULL
-                """
-            )
-
-            latest_date_row = cursor.fetchone()
-            latest_date = latest_date_row[0] if latest_date_row else None
-
-            if not latest_date:
-                print("[WARN] Linerlytica fleet_snapshot contains no snapshot date.")
-                return data
-
-            placeholders = ", ".join(["?"] * len(target_statuses))
-
-            cursor.execute(
-                f"""
-                SELECT
-                    ship_status,
-                    ships,
-                    teu
+        cur = conn.cursor()
+        cur.execute("SELECT MAX(snapshot_date) FROM fleet_snapshot")
+        latest_date = cur.fetchone()[0]
+        if latest_date:
+            data["date"] = latest_date
+            cur.execute("""
+                SELECT ship_status, ships, teu
                 FROM fleet_snapshot
                 WHERE snapshot_date = ?
-                  AND ship_status IN ({placeholders})
-                ORDER BY
-                    ships DESC,
-                    teu DESC,
-                    ship_status ASC
-                """,
-                (latest_date, *target_statuses),
-            )
-
-            rows = cursor.fetchall()
-            if not rows:
-                print("[WARN] Linerlytica latest snapshot has no matching status records.")
-                return data
-
-            data["date"] = str(latest_date)[:10]
-            data["rows"] = [
-                {
-                    "status": str(ship_status).strip(),
-                    "ships": int(ships) if ships is not None else 0,
-                    "teu": int(teu) if teu is not None else 0,
-                }
-                for ship_status, ships, teu in rows
-            ]
-
-            print(
-                f"[INFO] Linerlytica latest fleet snapshot loaded: "
-                f"date={data['date']}, records={len(data['rows'])}"
-            )
-
-    except sqlite3.Error as error:
-        print(f"[WARN] Linerlytica SQLite load error: {error}")
-    except Exception as error:
-        print(f"[WARN] Unexpected Linerlytica data error: {error}")
-
+                ORDER BY ships DESC
+            """, (latest_date,))
+            for row in cur.fetchall():
+                data["fleet"].append({
+                    "status": row["ship_status"],
+                    "ships": f"{row['ships']:,}",
+                    "teu": f"{row['teu']:,}"
+                })
+    except Exception as e:
+        print(f"[Error] load_linerlytica_data: {e}")
+    finally:
+        conn.close()
     return data
 
-def fetch_forwarder_data():
-    """
-    Fetch latest Top 25 Forwarder results from forwarders table.
-    """
-    data = {
-        "top_forwarder": "N/A",
-        "total_ocean_teu": "N/A",
-        "total_air_tons": "N/A",
-        "date": "N/A",
-    }
-
-    db_path = DB_PATHS["forwarder"]
-
-    if not os.path.exists(db_path):
-        print(f"[WARN] Forwarder DB not found: {db_path}")
+def load_alphaliner_data():
+    data = {"date": "-", "top5": []}
+    conn = get_db_connection(DB_PATHS["alphaliner"])
+    if not conn:
         return data
 
     try:
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-
-            if not table_exists(cursor, "forwarders"):
-                print("[WARN] Forwarder table 'forwarders' not found.")
-                return data
-
-            cursor.execute("SELECT MAX(date) FROM forwarders")
-            max_date_row = cursor.fetchone()
-
-            if not max_date_row or not max_date_row[0]:
-                return data
-
-            target_date = max_date_row[0]
-            data["date"] = str(target_date)[:10]
-
-            cursor.execute(
-                """
-                SELECT provider
-                FROM forwarders
-                WHERE date = ?
-                ORDER BY rank ASC
-                LIMIT 1
-                """,
-                (target_date,),
-            )
-
-            top_row = cursor.fetchone()
-            if top_row and top_row[0]:
-                data["top_forwarder"] = str(top_row[0])
-
-            cursor.execute(
-                """
-                SELECT SUM(teu), SUM(air_tons)
-                FROM forwarders
-                WHERE date = ?
-                """,
-                (target_date,),
-            )
-
-            sum_row = cursor.fetchone()
-            if sum_row:
-                if sum_row[0] is not None:
-                    data["total_ocean_teu"] = f"{int(sum_row[0]):,} TEU"
-                if sum_row[1] is not None:
-                    data["total_air_tons"] = f"{int(sum_row[1]):,} MT"
-
-    except Exception as error:
-        print(f"[WARN] Forwarder data load error: {error}")
-
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='top_carriers'")
+        if cur.fetchone():
+            cur.execute("SELECT MAX(snapshot_date) FROM top_carriers")
+            latest_date = cur.fetchone()[0]
+            if latest_date:
+                data["date"] = latest_date
+                cur.execute("""
+                    SELECT rank, carrier_name, total_teu, share_pct
+                    FROM top_carriers
+                    WHERE snapshot_date = ?
+                    ORDER BY rank ASC LIMIT 5
+                """, (latest_date,))
+                for row in cur.fetchall():
+                    data["top5"].append({
+                        "rank": row["rank"],
+                        "carrier": row["carrier_name"],
+                        "teu": f"{row['total_teu']:,}" if isinstance(row['total_teu'], (int, float)) else str(row['total_teu']),
+                        "share": f"{row['share_pct']}%"
+                    })
+    except Exception as e:
+        print(f"[Error] load_alphaliner_data: {e}")
+    finally:
+        conn.close()
     return data
 
-def fetch_tac_data():
-    """
-    Fetch three TAC air freight corridors sorted chronologically by tac_master.data_date.
-    """
-    data = {
-        "date": "N/A",
-        "routes": {
-            "FRA - NAM": {
-                "name": "Frankfurt - North America",
-                "price": "N/A",
-                "delta": "-",
-                "class": "neutral",
-                "arrow": "",
-            },
-            "HKG - EUR": {
-                "name": "Hong Kong - Europe",
-                "price": "N/A",
-                "delta": "-",
-                "class": "neutral",
-                "arrow": "",
-            },
-            "HKG - NAM": {
-                "name": "Hong Kong - North America",
-                "price": "N/A",
-                "delta": "-",
-                "class": "neutral",
-                "arrow": "",
-            },
-        },
-    }
-
-    db_path = DB_PATHS["tac"]
-
-    if not os.path.exists(db_path):
-        print(f"[WARN] TAC DB not found: {db_path}")
-        return data
-
-    corridor_targets = {
-        "FRA - NAM": {
-            "origin": "frankfurt",
-            "destination": "north america",
-        },
-        "HKG - EUR": {
-            "origin": "hong kong",
-            "destination": "europe",
-        },
-        "HKG - NAM": {
-            "origin": "hong kong",
-            "destination": "north america",
-        },
-    }
-
-    try:
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-
-            if not table_exists(cursor, "tac_master") or not table_exists(cursor, "tac_detail"):
-                print("[WARN] TAC tables not found.")
-                return data
-
-            for route_key, target in corridor_targets.items():
-                cursor.execute(
-                    """
-                    SELECT
-                        m.data_date,
-                        d.index_value
-                    FROM tac_detail d
-                    JOIN tac_master m
-                      ON d.snapshot_id = m.snapshot_id
-                    WHERE d.index_value IS NOT NULL
-                      AND LOWER(COALESCE(d.origin, '')) LIKE ?
-                      AND LOWER(COALESCE(d.destination, '')) LIKE ?
-                    ORDER BY m.data_date DESC, m.snapshot_id DESC
-                    """,
-                    (f"%{target['origin']}%", f"%{target['destination']}%"),
-                )
-
-                raw_rows = cursor.fetchall()
-                if not raw_rows:
-                    continue
-
-                unique_rows = []
-                seen_dates = set()
-
-                for row_date, row_value in raw_rows:
-                    normalized_date = str(row_date)[:10]
-                    if normalized_date in seen_dates:
-                        continue
-
-                    seen_dates.add(normalized_date)
-                    unique_rows.append((normalized_date, row_value))
-
-                    if len(unique_rows) >= 2:
-                        break
-
-                if not unique_rows:
-                    continue
-
-                latest_date = unique_rows[0][0]
-                current_value = float(unique_rows[0][1])
-
-                previous_value = None
-                if len(unique_rows) > 1 and unique_rows[1][1] is not None:
-                    previous_value = float(unique_rows[1][1])
-
-                delta_str, css_class, arrow = calculate_delta(current_value, previous_value)
-
-                data["routes"][route_key] = {
-                    "name": data["routes"][route_key]["name"],
-                    "price": f"{current_value:.2f}",
-                    "delta": delta_str,
-                    "class": css_class,
-                    "arrow": arrow,
-                }
-
-                if data["date"] == "N/A":
-                    data["date"] = latest_date
-
-    except Exception as error:
-        print(f"[WARN] TAC data load error: {error}")
-
-    return data
-
-def fetch_bunker_and_crude_data():
-    """
-    Fetch VLSFO prices (Rotterdam, Fujairah, Singapore)
-    and Crude oil prices (Dubai, Brent, WTI).
-    """
-    data = {
-        "date": "N/A",
-        "vlsfo": {
-            "Rotterdam": {"price": "N/A", "delta": "-", "class": "neutral", "arrow": ""},
-            "Fujairah": {"price": "N/A", "delta": "-", "class": "neutral", "arrow": ""},
-            "Singapore": {"price": "N/A", "delta": "-", "class": "neutral", "arrow": ""},
-        },
-        "crude": {
-            "Dubai": {"price": "N/A", "delta": "-", "class": "neutral", "arrow": ""},
-            "Brent": {"price": "N/A", "delta": "-", "class": "neutral", "arrow": ""},
-            "WTI": {"price": "N/A", "delta": "-", "class": "neutral", "arrow": ""},
-        },
-    }
-
-    db_path = DB_PATHS["bunker"]
-
-    if not os.path.exists(db_path):
-        print(f"[WARN] Bunker DB not found: {db_path}")
+def load_forwarder_data():
+    data = {"date": "-", "top5": []}
+    conn = get_db_connection(DB_PATHS["forwarder"])
+    if not conn:
         return data
 
     try:
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='forwarders_ranking'")
+        if cur.fetchone():
+            cur.execute("SELECT MAX(snapshot_year) FROM forwarders_ranking")
+            latest_year = cur.fetchone()[0]
+            if latest_year:
+                data["date"] = str(latest_year)
+                cur.execute("""
+                    SELECT rank, company_name, ocean_teu, air_metric_tons
+                    FROM forwarders_ranking
+                    WHERE snapshot_year = ?
+                    ORDER BY rank ASC LIMIT 5
+                """, (latest_year,))
+                for row in cur.fetchall():
+                    data["top5"].append({
+                        "rank": row["rank"],
+                        "company": row["company_name"],
+                        "ocean_teu": f"{row['ocean_teu']:,}" if isinstance(row['ocean_teu'], (int, float)) else str(row['ocean_teu']),
+                        "air_tons": f"{row['air_metric_tons']:,}" if isinstance(row['air_metric_tons'], (int, float)) else str(row['air_metric_tons'])
+                    })
+    except Exception as e:
+        print(f"[Error] load_forwarder_data: {e}")
+    finally:
+        conn.close()
+    return data
 
-            if table_exists(cursor, "product_vlsfo"):
+def load_tac_index_data():
+    data = {"date": "-", "routes": []}
+    conn = get_db_connection(DB_PATHS["tac"])
+    if not conn:
+        return data
+
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT MAX(data_date) FROM tac_master")
+        latest_date = cur.fetchone()[0]
+        if latest_date:
+            data["date"] = latest_date
+            cur.execute("""
+                SELECT d.route_name, d.rate_usd, d.change_mom, d.change_pct
+                FROM tac_detail d
+                JOIN tac_master m ON d.snapshot_id = m.id
+                WHERE m.data_date = ?
+                AND d.route_name IN ('Frankfurt - North America', 'Hong Kong - Europe', 'Hong Kong - North America')
+                ORDER BY d.route_name ASC
+            """, (latest_date,))
+            for row in cur.fetchall():
+                rate = float(row["rate_usd"]) if row["rate_usd"] is not None else 0.0
+                mom = float(row["change_mom"]) if row["change_mom"] is not None else 0.0
+                pct = float(row["change_pct"]) if row["change_pct"] is not None else 0.0
+
+                sign = "+" if mom > 0 else ""
+                dir_cls = "up" if mom > 0 else ("down" if mom < 0 else "neutral")
+                arrow = "↗" if mom > 0 else ("↘" if mom < 0 else "→")
+
+                data["routes"].append({
+                    "name": row["route_name"],
+                    "rate": f"${rate:.2f}/kg",
+                    "delta": f"{arrow} {sign}{mom:.2f} ({sign}{pct:.1f}%)",
+                    "dir": dir_cls
+                })
+    except Exception as e:
+        print(f"[Error] load_tac_index_data: {e}")
+    finally:
+        conn.close()
+    return data
+
+def load_bunker_and_crude_data():
+    data = {
+        "vlsfo": {"date": "-", "ports": []},
+        "crude": {"date": "-", "benchmarks": []}
+    }
+    conn = get_db_connection(DB_PATHS["bunker"])
+    if not conn:
+        return data
+
+    try:
+        cur = conn.cursor()
+        # VLSFO
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='product_vlsfo'")
+        if cur.fetchone():
+            cur.execute("SELECT MAX(date) FROM product_vlsfo")
+            latest_vlsfo_date = cur.fetchone()[0]
+            if latest_vlsfo_date:
+                data["vlsfo"]["date"] = latest_vlsfo_date
                 for port in ["Rotterdam", "Fujairah", "Singapore"]:
-                    cursor.execute(
-                        """
-                        SELECT date_str, price
+                    cur.execute("""
+                        SELECT price, change, change_pct
                         FROM product_vlsfo
-                        WHERE port = ?
-                          AND price IS NOT NULL
-                        ORDER BY date_str DESC, timestamp_ms DESC
-                        LIMIT 2
-                        """,
-                        (port,),
-                    )
+                        WHERE port = ? AND date = ?
+                    """, (port, latest_vlsfo_date))
+                    row = cur.fetchone()
+                    if row:
+                        price = float(row["price"])
+                        change = float(row["change"]) if row["change"] is not None else 0.0
+                        pct = float(row["change_pct"]) if row["change_pct"] is not None else 0.0
+                        arrow = "↗" if change > 0 else ("↘" if change < 0 else "→")
+                        dir_cls = "up" if change > 0 else ("down" if change < 0 else "neutral")
+                        sign = "+" if change > 0 else ""
+                        data["vlsfo"]["ports"].append({
+                            "port": port,
+                            "price": f"${price:,.1f}",
+                            "delta": f"{arrow} {sign}{change:,.1f} ({sign}{pct:.1f}%)",
+                            "dir": dir_cls
+                        })
 
-                    rows = cursor.fetchall()
-                    if not rows:
-                        continue
+        # Crude Oil
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='oil_prices'")
+        if cur.fetchone():
+            cur.execute("SELECT DATE, Dubai, Brent, WTI FROM oil_prices ORDER BY DATE DESC LIMIT 2")
+            crude_rows = cur.fetchall()
+            if crude_rows:
+                curr_row = crude_rows[0]
+                prev_row = crude_rows[1] if len(crude_rows) > 1 else None
+                data["crude"]["date"] = curr_row["DATE"]
 
-                    latest_date = str(rows[0][0])[:10]
-                    current_value = float(rows[0][1])
+                for benchmark in ["Dubai", "Brent", "WTI"]:
+                    curr_val = float(curr_row[benchmark]) if curr_row[benchmark] is not None else 0.0
+                    if prev_row and prev_row[benchmark] is not None:
+                        prev_val = float(prev_row[benchmark])
+                        diff = curr_val - prev_val
+                        pct = (diff / prev_val) * 100 if prev_val else 0
+                        sign = "+" if diff > 0 else ""
+                        arrow = "↗" if diff > 0 else ("↘" if diff < 0 else "→")
+                        dir_cls = "up" if diff > 0 else ("down" if diff < 0 else "neutral")
+                        delta_str = f"{arrow} {sign}{diff:,.2f} ({sign}{pct:.2f}%)"
+                    else:
+                        delta_str = "-"
+                        dir_cls = "neutral"
 
-                    previous_value = None
-                    if len(rows) > 1 and rows[1][1] is not None:
-                        previous_value = float(rows[1][1])
-
-                    delta_str, css_class, arrow = calculate_delta(current_value, previous_value)
-
-                    data["vlsfo"][port] = {
-                        "price": f"{current_value:.1f}",
+                    data["crude"]["benchmarks"].append({
+                        "name": benchmark,
+                        "price": f"${curr_val:,.2f}",
                         "delta": delta_str,
-                        "class": css_class,
-                        "arrow": arrow,
-                    }
-
-                    if data["date"] == "N/A":
-                        data["date"] = latest_date
-
-            if table_exists(cursor, "oil_prices"):
-                cursor.execute(
-                    """
-                    SELECT DATE, Dubai, Brent, WTI
-                    FROM oil_prices
-                    ORDER BY DATE DESC
-                    LIMIT 2
-                    """
-                )
-
-                oil_rows = cursor.fetchall()
-                if oil_rows:
-                    current_row = oil_rows[0]
-                    previous_row = oil_rows[1] if len(oil_rows) > 1 else None
-
-                    oil_indices = {"Dubai": 1, "Brent": 2, "WTI": 3}
-
-                    for oil_name, column_index in oil_indices.items():
-                        current_value = safe_float(current_row[column_index])
-                        previous_value = safe_float(previous_row[column_index]) if previous_row else None
-
-                        if current_value is None:
-                            continue
-
-                        delta_str, css_class, arrow = calculate_delta(current_value, previous_value)
-
-                        data["crude"][oil_name] = {
-                            "price": f"{current_value:.2f}",
-                            "delta": delta_str,
-                            "class": css_class,
-                            "arrow": arrow,
-                        }
-
-    except Exception as error:
-        print(f"[WARN] Bunker & Crude load error: {error}")
-
+                        "dir": dir_cls
+                    })
+    except Exception as e:
+        print(f"[Error] load_bunker_and_crude_data: {e}")
+    finally:
+        conn.close()
     return data
 
-def fetch_macro_data():
-    """
-    Macro module placeholder values.
-    """
-    return {
-        "gscpi": {
-            "value": "-0.15",
-            "delta": "-0.04 (-21.05%)",
-            "class": "down",
-            "arrow": "▼",
-        },
-        "us_gdp": {
-            "value": "2.8%",
-            "delta": "+0.2% (+7.69%)",
-            "class": "up",
-            "arrow": "▲",
-        },
-        "us_cpi": {
-            "value": "2.4%",
-            "delta": "-0.1% (-4.00%)",
-            "class": "down",
-            "arrow": "▼",
-        },
-        "date": datetime.today().strftime("%Y-%m-%d"),
-    }
+# ==============================================================================
+# HTML Template Renderer
+# ==============================================================================
 
-# ==========================================
-# BLOOMBERG TERMINAL HTML GENERATOR
-# ==========================================
-def build_linerlytica_rows(linerlytica):
-    """Build high-density HTML table rows for Linerlytica ship statuses."""
-    if not linerlytica["rows"]:
-        return """
+def generate_portal_html(data: dict) -> str:
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Linerlytica Table
+    fleet_rows = ""
+    for item in data["linerlytica"]["fleet"]:
+        fleet_rows += f"""
         <tr>
-            <td colspan="3" class="linerlytica-empty">
-                DATA UNAVAILABLE
-            </td>
+            <td class="status-col">{item['status']}</td>
+            <td class="num-col">{item['ships']}</td>
+            <td class="num-col">{item['teu']}</td>
         </tr>
         """
+    if not fleet_rows:
+        fleet_rows = "<tr><td colspan='3' class='empty-row'>데이터가 없습니다.</td></tr>"
 
-    output = []
-    for row in linerlytica["rows"]:
-        status = html.escape(row["status"].upper())
-        ships = f"{row['ships']:,}"
-        teu = f"{row['teu']:,}"
+    # Alphaliner Table
+    alphaliner_rows = ""
+    for item in data["alphaliner"]["top5"]:
+        alphaliner_rows += f"""
+        <tr>
+            <td class="rank-col">{item['rank']}</td>
+            <td class="carrier-col">{item['carrier']}</td>
+            <td class="num-col">{item['teu']}</td>
+            <td class="num-col highlight-orange">{item['share']}</td>
+        </tr>
+        """
+    if not alphaliner_rows:
+        alphaliner_rows = "<tr><td colspan='4' class='empty-row'>데이터가 없습니다.</td></tr>"
 
-        output.append(
-            f"""
-            <tr>
-                <td class="table-row-name">{status}</td>
-                <td class="table-row-val">{ships}<span class="inline-unit">SHIPS</span></td>
-                <td class="table-row-val">{teu}<span class="inline-unit">TEU</span></td>
-            </tr>
-            """
-        )
+    # Forwarder Table
+    forwarder_rows = ""
+    for item in data["forwarder"]["top5"]:
+        forwarder_rows += f"""
+        <tr>
+            <td class="rank-col">{item['rank']}</td>
+            <td class="carrier-col">{item['company']}</td>
+            <td class="num-col">{item['ocean_teu']}</td>
+            <td class="num-col highlight-blue">{item['air_tons']}</td>
+        </tr>
+        """
+    if not forwarder_rows:
+        forwarder_rows = "<tr><td colspan='4' class='empty-row'>데이터가 없습니다.</td></tr>"
 
-    return "\n".join(output)
+    # TAC Index Rows
+    tac_items = ""
+    for r in data["tac"]["routes"]:
+        tac_items += f"""
+        <div class="kpi-metric-box">
+            <div class="metric-label">{r['name']}</div>
+            <div class="metric-val">{r['rate']}</div>
+            <div class="metric-delta {r['dir']}">{r['delta']}</div>
+        </div>
+        """
+    if not tac_items:
+        tac_items = "<div class='empty-row'>TAC Air 운임 데이터를 조회할 수 없습니다.</div>"
 
-def generate_html(shipping, alphaliner, linerlytica, forwarder, tac, bunker, macro):
-    linerlytica_rows_html = build_linerlytica_rows(linerlytica)
+    # VLSFO Items
+    vlsfo_items = ""
+    for p in data["bunker"]["vlsfo"]["ports"]:
+        vlsfo_items += f"""
+        <div class="kpi-metric-box">
+            <div class="metric-label">{p['port']} VLSFO</div>
+            <div class="metric-val">{p['price']}</div>
+            <div class="metric-delta {p['dir']}">{p['delta']}</div>
+        </div>
+        """
+    if not vlsfo_items:
+        vlsfo_items = "<div class='empty-row'>VLSFO 데이터를 조회할 수 없습니다.</div>"
+
+    # Crude Oil Items
+    crude_items = ""
+    for c in data["bunker"]["crude"]["benchmarks"]:
+        crude_items += f"""
+        <div class="kpi-metric-box">
+            <div class="metric-label">{c['name']} Crude</div>
+            <div class="metric-val">{c['price']}</div>
+            <div class="metric-delta {c['dir']}">{c['delta']}</div>
+        </div>
+        """
+    if not crude_items:
+        crude_items = "<div class='empty-row'>원유 데이터를 조회할 수 없습니다.</div>"
 
     html_content = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BLOOMBERG TERMINAL // MARKET INTELLIGENCE</title>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>MI GLOBAL TERMINAL</title>
     <style>
         :root {{
-            --terminal-bg: #000000;
-            --panel-bg: #0A0D12;
-            --panel-inner: #05070A;
-            --panel-border: #1E2630;
-            --panel-border-bright: #323F4B;
-
-            --bb-amber: #FF9900;
-            --bb-amber-dim: #D97706;
-            --bb-cyan: #00E5FF;
-            --bb-white: #FFFFFF;
-            --bb-gray: #8295A5;
-            --bb-gray-dim: #485664;
-
-            --bb-green: #00FF66;
-            --bb-red: #FF3344;
-            --bb-neutral: #8295A5;
+            --bg: #02060b;
+            --panel: #070d15;
+            --panel-border: #132238;
+            --panel-header: #0c1726;
+            --orange: #ff8a00;
+            --green: #00d26a;
+            --red: #ff4d4f;
+            --blue: #1890ff;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #546274;
+            --font-mono: 'Consolas', 'Courier New', Courier, monospace;
+            --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }}
 
         * {{
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: 'JetBrains Mono', 'IBM Plex Mono', monospace;
-            -webkit-font-smoothing: antialiased;
         }}
 
         body {{
-            background-color: var(--terminal-bg);
-            color: var(--bb-white);
-            padding: 16px 20px 40px 20px;
-            font-size: 12px;
-            line-height: 1.4;
+            background-color: var(--bg);
+            color: var(--text-primary);
+            font-family: var(--font-sans);
+            padding: 20px;
+            font-size: 13px;
         }}
 
-        .terminal-container {{
-            max-width: 1480px;
-            margin: 0 auto;
-        }}
-
+        /* Terminal Top Bar */
         .terminal-header {{
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background: #11161D;
-            border: 1px solid var(--panel-border-bright);
-            padding: 8px 14px;
-            margin-bottom: 14px;
-        }}
-
-        .terminal-title {{
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            font-size: 13px;
-            font-weight: 800;
-            letter-spacing: 0.08em;
-            color: var(--bb-amber);
-        }}
-
-        .terminal-badge {{
-            background: var(--bb-amber);
-            color: #000;
-            font-size: 10px;
-            font-weight: 800;
-            padding: 2px 6px;
-            letter-spacing: 0.05em;
-        }}
-
-        .terminal-status {{
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            font-size: 11px;
-            color: var(--bb-gray);
-        }}
-
-        .status-tag {{
-            color: var(--bb-green);
-            font-weight: 700;
-        }}
-
-        .section-bar {{
-            background: #141A22;
-            border-left: 4px solid var(--bb-amber);
-            border-top: 1px solid var(--panel-border);
-            border-right: 1px solid var(--panel-border);
-            border-bottom: 1px solid var(--panel-border);
-            padding: 5px 12px;
-            font-size: 11px;
-            font-weight: 800;
-            color: var(--bb-amber);
-            letter-spacing: 0.1em;
-            margin: 18px 0 10px 0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }}
-
-        .section-bar span.sub {{
-            color: var(--bb-gray);
-            font-weight: 500;
-            font-size: 10px;
-        }}
-
-        .grid-4 {{
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 10px;
-            align-items: stretch;
-        }}
-
-        .grid-2 {{
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 10px;
-            align-items: stretch;
-        }}
-
-        .grid-1 {{
-            display: grid;
-            grid-template-columns: minmax(0, 1fr);
-            gap: 10px;
-        }}
-
-        .panel {{
-            background: var(--panel-bg);
+            padding: 12px 20px;
+            background-color: var(--panel);
             border: 1px solid var(--panel-border);
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            min-width: 0;
+            border-left: 4px solid var(--orange);
+            margin-bottom: 20px;
         }}
 
-        .panel-header {{
-            background: #0E131A;
-            border-bottom: 1px solid var(--panel-border);
-            padding: 8px 10px;
+        .brand-title {{
+            font-family: var(--font-mono);
+            font-size: 16px;
+            font-weight: bold;
+            color: var(--orange);
+            letter-spacing: 1px;
+        }}
+
+        .header-meta {{
+            font-family: var(--font-mono);
+            color: var(--text-secondary);
+            font-size: 12px;
+        }}
+
+        /* Section Headings */
+        .section-title {{
+            font-family: var(--font-mono);
+            font-size: 14px;
+            font-weight: bold;
+            color: var(--orange);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
             display: flex;
-            justify-content: space-between;
             align-items: center;
-        }}
-
-        .panel-headline {{
-            font-size: 11px;
-            font-weight: 800;
-            color: var(--bb-white);
-            letter-spacing: 0.05em;
-        }}
-
-        .panel-link {{
-            color: var(--bb-amber);
-            text-decoration: none;
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 0.05em;
-            padding: 1px 5px;
-            border: 1px solid rgba(255, 153, 0, 0.4);
-            background: rgba(255, 153, 0, 0.08);
-        }}
-
-        .panel-link:hover {{
-            background: var(--bb-amber);
-            color: #000;
-        }}
-
-        .panel-body {{
-            padding: 10px;
-            display: flex;
-            flex-direction: column;
             gap: 8px;
-            flex-grow: 1;
         }}
 
-        .metric-cell {{
-            background: var(--panel-inner);
-            border: 1px solid #141C24;
-            padding: 6px 8px;
+        .section-title::after {{
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--panel-border);
         }}
 
-        .metric-label {{
-            font-size: 10px;
-            font-weight: 700;
-            color: var(--bb-gray);
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-        }}
-
-        .metric-value-row {{
-            display: flex;
-            justify-content: space-between;
-            align-items: baseline;
-            margin-top: 2px;
-        }}
-
-        .metric-value {{
-            font-size: 16px;
-            font-weight: 800;
-            color: var(--bb-white);
-        }}
-
-        .dense-table {{
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 10px;
-        }}
-
-        .dense-table th {{
-            text-align: left;
-            padding: 4px 6px;
-            font-size: 9px;
-            color: var(--bb-gray);
-            border-bottom: 1px solid var(--panel-border);
-            text-transform: uppercase;
-        }}
-
-        .dense-table td {{
-            padding: 6px;
-            border-bottom: 1px solid #0F151C;
-        }}
-
-        .dense-table tr:last-child td {{
-            border-bottom: none;
-        }}
-
-        .table-row-name {{
-            font-weight: 700;
-            color: var(--bb-white);
-        }}
-
-        .table-row-val {{
-            font-weight: 800;
-            text-align: right;
-            color: var(--bb-white);
-            white-space: nowrap;
-        }}
-
-        .table-row-delta {{
-            text-align: right;
-            font-weight: 700;
-            white-space: nowrap;
-        }}
-
-        .inline-unit {{
-            font-size: 8px;
-            font-weight: 600;
-            color: var(--bb-cyan);
-            margin-left: 3px;
-        }}
-
-        .up {{ color: var(--bb-green); }}
-        .down {{ color: var(--bb-red); }}
-        .neutral {{ color: var(--bb-neutral); }}
-
-        .panel-footer {{
-            background: #090C10;
-            border-top: 1px solid var(--panel-border);
-            padding: 4px 10px;
-            font-size: 9px;
-            color: var(--bb-gray-dim);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }}
-
-        .footer-tag {{
-            color: var(--bb-amber-dim);
-            font-weight: 700;
-        }}
-
-        /* SHIPPING INDEX SPLIT VIEW */
-        .shipping-panel .panel-body {{
-            padding: 8px;
-            display: block;
-            min-height: 0;
-        }}
-
-        .shipping-split {{
+        /* Layout Grids */
+        .grid-ocean {{
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            height: 100%;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
         }}
 
-        .shipping-index-column {{
-            min-width: 0;
-            display: flex;
-            flex-direction: column;
-            padding: 2px 8px 3px 8px;
+        /* 02. AIR and 03. MACRO Side-by-Side */
+        .grid-air-macro {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
         }}
 
-        .shipping-index-column:first-child {{
-            padding-left: 2px;
-        }}
-
-        .shipping-index-column + .shipping-index-column {{
-            border-left: 1px solid var(--panel-border);
-            padding-right: 2px;
-        }}
-
-        .shipping-index-label {{
-            min-height: 26px;
-            font-size: 10px;
-            font-weight: 800;
-            color: var(--bb-gray);
-            letter-spacing: 0.04em;
-            line-height: 1.3;
-        }}
-
-        .shipping-chart-meta {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin: 2px 0;
-            font-size: 8px;
-            font-weight: 700;
-            color: var(--bb-gray-dim);
-            letter-spacing: 0.06em;
-        }}
-
-        .shipping-sparkline {{
-            height: 48px;
-            margin-bottom: 6px;
-            border-top: 1px solid #111820;
-            border-bottom: 1px solid #111820;
-            background: #06090D;
-            overflow: hidden;
-        }}
-
-        .shipping-sparkline-svg {{
-            display: block;
-            width: 100%;
-            height: 100%;
-        }}
-
-        .sparkline-grid {{
-            stroke: #17212B;
-            stroke-width: 0.45;
-            vector-effect: non-scaling-stroke;
-        }}
-
-        .sparkline-empty {{
-            height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 8px;
-            font-weight: 700;
-            color: var(--bb-gray-dim);
-            letter-spacing: 0.05em;
-        }}
-
-        .shipping-metric-bottom {{
-            margin-top: auto;
-            padding-top: 2px;
-        }}
-
-        .shipping-metric-value {{
-            display: block;
-            color: var(--bb-white);
-            font-size: 16px;
-            font-weight: 800;
-            letter-spacing: -0.03em;
-            white-space: nowrap;
-        }}
-
-        .shipping-metric-value .unit {{
-            margin-left: 2px;
-            font-size: 8px;
-            font-weight: 600;
-            color: var(--bb-cyan);
-            letter-spacing: 0;
-        }}
-
-        .shipping-metric-delta {{
-            display: block;
-            margin-top: 2px;
-            font-size: 9px;
-            font-weight: 700;
-            white-space: nowrap;
-        }}
-
-        .linerlytica-empty {{
-            text-align: center;
-            color: var(--bb-gray);
-            padding: 32px 8px !important;
+        .grid-inner-macro {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
         }}
 
         @media (max-width: 1200px) {{
-            .grid-4 {{
-                grid-template-columns: repeat(2, minmax(0, 1fr));
+            .grid-ocean {{
+                grid-template-columns: repeat(2, 1fr);
+            }}
+            .grid-air-macro {{
+                grid-template-columns: 1fr;
             }}
         }}
 
         @media (max-width: 768px) {{
-            .grid-4,
-            .grid-2 {{
+            .grid-ocean {{
                 grid-template-columns: 1fr;
             }}
-
-            .section-bar {{
-                display: block;
+            .grid-inner-macro {{
+                grid-template-columns: 1fr;
             }}
+        }}
 
-            .section-bar span.sub {{
-                display: block;
-                margin-top: 4px;
-            }}
+        /* Terminal Panel / Card */
+        .card {{
+            background-color: var(--panel);
+            border: 1px solid var(--panel-border);
+            border-radius: 2px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }}
+
+        .card-header {{
+            background-color: var(--panel-header);
+            padding: 10px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--panel-border);
+        }}
+
+        .card-title {{
+            font-family: var(--font-mono);
+            font-size: 12px;
+            font-weight: bold;
+            color: var(--text-primary);
+        }}
+
+        .card-link {{
+            color: var(--orange);
+            text-decoration: none;
+            font-family: var(--font-mono);
+            font-size: 11px;
+        }}
+        .card-link:hover {{
+            text-decoration: underline;
+        }}
+
+        .card-body {{
+            padding: 14px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }}
+
+        /* Tables */
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-family: var(--font-mono);
+            font-size: 12px;
+        }}
+
+        th {{
+            color: var(--text-secondary);
+            font-weight: normal;
+            text-align: left;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--panel-border);
+        }}
+
+        td {{
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(19, 34, 56, 0.4);
+            color: var(--text-primary);
+        }}
+
+        .rank-col {{ width: 28px; color: var(--orange); }}
+        .status-col {{ color: var(--text-secondary); }}
+        .carrier-col {{ font-weight: 500; }}
+        .num-col {{ text-align: right; }}
+        .highlight-orange {{ color: var(--orange); font-weight: bold; }}
+        .highlight-blue {{ color: var(--blue); font-weight: bold; }}
+
+        /* KPI Boxes */
+        .kpi-row {{
+            display: flex;
+            gap: 12px;
+        }}
+
+        .kpi-box {{
+            flex: 1;
+            background: rgba(12, 23, 38, 0.5);
+            padding: 12px;
+            border: 1px solid var(--panel-border);
+            text-align: center;
+        }}
+
+        .kpi-label {{
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }}
+
+        .kpi-value {{
+            font-family: var(--font-mono);
+            font-size: 20px;
+            font-weight: bold;
+            color: #fff;
+            margin-bottom: 4px;
+        }}
+
+        .metric-delta {{
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: bold;
+        }}
+
+        .up {{ color: var(--green); }}
+        .down {{ color: var(--red); }}
+        .neutral {{ color: var(--text-muted); }}
+
+        /* Metric Stack */
+        .kpi-metric-box {{
+            background: rgba(12, 23, 38, 0.5);
+            border: 1px solid var(--panel-border);
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+        .kpi-metric-box:last-child {{
+            margin-bottom: 0;
+        }}
+
+        .metric-label {{
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-secondary);
+        }}
+
+        .metric-val {{
+            font-family: var(--font-mono);
+            font-size: 14px;
+            font-weight: bold;
+            color: #fff;
+        }}
+
+        .empty-row {{
+            text-align: center;
+            color: var(--text-muted);
+            padding: 16px 0;
+            font-family: var(--font-mono);
+            font-size: 11px;
+        }}
+
+        /* Footer */
+        .terminal-footer {{
+            text-align: center;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 30px;
+            padding-top: 15px;
+            border-top: 1px solid var(--panel-border);
         }}
     </style>
 </head>
 <body>
-    <div class="terminal-container">
 
-        <div class="terminal-header">
-            <div class="terminal-title">
-                <span class="terminal-badge">PRO</span>
-                <span>MARKET INTELLIGENCE TERMINAL</span>
-            </div>
-
-            <div class="terminal-status">
-                <span>FEED: <span class="status-tag">LIVE_ONLINE</span></span>
-                <span>SYS_DATE: {datetime.today().strftime('%Y-%m-%d')}</span>
-            </div>
-        </div>
-
-        <!-- ================================================= -->
-        <!-- 01. SEA                                           -->
-        <!-- ================================================= -->
-        <div class="section-bar">
-            <span>01. SEA</span>
-            <span class="sub">MARITIME LOGISTICS & FREIGHT</span>
-        </div>
-
-        <div class="grid-4">
-
-            <!-- 1. SHIPPING INDEX -->
-            <div class="panel shipping-panel">
-                <div class="panel-header">
-                    <span class="panel-headline">SHIPPING INDEX</span>
-                    <a href="Shipping%20Index/index.html" class="panel-link">INDEX &gt;</a>
-                </div>
-
-                <div class="panel-body">
-                    <div class="shipping-split">
-
-                        <!-- SCFI -->
-                        <div class="shipping-index-column">
-                            <div class="shipping-index-label">
-                                SCFI COMPOSITE INDEX
-                            </div>
-
-                            <div class="shipping-chart-meta">
-                                <span>1Y TREND</span>
-                                <span>{shipping['scfi']['history_points']} OBS</span>
-                            </div>
-
-                            <div class="shipping-sparkline">
-                                {shipping['scfi']['sparkline']}
-                            </div>
-
-                            <div class="shipping-metric-bottom">
-                                <span class="shipping-metric-value">
-                                    {shipping['scfi']['price']}
-                                    <span class="unit">PTS</span>
-                                </span>
-
-                                <span class="shipping-metric-delta {shipping['scfi']['class']}">
-                                    {shipping['scfi']['arrow']} {shipping['scfi']['delta']}
-                                </span>
-                            </div>
-                        </div>
-
-                        <!-- BDI -->
-                        <div class="shipping-index-column">
-                            <div class="shipping-index-label">
-                                BALTIC DRY INDEX
-                            </div>
-
-                            <div class="shipping-chart-meta">
-                                <span>1Y TREND</span>
-                                <span>{shipping['bdi']['history_points']} OBS</span>
-                            </div>
-
-                            <div class="shipping-sparkline">
-                                {shipping['bdi']['sparkline']}
-                            </div>
-
-                            <div class="shipping-metric-bottom">
-                                <span class="shipping-metric-value">
-                                    {shipping['bdi']['price']}
-                                    <span class="unit">PTS</span>
-                                </span>
-
-                                <span class="shipping-metric-delta {shipping['bdi']['class']}">
-                                    {shipping['bdi']['arrow']} {shipping['bdi']['delta']}
-                                </span>
-                            </div>
-                        </div>
-
-                    </div>
-                </div>
-
-                <div class="panel-footer">
-                    <span>AS OF: {shipping['date']}</span>
-                    <span class="footer-tag">SCFI / BALTIC · 1Y</span>
-                </div>
-            </div>
-
-            <!-- 2. ALPHALINER FLEET -->
-            <div class="panel">
-                <div class="panel-header">
-                    <span class="panel-headline">ALPHALINER FLEET</span>
-                    <a href="Alphaliner/index.html" class="panel-link">FLEET &gt;</a>
-                </div>
-
-                <div class="panel-body">
-                    <div class="metric-cell">
-                        <span class="metric-label">TOTAL OPERATING FLEET</span>
-                        <div class="metric-value-row">
-                            <span class="metric-value">{alphaliner['total_ships']}</span>
-                        </div>
-                    </div>
-
-                    <div class="metric-cell">
-                        <span class="metric-label">GLOBAL TEU CAPACITY</span>
-                        <div class="metric-value-row">
-                            <span class="metric-value">{alphaliner['total_teu']}</span>
-                        </div>
-                    </div>
-
-                    <div class="metric-cell">
-                        <span class="metric-label">TOP 10 CARRIER SHARE</span>
-                        <div class="metric-value-row">
-                            <span class="metric-value">{alphaliner['top10_share']}</span>
-                            <span style="font-size:9px; color:var(--bb-gray);">AGGREGATE</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="panel-footer">
-                    <span>AS OF: {alphaliner['date']}</span>
-                    <span class="footer-tag">ALPHALINER</span>
-                </div>
-            </div>
-
-            <!-- 3. LINERLYTICA -->
-            <div class="panel">
-                <div class="panel-header">
-                    <span class="panel-headline">LINERLYTICA</span>
-                    <a href="Linerlytica/index.html" class="panel-link">FLEET &gt;</a>
-                </div>
-
-                <div class="panel-body" style="padding: 6px 10px;">
-                    <table class="dense-table">
-                        <thead>
-                            <tr>
-                                <th>SHIP STATUS</th>
-                                <th style="text-align:right;">SHIPS</th>
-                                <th style="text-align:right;">CAPACITY</th>
-                            </tr>
-                        </thead>
-
-                        <tbody>
-                            {linerlytica_rows_html}
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="panel-footer">
-                    <span>AS OF: {linerlytica['date']}</span>
-                    <span class="footer-tag">LINERLYTICA</span>
-                </div>
-            </div>
-
-            <!-- 4. TOP 25 FORWARDERS -->
-            <div class="panel">
-                <div class="panel-header">
-                    <span class="panel-headline">TOP 25 FORWARDERS</span>
-                    <a href="Forwarder/index.html" class="panel-link">FWD &gt;</a>
-                </div>
-
-                <div class="panel-body">
-                    <div class="metric-cell">
-                        <span class="metric-label">RANK 1 OPERATOR</span>
-                        <div class="metric-value-row">
-                            <span class="metric-value" style="font-size:14px; color:var(--bb-amber);">
-                                {html.escape(forwarder['top_forwarder'])}
-                            </span>
-                        </div>
-                    </div>
-
-                    <div class="metric-cell">
-                        <span class="metric-label">TOTAL OCEAN FREIGHT</span>
-                        <div class="metric-value-row">
-                            <span class="metric-value">{forwarder['total_ocean_teu']}</span>
-                        </div>
-                    </div>
-
-                    <div class="metric-cell">
-                        <span class="metric-label">TOTAL AIR TONNAGE</span>
-                        <div class="metric-value-row">
-                            <span class="metric-value">{forwarder['total_air_tons']}</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="panel-footer">
-                    <span>PERIOD: {forwarder['date']}</span>
-                    <span class="footer-tag">A&A TOP 25</span>
-                </div>
-            </div>
-
-        </div>
-
-        <!-- ================================================= -->
-        <!-- 02. AIR                                           -->
-        <!-- ================================================= -->
-        <div class="section-bar">
-            <span>02. AIR</span>
-            <span class="sub">AIR FREIGHT RATE</span>
-        </div>
-
-        <div class="grid-1">
-
-            <div class="panel">
-                <div class="panel-header">
-                    <span class="panel-headline">AIR FREIGHT RATE</span>
-                    <a href="TAC%20Index/index.html" class="panel-link">TAC &gt;</a>
-                </div>
-
-                <div class="panel-body" style="padding: 8px 10px;">
-                    <table class="dense-table">
-                        <thead>
-                            <tr>
-                                <th>AIR TRADE CORRIDOR</th>
-                                <th style="text-align:right;">RATE (USD/KG)</th>
-                                <th style="text-align:right;">CHANGE (%)</th>
-                            </tr>
-                        </thead>
-
-                        <tbody>
-                            <tr>
-                                <td class="table-row-name">FRANKFURT - NORTH AMERICA (FRA-NAM)</td>
-                                <td class="table-row-val">{tac['routes']['FRA - NAM']['price']}</td>
-                                <td class="table-row-delta {tac['routes']['FRA - NAM']['class']}">
-                                    {tac['routes']['FRA - NAM']['arrow']} {tac['routes']['FRA - NAM']['delta']}
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td class="table-row-name">HONG KONG - EUROPE (HKG-EUR)</td>
-                                <td class="table-row-val">{tac['routes']['HKG - EUR']['price']}</td>
-                                <td class="table-row-delta {tac['routes']['HKG - EUR']['class']}">
-                                    {tac['routes']['HKG - EUR']['arrow']} {tac['routes']['HKG - EUR']['delta']}
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td class="table-row-name">HONG KONG - NORTH AMERICA (HKG-NAM)</td>
-                                <td class="table-row-val">{tac['routes']['HKG - NAM']['price']}</td>
-                                <td class="table-row-delta {tac['routes']['HKG - NAM']['class']}">
-                                    {tac['routes']['HKG - NAM']['arrow']} {tac['routes']['HKG - NAM']['delta']}
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="panel-footer">
-                    <span>AS OF: {tac['date']}</span>
-                    <span class="footer-tag">TAC INDEX</span>
-                </div>
-            </div>
-
-        </div>
-
-        <!-- ================================================= -->
-        <!-- 03. MACRO                                         -->
-        <!-- ================================================= -->
-        <div class="section-bar">
-            <span>03. MACRO</span>
-            <span class="sub">ENERGY, MACROECONOMICS & SUPPLY CHAIN</span>
-        </div>
-
-        <div class="grid-2">
-
-            <!-- 1. BUNKER & CRUDE OIL -->
-            <div class="panel">
-                <div class="panel-header">
-                    <span class="panel-headline">BUNKER & CRUDE OIL</span>
-                    <a href="BunkerPrice/index.html" class="panel-link">OIL &gt;</a>
-                </div>
-
-                <div class="panel-body" style="padding: 6px 10px;">
-                    <table class="dense-table">
-                        <thead>
-                            <tr>
-                                <th>FUEL / GRADE</th>
-                                <th style="text-align:right;">PRICE</th>
-                                <th style="text-align:right;">CHG (%)</th>
-                            </tr>
-                        </thead>
-
-                        <tbody>
-                            <tr>
-                                <td class="table-row-name">RTM VLSFO</td>
-                                <td class="table-row-val">{bunker['vlsfo']['Rotterdam']['price']}</td>
-                                <td class="table-row-delta {bunker['vlsfo']['Rotterdam']['class']}">
-                                    {bunker['vlsfo']['Rotterdam']['arrow']} {bunker['vlsfo']['Rotterdam']['delta']}
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td class="table-row-name">FUJ VLSFO</td>
-                                <td class="table-row-val">{bunker['vlsfo']['Fujairah']['price']}</td>
-                                <td class="table-row-delta {bunker['vlsfo']['Fujairah']['class']}">
-                                    {bunker['vlsfo']['Fujairah']['arrow']} {bunker['vlsfo']['Fujairah']['delta']}
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td class="table-row-name">SIN VLSFO</td>
-                                <td class="table-row-val">{bunker['vlsfo']['Singapore']['price']}</td>
-                                <td class="table-row-delta {bunker['vlsfo']['Singapore']['class']}">
-                                    {bunker['vlsfo']['Singapore']['arrow']} {bunker['vlsfo']['Singapore']['delta']}
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td class="table-row-name" style="color:var(--bb-amber);">DUBAI CRUDE</td>
-                                <td class="table-row-val">{bunker['crude']['Dubai']['price']}</td>
-                                <td class="table-row-delta {bunker['crude']['Dubai']['class']}">
-                                    {bunker['crude']['Dubai']['arrow']} {bunker['crude']['Dubai']['delta']}
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td class="table-row-name" style="color:var(--bb-amber);">BRENT CRUDE</td>
-                                <td class="table-row-val">{bunker['crude']['Brent']['price']}</td>
-                                <td class="table-row-delta {bunker['crude']['Brent']['class']}">
-                                    {bunker['crude']['Brent']['arrow']} {bunker['crude']['Brent']['delta']}
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td class="table-row-name" style="color:var(--bb-amber);">WTI CRUDE</td>
-                                <td class="table-row-val">{bunker['crude']['WTI']['price']}</td>
-                                <td class="table-row-delta {bunker['crude']['WTI']['class']}">
-                                    {bunker['crude']['WTI']['arrow']} {bunker['crude']['WTI']['delta']}
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="panel-footer">
-                    <span>AS OF: {bunker['date']}</span>
-                    <span class="footer-tag">USD/MT & USD/BBL</span>
-                </div>
-            </div>
-
-            <!-- 2. MACRO ECONOMIES & GSCPI -->
-            <div class="panel">
-                <div class="panel-header">
-                    <span class="panel-headline">MACRO ECONOMIES & GSCPI</span>
-                    <a href="MacroEconomies/index.html" class="panel-link">MACRO &gt;</a>
-                </div>
-
-                <div class="panel-body" style="padding: 8px 10px;">
-                    <table class="dense-table">
-                        <thead>
-                            <tr>
-                                <th>ECONOMIC INDICATOR</th>
-                                <th style="text-align:right;">VALUE</th>
-                                <th style="text-align:right;">CHANGE (%)</th>
-                            </tr>
-                        </thead>
-
-                        <tbody>
-                            <tr>
-                                <td class="table-row-name">GLOBAL SUPPLY CHAIN PRESSURE (GSCPI)</td>
-                                <td class="table-row-val">
-                                    {macro['gscpi']['value']}
-                                    <span class="inline-unit">PTS</span>
-                                </td>
-                                <td class="table-row-delta {macro['gscpi']['class']}">
-                                    {macro['gscpi']['arrow']} {macro['gscpi']['delta']}
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td class="table-row-name">US REAL GDP GROWTH (QOQ ANNUALIZED)</td>
-                                <td class="table-row-val">{macro['us_gdp']['value']}</td>
-                                <td class="table-row-delta {macro['us_gdp']['class']}">
-                                    {macro['us_gdp']['arrow']} {macro['us_gdp']['delta']}
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td class="table-row-name">US HEADLINE CPI INFLATION (YOY)</td>
-                                <td class="table-row-val">{macro['us_cpi']['value']}</td>
-                                <td class="table-row-delta {macro['us_cpi']['class']}">
-                                    {macro['us_cpi']['arrow']} {macro['us_cpi']['delta']}
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="panel-footer">
-                    <span>AS OF: {macro['date']}</span>
-                    <span class="footer-tag">NY FED / BEA / BLS</span>
-                </div>
-            </div>
-
-        </div>
-
+    <!-- Header -->
+    <div class="terminal-header">
+        <div class="brand-title">MI&lt;GO&gt; | MARKET INTELLIGENCE PORTAL</div>
+        <div class="header-meta">SYS.TIME: {now_str} KST | TERMINAL ACTIVE</div>
     </div>
+
+    <!-- 01. OCEAN SECTION -->
+    <div class="section-title">01. OCEAN INTELLIGENCE</div>
+    <div class="grid-ocean">
+        <!-- Card 1: Shipping Index -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">SHIPPING INDEX</span>
+                <a href="Shipping Index/index.html" class="card-link">[DETAIL]</a>
+            </div>
+            <div class="card-body">
+                <div class="kpi-row">
+                    <div class="kpi-box">
+                        <div class="kpi-label">SCFI COMPOSITE</div>
+                        <div class="kpi-value">{data['shipping']['scfi']['current']}</div>
+                        <div class="metric-delta {data['shipping']['scfi']['dir']}">{data['shipping']['scfi']['change']}</div>
+                    </div>
+                    <div class="kpi-box">
+                        <div class="kpi-label">BDI COMPOSITE</div>
+                        <div class="kpi-value">{data['shipping']['bdi']['current']}</div>
+                        <div class="metric-delta {data['shipping']['bdi']['dir']}">{data['shipping']['bdi']['change']}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Card 2: Linerlytica -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">LINERLYTICA FLEET SNAPSHOT</span>
+                <a href="Linerlytica/index.html" class="card-link">[DETAIL]</a>
+            </div>
+            <div class="card-body">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th class="num-col">Ships</th>
+                            <th class="num-col">TEU</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {fleet_rows}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Card 3: Alphaliner -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">ALPHALINER TOP 5</span>
+                <a href="Alphaliner/index.html" class="card-link">[DETAIL]</a>
+            </div>
+            <div class="card-body">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Carrier</th>
+                            <th class="num-col">TEU</th>
+                            <th class="num-col">Share</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {alphaliner_rows}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Card 4: Forwarder -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">FORWARDER TOP 5</span>
+                <a href="Forwarder/index.html" class="card-link">[DETAIL]</a>
+            </div>
+            <div class="card-body">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Forwarder</th>
+                            <th class="num-col">Ocean TEU</th>
+                            <th class="num-col">Air (T)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {forwarder_rows}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 02. AIR & 03. MACRO SIDE-BY-SIDE GRID -->
+    <div class="grid-air-macro">
+        <!-- 02. AIR -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title" style="color: var(--orange);">02. AIR FREIGHT (TAC INDEX)</span>
+                <a href="TAC Index/index.html" class="card-link">[DETAIL]</a>
+            </div>
+            <div class="card-body">
+                {tac_items}
+            </div>
+        </div>
+
+        <!-- 03. MACRO & ENERGY -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title" style="color: var(--orange);">03. MACRO & ENERGY</span>
+                <a href="BunkerPrice/index.html" class="card-link">[DETAIL]</a>
+            </div>
+            <div class="card-body">
+                <div class="grid-inner-macro">
+                    <div>
+                        <div class="kpi-label" style="text-align: left; margin-bottom: 6px; font-weight: bold; color: var(--text-primary);">VLSFO BENCHMARKS</div>
+                        {vlsfo_items}
+                    </div>
+                    <div>
+                        <div class="kpi-label" style="text-align: left; margin-bottom: 6px; font-weight: bold; color: var(--text-primary);">CRUDE BENCHMARKS</div>
+                        {crude_items}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="terminal-footer">
+        MI TERMINAL PLATFORM &bull; AUTOMATED INTELLIGENCE AGGREGATOR &bull; &copy; {datetime.datetime.now().year}
+    </div>
+
 </body>
 </html>
 """
     return html_content
 
-# ==========================================
-# MAIN EXECUTION
-# ==========================================
+# ==============================================================================
+# Main Orchestrator
+# ==============================================================================
+
 def main():
-    print("[INFO] Fetching module metrics from verified DB schemas...")
+    print("=" * 60)
+    print("Generating MI Portal Dashboard & Summary...")
+    print("=" * 60)
 
-    shipping_data = fetch_shipping_data()
-    alphaliner_data = fetch_alphaliner_data()
-    linerlytica_data = fetch_linerlytica_data()
-    forwarder_data = fetch_forwarder_data()
-    tac_data = fetch_tac_data()
-    bunker_data = fetch_bunker_and_crude_data()
-    macro_data = fetch_macro_data()
-
-    print(f"[INFO] Generating Bloomberg Terminal HTML -> {OUTPUT_HTML}")
-
-    html_content = generate_html(
-        shipping=shipping_data,
-        alphaliner=alphaliner_data,
-        linerlytica=linerlytica_data,
-        forwarder=forwarder_data,
-        tac=tac_data,
-        bunker=bunker_data,
-        macro=macro_data,
-    )
-
-    with open(OUTPUT_HTML, "w", encoding="utf-8") as file:
-        file.write(html_content)
-
-    print(f"[INFO] Exporting summary JSON -> {OUTPUT_JSON}")
-
-    summary_data = {
-        "generated_at": datetime.now().isoformat(),
-        "shipping": shipping_data,
-        "alphaliner": alphaliner_data,
-        "linerlytica": linerlytica_data,
-        "forwarder": forwarder_data,
-        "tac": tac_data,
-        "bunker": bunker_data,
-        "macro": macro_data,
+    # 1. Load Data
+    dashboard_data = {
+        "generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "shipping": load_shipping_index_data(),
+        "linerlytica": load_linerlytica_data(),
+        "alphaliner": load_alphaliner_data(),
+        "forwarder": load_forwarder_data(),
+        "tac": load_tac_index_data(),
+        "bunker": load_bunker_and_crude_data(),
     }
 
-    with open(OUTPUT_JSON, "w", encoding="utf-8") as file:
-        json.dump(
-            summary_data,
-            file,
-            ensure_ascii=False,
-            indent=2,
-        )
+    # 2. Write JSON Summary
+    try:
+        with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
+            json.dump(dashboard_data, f, ensure_ascii=False, indent=2)
+        print(f"[Success] Generated JSON: {OUTPUT_JSON}")
+    except Exception as e:
+        print(f"[Error] Failed to write JSON: {e}")
 
-    print("[SUCCESS] Market Intelligence root dashboard generated successfully.")
+    # 3. Generate & Write HTML Dashboard
+    try:
+        html_rendered = generate_portal_html(dashboard_data)
+        with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
+            f.write(html_rendered)
+        print(f"[Success] Generated Dashboard: {OUTPUT_HTML}")
+    except Exception as e:
+        print(f"[Error] Failed to write HTML: {e}")
+        sys.exit(1)
+
+    print("=" * 60)
+    print("MI Portal Dashboard Build Completed Successfully.")
+    print("=" * 60)
 
 if __name__ == "__main__":
     main()
