@@ -1457,7 +1457,7 @@ def generate_html(shipping, alphaliner, bunker, forwarder, tac, macro):
 
         <div class="terminal-header">
             <div class="terminal-title">
-                <span class="terminal-badge">MI // PRO</span>
+                <span class="terminal-badge">PRO</span>
                 <span>MARKET INTELLIGENCE TERMINAL</span>
             </div>
 
