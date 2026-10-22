@@ -39,9 +39,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
 
       # =====================================================
       # 3. Chrome 설치
+      # Shipping Index / Alphaliner / BunkerPrice의
+      # Selenium 기반 Chrome 실행을 위해 유지
       # =====================================================
       - name: Set up Google Chrome
         id: setup-chrome
@@ -51,14 +55,23 @@ jobs:
 
       # =====================================================
       # 4. Python 라이브러리 설치
+      # 모든 의존성은 root requirements.txt에서 관리
       # =====================================================
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-          pip install pandas flask selenium beautifulsoup4 lxml webdriver-manager requests
+          python -m pip install -r requirements.txt
 
       # =====================================================
-      # 5. Shipping Index 크롤링 및 정적 파일 생성
+      # 5. Playwright Chromium 및 Linux 시스템 의존성 설치
+      # Linerlytica Playwright 크롤러 실행에 필요
+      # =====================================================
+      - name: Install Playwright Chromium and dependencies
+        run: |
+          python -m playwright install --with-deps chromium
+
+      # =====================================================
+      # 6. Shipping Index 크롤링 및 정적 파일 생성
       # =====================================================
       - name: Crawl Shipping Index and generate static dashboard
         env:
@@ -69,7 +82,7 @@ jobs:
           python "Shipping Index/ShippingIndex_SCFI&BDI.py"
 
       # =====================================================
-      # 6. Shipping Index 생성 파일 확인
+      # 7. Shipping Index 생성 파일 확인
       # =====================================================
       - name: Verify Shipping Index generated files
         run: |
@@ -83,7 +96,7 @@ jobs:
           echo "Shipping Index verification passed."
 
       # =====================================================
-      # 7. Alphaliner 크롤링 및 정적 파일 생성
+      # 8. Alphaliner 크롤링 및 정적 파일 생성
       # =====================================================
       - name: Crawl Alphaliner and generate static dashboard
         env:
@@ -92,7 +105,7 @@ jobs:
           python "Alphaliner/alphaliner.py" --cron
 
       # =====================================================
-      # 8. Alphaliner 생성 결과 확인
+      # 9. Alphaliner 생성 결과 확인
       # =====================================================
       - name: Verify Alphaliner generated files
         run: |
@@ -111,7 +124,7 @@ jobs:
           echo "Alphaliner index.html verification passed."
 
       # =====================================================
-      # 8-1. Forwarder 크롤링 및 정적 파일 생성
+      # 10. Forwarder 크롤링 및 정적 파일 생성
       # =====================================================
       - name: Crawl Forwarder and generate static dashboard
         run: |
@@ -141,7 +154,7 @@ jobs:
           ls -alh "Forwarder"
 
       # =====================================================
-      # 8-2. Forwarder 생성 결과 확인
+      # 11. Forwarder 생성 결과 확인
       # =====================================================
       - name: Verify Forwarder generated files
         run: |
@@ -173,7 +186,7 @@ jobs:
           echo "Forwarder Bloomberg/MI Terminal dashboard verification passed."
 
       # =====================================================
-      # 8-3. Bunker Price / Crude Oil 크롤링 및 정적 파일 생성
+      # 12. Bunker Price / Crude Oil 크롤링 및 정적 파일 생성
       # =====================================================
       - name: Crawl Bunker Price and generate static dashboard
         env:
@@ -182,7 +195,7 @@ jobs:
           python "BunkerPrice/bunker_price.py" --build-static --refresh
 
       # =====================================================
-      # 8-4. Bunker Price / Crude Oil 생성 결과 확인
+      # 13. Bunker Price / Crude Oil 생성 결과 확인
       # =====================================================
       - name: Verify Bunker Price generated files
         run: |
@@ -217,7 +230,8 @@ jobs:
           echo "Bunker Price Bloomberg-style dashboard verification passed."
 
       # =====================================================
-      # 8-5. Linerlytica 크롤링 및 정적 파일 생성
+      # 14. Linerlytica 크롤링 및 정적 파일 생성
+      # Playwright Chromium은 상단 설치 단계에서 준비됨
       # =====================================================
       - name: Crawl Linerlytica and generate static dashboard
         env:
@@ -226,7 +240,7 @@ jobs:
           python "Linerlytica/Linerlytica.py"
 
       # =====================================================
-      # 8-6. Linerlytica 생성 결과 확인
+      # 15. Linerlytica 생성 결과 확인
       # =====================================================
       - name: Verify Linerlytica generated files
         run: |
@@ -239,7 +253,7 @@ jobs:
           echo "Linerlytica verification passed."
 
       # =====================================================
-      # 8-7. 메인 포털 대시보드(루트 index.html) 생성
+      # 16. 메인 포털 대시보드(루트 index.html) 생성
       # =====================================================
       - name: Generate Main Portal Dashboard
         run: |
@@ -253,7 +267,7 @@ jobs:
           echo "Main Portal Dashboard verification passed."
 
       # =====================================================
-      # 9. 변경된 DB / CSV / JSON / HTML을 Commit & Push
+      # 17. 변경된 DB / CSV / JSON / HTML Commit & Push
       # =====================================================
       - name: Commit and push dashboard data
         run: |
