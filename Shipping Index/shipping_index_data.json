@@ -1,6 +1,6 @@
 {
   "status": "success",
-  "generated_at": "2026-10-23 01:19:36",
+  "generated_at": "2026-10-23 07:18:59",
   "source_database": "index_history.db",
   "indexes": {
     "SCFI": {
@@ -77268,11 +77268,107 @@
           "REGION": "호주",
           "VALUE": 2553.0,
           "INDEX_NAME": "SCFI"
+        },
+        {
+          "DATE": "2026-10-23",
+          "REGION": "남미동안",
+          "VALUE": 5053.0,
+          "INDEX_NAME": "SCFI"
+        },
+        {
+          "DATE": "2026-10-23",
+          "REGION": "남미서안",
+          "VALUE": 6020.0,
+          "INDEX_NAME": "SCFI"
+        },
+        {
+          "DATE": "2026-10-23",
+          "REGION": "남아프리카",
+          "VALUE": 4198.0,
+          "INDEX_NAME": "SCFI"
+        },
+        {
+          "DATE": "2026-10-23",
+          "REGION": "동남아",
+          "VALUE": 1146.0,
+          "INDEX_NAME": "SCFI"
+        },
+        {
+          "DATE": "2026-10-23",
+          "REGION": "동아프리카",
+          "VALUE": 3542.0,
+          "INDEX_NAME": "SCFI"
+        },
+        {
+          "DATE": "2026-10-23",
+          "REGION": "미동안",
+          "VALUE": 10388.0,
+          "INDEX_NAME": "SCFI"
+        },
+        {
+          "DATE": "2026-10-23",
+          "REGION": "미서안",
+          "VALUE": 7521.0,
+          "INDEX_NAME": "SCFI"
+        },
+        {
+          "DATE": "2026-10-23",
+          "REGION": "북유럽",
+          "VALUE": 2351.0,
+          "INDEX_NAME": "SCFI"
+        },
+        {
+          "DATE": "2026-10-23",
+          "REGION": "서아프리카",
+          "VALUE": 4281.0,
+          "INDEX_NAME": "SCFI"
+        },
+        {
+          "DATE": "2026-10-23",
+          "REGION": "일동안",
+          "VALUE": 335.0,
+          "INDEX_NAME": "SCFI"
+        },
+        {
+          "DATE": "2026-10-23",
+          "REGION": "일서안",
+          "VALUE": 326.0,
+          "INDEX_NAME": "SCFI"
+        },
+        {
+          "DATE": "2026-10-23",
+          "REGION": "종합",
+          "VALUE": 3681.34,
+          "INDEX_NAME": "SCFI"
+        },
+        {
+          "DATE": "2026-10-23",
+          "REGION": "중동",
+          "VALUE": 6499.0,
+          "INDEX_NAME": "SCFI"
+        },
+        {
+          "DATE": "2026-10-23",
+          "REGION": "지중해",
+          "VALUE": 3255.0,
+          "INDEX_NAME": "SCFI"
+        },
+        {
+          "DATE": "2026-10-23",
+          "REGION": "한국",
+          "VALUE": 376.0,
+          "INDEX_NAME": "SCFI"
+        },
+        {
+          "DATE": "2026-10-23",
+          "REGION": "호주",
+          "VALUE": 2542.0,
+          "INDEX_NAME": "SCFI"
         }
       ],
-      "record_count": 12874,
-      "latest_date": "2026-10-16",
-      "last_sync": "2026-10-23 01:19:36"
+      "record_count": 12890,
+      "latest_date": "2026-10-23",
+      "last_sync": "2026-10-23 07:18:59"
     },
     "BDI": {
       "regions": [
@@ -331517,7 +331613,7 @@
       ],
       "record_count": 42372,
       "latest_date": "2026-10-22",
-      "last_sync": "2026-10-23 01:19:36"
+      "last_sync": "2026-10-23 07:18:59"
     }
   }
 }
