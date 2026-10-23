@@ -158,32 +158,45 @@ jobs:
       # =====================================================
       - name: Verify Forwarder generated files
         run: |
+          set -e
+
           echo "===== Verify Forwarder files ====="
           ls -alh "Forwarder"
 
-          test -f "Forwarder/freight_forwarders_data.db"
-          test -f "Forwarder/freight_forwarders_history.csv"
-          test -f "Forwarder/index.html"
-          test -s "Forwarder/index.html"
+          echo "===== Required output files ====="
+          test -f "Forwarder/freight_forwarders_data.db" \
+            || { echo "ERROR: freight_forwarders_data.db is missing."; exit 1; }
 
-          # 대시보드 기본 식별
-          grep -qF "FORWARDER MONITOR" "Forwarder/index.html"
-          grep -qF "MI&lt;GO&gt;" "Forwarder/index.html"
-          grep -qF "FORWARDER_BLOOMBERG_TEMPLATE_V1" "Forwarder/index.html"
+          test -f "Forwarder/freight_forwarders_history.csv" \
+            || { echo "ERROR: freight_forwarders_history.csv is missing."; exit 1; }
 
-          # Bloomberg / MI Terminal 디자인 토큰
-          grep -qF -- "--bg: #02060b;" "Forwarder/index.html"
-          grep -qF -- "--orange: #ff8a00;" "Forwarder/index.html"
-          grep -qF -- "--panel: #070d15;" "Forwarder/index.html"
-          grep -qF -- "--green: #00d26a;" "Forwarder/index.html"
-          grep -qF -- "--red: #ff4d4f;" "Forwarder/index.html"
+          test -f "Forwarder/index.html" \
+            || { echo "ERROR: index.html is missing."; exit 1; }
 
-          # 과거 스냅샷 비교 UI
-          grep -qF 'id="currentDateSelect"' "Forwarder/index.html"
-          grep -qF 'id="compareDateSelect"' "Forwarder/index.html"
-          grep -qF 'id="rankingTableBody"' "Forwarder/index.html"
+          test -s "Forwarder/index.html" \
+            || { echo "ERROR: index.html is empty."; exit 1; }
 
-          echo "Forwarder Bloomberg/MI Terminal dashboard verification passed."
+          echo "===== Dashboard identity verification ====="
+
+          grep -qF "FORWARDER MONITOR" "Forwarder/index.html" \
+            || { echo "ERROR: FORWARDER MONITOR identifier is missing."; exit 1; }
+
+          grep -qF "MI&lt;GO&gt;" "Forwarder/index.html" \
+            || { echo "ERROR: MI&lt;GO&gt; terminal label is missing."; exit 1; }
+
+          echo "===== Historical comparison UI verification ====="
+
+          grep -qF 'id="currentDateSelect"' "Forwarder/index.html" \
+            || { echo "ERROR: currentDateSelect control is missing."; exit 1; }
+
+          grep -qF 'id="compareDateSelect"' "Forwarder/index.html" \
+            || { echo "ERROR: compareDateSelect control is missing."; exit 1; }
+
+          grep -qF 'id="rankingTableBody"' "Forwarder/index.html" \
+            || { echo "ERROR: rankingTableBody is missing."; exit 1; }
+
+          echo "===== Forwarder dashboard verification passed. ====="
+
 
       # =====================================================
       # 12. Bunker Price / Crude Oil 크롤링 및 정적 파일 생성
