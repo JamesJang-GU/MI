@@ -1314,26 +1314,37 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             }
         }
 
-        function exportToCSV() {
-            const latestDate = DATA_PAYLOAD.dates[DATA_PAYLOAD.dates.length - 1];
-            const ops = DATA_PAYLOAD.snapshots[latestDate]?.operators || [];
-            if (!ops.length) return;
+function exportToCSV() {
+    const latestDate = DATA_PAYLOAD.dates[DATA_PAYLOAD.dates.length - 1];
+    const ops = DATA_PAYLOAD.snapshots[latestDate]?.operators || [];
 
-            let csvContent = "\uFEFF"; // UTF-8 BOM
-            csvContent += "Rank,Operator,Total TEU,Total Ships,Market Share %,Owned TEU,Owned Ships,Owned Share %,Chartered TEU,Chartered Ships,Chartered Share %,Orderbook TEU,Orderbook Ships,Orderbook Share %\n";
+    if (!ops.length) {
+        alert('No operator data is available for CSV export.');
+        return;
+    }
 
-            ops.forEach(o => {
-                csvContent += `${o.rank},"${o.operator}",${o.total_teu},${o.total_ships},${o.market_share},${o.owned_teu},${o.owned_ships},${o.owned_share},${o.chartered_teu},${o.chartered_ships},${o.chartered_share},${o.orderbook_teu},${o.orderbook_ships},${o.orderbook_share}\n`;
-            });
+    let csvContent = "\\uFEFF";
+    csvContent += "Rank,Operator,Total TEU,Total Ships,Market Share %,Owned TEU,Owned Ships,Owned Share %,Chartered TEU,Chartered Ships,Chartered Share %,Orderbook TEU,Orderbook Ships,Orderbook Share %\\n";
 
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement("a");
-            link.href = URL.createObjectURL(blob);
-            link.setAttribute("download", `Alphaliner_TOP100_${latestDate}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
+    ops.forEach(o => {
+        const operator = String(o.operator || '').replace(/"/g, '""');
+
+        csvContent += `${o.rank},"${operator}",${o.total_teu},${o.total_ships},${o.market_share},${o.owned_teu},${o.owned_ships},${o.owned_share},${o.chartered_teu},${o.chartered_ships},${o.chartered_share},${o.orderbook_teu},${o.orderbook_ships},${o.orderbook_share}\\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute("download", `Alphaliner_TOP100_${latestDate}.csv`);
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(link.href);
+}
+
 
         window.onload = initDashboard;
     </script>
