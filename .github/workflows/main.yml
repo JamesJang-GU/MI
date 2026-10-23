@@ -20,11 +20,16 @@ concurrency:
 
 jobs:
   update-dashboards:
+    name: Update MI Data and Dashboards
     runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    env:
+      PYTHONUNBUFFERED: "1"
 
     steps:
       # =====================================================
-      # 1. 저장소 및 기존 DB 다운로드
+      # 1. 저장소 체크아웃
       # =====================================================
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -43,23 +48,72 @@ jobs:
           cache-dependency-path: requirements.txt
 
       # =====================================================
-      # 3. Chrome 설치
-      # Shipping Index / Alphaliner / BunkerPrice의
-      # Selenium 기반 Chrome 실행을 위해 유지
+      # 3. Chrome 및 호환 ChromeDriver 설치
+      #
+      # Selenium 기반 모듈:
+      # - Shipping Index
+      # - Alphaliner
+      # - BunkerPrice
+      #
+      # Chrome과 호환되는 ChromeDriver를 함께 설치합니다.
       # =====================================================
-      - name: Set up Google Chrome
+      - name: Set up Google Chrome and matching ChromeDriver
         id: setup-chrome
         uses: browser-actions/setup-chrome@v1
         with:
           chrome-version: stable
+          install-chromedriver: true
+
+      - name: Add Chrome and ChromeDriver to PATH
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CHROME_PATH="${{ steps.setup-chrome.outputs.chrome-path }}"
+          CHROMEDRIVER_PATH="${{ steps.setup-chrome.outputs.chromedriver-path }}"
+
+          echo "Chrome path: ${CHROME_PATH}"
+          echo "ChromeDriver path: ${CHROMEDRIVER_PATH}"
+
+          if [ -n "${CHROME_PATH}" ] && [ -f "${CHROME_PATH}" ]; then
+            dirname "${CHROME_PATH}" >> "$GITHUB_PATH"
+          fi
+
+          if [ -n "${CHROMEDRIVER_PATH}" ] && [ -f "${CHROMEDRIVER_PATH}" ]; then
+            dirname "${CHROMEDRIVER_PATH}" >> "$GITHUB_PATH"
+          fi
+
+      - name: Verify Chrome and ChromeDriver environment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "===== Chrome executable ====="
+          echo "${{ steps.setup-chrome.outputs.chrome-path }}"
+
+          echo "===== ChromeDriver executable ====="
+          echo "${{ steps.setup-chrome.outputs.chromedriver-path }}"
+
+          echo "===== Google Chrome version ====="
+          "${{ steps.setup-chrome.outputs.chrome-path }}" --version || true
+          google-chrome --version || true
+
+          echo "===== ChromeDriver version ====="
+          "${{ steps.setup-chrome.outputs.chromedriver-path }}" --version || true
+          chromedriver --version || true
+
+          echo "===== PATH ====="
+          echo "$PATH"
 
       # =====================================================
       # 4. Python 라이브러리 설치
       # 모든 의존성은 root requirements.txt에서 관리
       # =====================================================
       - name: Install Python packages
+        shell: bash
         run: |
-          python -m pip install --upgrade pip
+          set -euo pipefail
+          python -m pip install --upgrade pip setuptools wheel
           python -m pip install -r requirements.txt
 
       # =====================================================
@@ -67,7 +121,9 @@ jobs:
       # Linerlytica Playwright 크롤러 실행에 필요
       # =====================================================
       - name: Install Playwright Chromium and dependencies
+        shell: bash
         run: |
+          set -euo pipefail
           python -m playwright install --with-deps chromium
 
       # =====================================================
@@ -78,14 +134,20 @@ jobs:
           KSG_ID: ${{ secrets.KSG_ID }}
           KSG_PW: ${{ secrets.KSG_PW }}
           CHROME_BINARY: ${{ steps.setup-chrome.outputs.chrome-path }}
+          GOOGLE_CHROME_BIN: ${{ steps.setup-chrome.outputs.chrome-path }}
+        shell: bash
         run: |
+          set -euo pipefail
           python "Shipping Index/ShippingIndex_SCFI&BDI.py"
 
       # =====================================================
       # 7. Shipping Index 생성 파일 확인
       # =====================================================
       - name: Verify Shipping Index generated files
+        shell: bash
         run: |
+          set -euo pipefail
+
           echo "===== Shipping Index files ====="
           ls -alh "Shipping Index"
 
@@ -101,33 +163,46 @@ jobs:
       - name: Crawl Alphaliner and generate static dashboard
         env:
           CHROME_BINARY: ${{ steps.setup-chrome.outputs.chrome-path }}
+          GOOGLE_CHROME_BIN: ${{ steps.setup-chrome.outputs.chrome-path }}
+        shell: bash
         run: |
+          set -euo pipefail
           python "Alphaliner/alphaliner.py" --cron
 
       # =====================================================
       # 9. Alphaliner 생성 결과 확인
       # =====================================================
       - name: Verify Alphaliner generated files
+        shell: bash
         run: |
+          set -euo pipefail
+
           echo "===== Alphaliner files ====="
           ls -alh "Alphaliner"
 
-          test -f "Alphaliner/alphaliner_data.db"
+          # 현재 Alphaliner 장기 이력 DB 파일명
+          test -f "Alphaliner/alphaliner_history.db"
           test -f "Alphaliner/alphaliner_data.json"
           test -f "Alphaliner/index.html"
+          test -s "Alphaliner/index.html"
 
-          if grep -qF "Alphaliner Dashboard Template (alphaliner.html) Missing" "Alphaliner/index.html"; then
+          if grep -qF \
+            "Alphaliner Dashboard Template (alphaliner.html) Missing" \
+            "Alphaliner/index.html"; then
             echo "ERROR: Old Template Missing content still exists in Alphaliner/index.html"
             exit 1
           fi
 
-          echo "Alphaliner index.html verification passed."
+          echo "Alphaliner verification passed."
 
       # =====================================================
       # 10. Forwarder 크롤링 및 정적 파일 생성
       # =====================================================
       - name: Crawl Forwarder and generate static dashboard
+        shell: bash
         run: |
+          set -euo pipefail
+
           echo "===== Forwarder folder structure ====="
           find "Forwarder" -maxdepth 3 -type f | sort
 
@@ -135,10 +210,12 @@ jobs:
           find "Forwarder" -maxdepth 3 -type f -iname "*.py" -print
 
           # A&A Top 25 Dashboard 코드가 담긴 Python 파일 자동 탐색
-          FORWARDER_SCRIPT=$(grep -rl \
-            --include="*.py" \
-            "A&A Top 25 Dashboard" \
-            "Forwarder" | head -n 1)
+          FORWARDER_SCRIPT=$(
+            grep -rl \
+              --include="*.py" \
+              "A&A Top 25 Dashboard" \
+              "Forwarder" | head -n 1
+          )
 
           if [ -z "$FORWARDER_SCRIPT" ]; then
             echo "ERROR: Forwarder Python script was not found."
@@ -157,8 +234,9 @@ jobs:
       # 11. Forwarder 생성 결과 확인
       # =====================================================
       - name: Verify Forwarder generated files
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           echo "===== Verify Forwarder files ====="
           ls -alh "Forwarder"
@@ -195,8 +273,7 @@ jobs:
           grep -qF 'id="rankingTableBody"' "Forwarder/index.html" \
             || { echo "ERROR: rankingTableBody is missing."; exit 1; }
 
-          echo "===== Forwarder dashboard verification passed. ====="
-
+          echo "Forwarder dashboard verification passed."
 
       # =====================================================
       # 12. Bunker Price / Crude Oil 크롤링 및 정적 파일 생성
@@ -204,15 +281,19 @@ jobs:
       - name: Crawl Bunker Price and generate static dashboard
         env:
           CHROME_BINARY: ${{ steps.setup-chrome.outputs.chrome-path }}
+          GOOGLE_CHROME_BIN: ${{ steps.setup-chrome.outputs.chrome-path }}
+        shell: bash
         run: |
+          set -euo pipefail
           python "BunkerPrice/bunker_price.py" --build-static --refresh
 
       # =====================================================
       # 13. Bunker Price / Crude Oil 생성 결과 확인
       # =====================================================
       - name: Verify Bunker Price generated files
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           echo "===== BunkerPrice files ====="
           ls -alh "BunkerPrice"
@@ -275,7 +356,6 @@ jobs:
 
           echo "Bunker Price / Crude Oil dashboard verification passed."
 
-
       # =====================================================
       # 14. Linerlytica 크롤링 및 정적 파일 생성
       # Playwright Chromium은 상단 설치 단계에서 준비됨
@@ -283,19 +363,26 @@ jobs:
       - name: Crawl Linerlytica and generate static dashboard
         env:
           CHROME_BINARY: ${{ steps.setup-chrome.outputs.chrome-path }}
+          GOOGLE_CHROME_BIN: ${{ steps.setup-chrome.outputs.chrome-path }}
+        shell: bash
         run: |
+          set -euo pipefail
           python "Linerlytica/Linerlytica.py"
 
       # =====================================================
       # 15. Linerlytica 생성 결과 확인
       # =====================================================
       - name: Verify Linerlytica generated files
+        shell: bash
         run: |
+          set -euo pipefail
+
           echo "===== Linerlytica files ====="
           ls -alh "Linerlytica"
 
           test -f "Linerlytica/Linerlytica.db"
           test -f "Linerlytica/index.html"
+          test -s "Linerlytica/index.html"
 
           echo "Linerlytica verification passed."
 
@@ -303,12 +390,16 @@ jobs:
       # 16. 메인 포털 대시보드(루트 index.html) 생성
       # =====================================================
       - name: Generate Main Portal Dashboard
+        shell: bash
         run: |
+          set -euo pipefail
+
           echo "===== Generating Portal Dashboard (index.html) ====="
 
           python dashboard_generator.py
 
           test -f "index.html"
+          test -s "index.html"
           test -f "dashboard_summary.json"
 
           echo "Main Portal Dashboard verification passed."
@@ -317,16 +408,26 @@ jobs:
       # 17. 변경된 DB / CSV / JSON / HTML Commit & Push
       # =====================================================
       - name: Commit and push dashboard data
+        shell: bash
         run: |
+          set -euo pipefail
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           # 생성된 파일의 추가·수정·삭제를 모두 스테이징
           git add -A
 
+          echo "===== Git status ====="
+          git status --short
+
           if git diff --cached --quiet; then
             echo "No dashboard changes to commit."
-          else
-            git commit -m "Auto: update MI dashboards"
-            git push
+            exit 0
           fi
+
+          echo "===== Files staged for commit ====="
+          git diff --cached --name-only
+
+          git commit -m "Auto: update MI dashboards"
+          git push
