@@ -1409,51 +1409,92 @@ def build_json():
 # =============================================================================
 
 def generate_html_file():
-    """Generate Bloomberg-style GitHub Pages index.html."""
-    log("[HTML] Bloomberg-style index.html 생성 중...")
+    """Generate Bloomberg Terminal-style GitHub Pages index.html."""
+    log("[HTML] Bloomberg Terminal-style index.html 생성 중...")
 
     html_content = r"""<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="SCFI 및 BDI 해운 지수 대시보드">
-
+  <meta name="description" content="SCFI 및 BDI 해운 지수 Bloomberg Terminal 대시보드">
   <title>MI Terminal | Shipping Index</title>
 
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 
   <style>
     :root {
-      --bg: #070b12;
-      --panel: #0e1621;
-      --panel-2: #131e2b;
-      --line: #263648;
-      --line-soft: #1b2938;
-      --text: #edf3f8;
-      --muted: #8ea2b7;
-      --orange: #ff8a00;
-      --orange-soft: #ffb14a;
-      --blue: #36a3ff;
-      --green: #2ec27e;
-      --red: #ff5c5c;
-      --white: #ffffff;
+      --bg: #02060b;
+      --bg-2: #050b12;
+      --panel: #07111c;
+      --panel-2: #0a1724;
+      --panel-3: #0d1d2b;
+
+      --line: #1c3448;
+      --line-soft: #132536;
+      --line-strong: #2b506d;
+
+      --text: #f1f6fa;
+      --text-soft: #c4d2dc;
+      --muted: #8298aa;
+      --dim: #536c80;
+
+      --amber: #f6a623;
+      --amber-soft: #ffbe5c;
+      --blue: #42a8f5;
+      --cyan: #39c7e2;
+      --green: #35ca82;
+      --red: #ff6565;
+      --purple: #b791ff;
+
+      --shadow:
+        0 8px 28px rgba(0, 0, 0, .48),
+        0 0 18px rgba(47, 133, 191, .08);
     }
 
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+    }
 
     body {
-      margin: 0;
       min-width: 320px;
-      background: var(--bg);
+      margin: 0;
       color: var(--text);
-      font-family: "Roboto Mono", "SFMono-Regular", Consolas,
-        "Noto Sans KR", monospace;
-      font-size: 13px;
+      background:
+        radial-gradient(
+          circle at 50% -20%,
+          rgba(37, 106, 156, .15),
+          transparent 43%
+        ),
+        linear-gradient(
+          180deg,
+          rgba(246, 166, 35, .025),
+          transparent 260px
+        ),
+        var(--bg);
+      font-family:
+        "IBM Plex Mono",
+        "Roboto Mono",
+        "SFMono-Regular",
+        Consolas,
+        "Noto Sans KR",
+        monospace;
+      font-size: 12px;
+      -webkit-font-smoothing: antialiased;
     }
 
-    button, input {
+    button,
+    input {
       font: inherit;
+    }
+
+    button {
+      border-radius: 0;
     }
 
     .topbar {
@@ -1463,121 +1504,312 @@ def generate_html_file():
       display: flex;
       align-items: center;
       justify-content: space-between;
-      min-height: 54px;
-      padding: 0 22px;
-      border-bottom: 1px solid var(--line);
-      background: #090f18;
+      min-height: 48px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line-strong);
+      background:
+        linear-gradient(
+          180deg,
+          rgba(13, 31, 47, .98),
+          rgba(3, 9, 15, .98)
+        );
+      box-shadow: var(--shadow);
     }
 
     .brand {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 11px;
+      min-width: 0;
       white-space: nowrap;
     }
 
     .brand-mark {
-      color: var(--orange);
-      font-size: 19px;
+      padding: 4px 7px;
+      color: #02060b;
+      background: var(--amber);
+      font-size: 12px;
       font-weight: 900;
-      letter-spacing: -1px;
-    }
-
-    .brand-title {
-      color: var(--white);
-      font-size: 14px;
-      font-weight: 700;
-      letter-spacing: 0.6px;
+      letter-spacing: .08em;
     }
 
     .brand-divider {
       width: 1px;
-      height: 19px;
-      background: var(--line);
+      height: 18px;
+      background: var(--line-strong);
+    }
+
+    .brand-title {
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: .09em;
     }
 
     .brand-subtitle {
       color: var(--muted);
-      font-size: 11px;
-      letter-spacing: 0.4px;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .07em;
     }
 
     .top-status {
       color: var(--muted);
-      font-size: 11px;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .04em;
+      text-align: right;
     }
 
     .terminal {
-      max-width: 1600px;
-      margin: 0 auto;
-      padding: 18px 22px 36px;
+      width: min(1920px, calc(100% - 16px));
+      max-width: 1920px;
+      margin: 7px auto 14px;
     }
 
     .status-strip {
       display: flex;
+      align-items: center;
       justify-content: space-between;
       gap: 15px;
-      margin-bottom: 16px;
-      padding: 10px 12px;
+      min-height: 35px;
+      margin-bottom: 6px;
+      padding: 0 11px;
       color: var(--muted);
       border: 1px solid var(--line);
-      background: var(--panel);
-      font-size: 11px;
+      background:
+        linear-gradient(
+          90deg,
+          rgba(246, 166, 35, .10),
+          rgba(4, 12, 20, .96) 25%,
+          rgba(4, 12, 20, .96)
+        );
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      box-shadow: 0 3px 13px rgba(0, 0, 0, .28);
     }
 
     .status-left {
       display: flex;
-      gap: 9px;
       align-items: center;
+      gap: 8px;
     }
 
     .status-dot {
-      width: 8px;
-      height: 8px;
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
       background: var(--green);
-      box-shadow: 0 0 8px rgba(46, 194, 126, 0.65);
+      box-shadow: 0 0 9px rgba(53, 202, 130, .72);
     }
 
     .status-dot.error {
       background: var(--red);
-      box-shadow: 0 0 8px rgba(255, 92, 92, 0.65);
+      box-shadow: 0 0 9px rgba(255, 101, 101, .72);
     }
 
     .workspace {
       display: grid;
-      grid-template-columns: minmax(250px, 300px) minmax(0, 1fr);
-      gap: 16px;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 6px;
     }
 
-    .panel {
+    .panel,
+    .filter-panel,
+    .kpi,
+    .chart-panel {
+      overflow: hidden;
       border: 1px solid var(--line);
-      background: var(--panel);
+      background:
+        linear-gradient(
+          145deg,
+          rgba(13, 31, 47, .78),
+          rgba(3, 10, 17, .98)
+        );
+      box-shadow: var(--shadow);
     }
 
-    .panel-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      min-height: 40px;
-      padding: 0 13px;
-      border-bottom: 1px solid var(--line);
-      background: var(--panel-2);
-    }
-
-    .panel-title {
-      color: var(--orange);
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.8px;
+    .panel::before,
+    .filter-panel::before,
+    .chart-panel::before {
+      display: block;
+      height: 2px;
+      content: "";
+      background:
+        linear-gradient(
+          90deg,
+          var(--amber),
+          rgba(246, 166, 35, .16) 45%,
+          transparent 82%
+        );
     }
 
     .filter-panel {
+      grid-column: span 4;
+      grid-row: span 2;
       height: fit-content;
     }
 
+    .main-area {
+      grid-column: span 8;
+      min-width: 0;
+      display: grid;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    .main-titlebar {
+      grid-column: span 8;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 54px;
+      padding: 8px 11px;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(
+          90deg,
+          rgba(18, 46, 69, .70),
+          rgba(4, 11, 18, .94)
+        );
+      box-shadow: var(--shadow);
+    }
+
+    .instrument-title {
+      margin: 0;
+      color: #ffffff;
+      font-size: 16px;
+      font-weight: 900;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .instrument-meta {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .panel-header {
+      min-height: 31px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 0 10px;
+      border-bottom: 1px solid var(--line);
+      background:
+        linear-gradient(
+          180deg,
+          rgba(14, 34, 51, .90),
+          rgba(6, 16, 25, .92)
+        );
+    }
+
+    .panel-title {
+      color: var(--amber);
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: .09em;
+      text-transform: uppercase;
+    }
+
+    .kpi-grid {
+      grid-column: span 8;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    .kpi {
+      min-height: 102px;
+      padding: 10px;
+      border-top: 2px solid var(--blue);
+    }
+
+    .kpi:nth-child(2) {
+      border-top-color: var(--green);
+    }
+
+    .kpi:nth-child(3) {
+      border-top-color: var(--amber);
+    }
+
+    .kpi:nth-child(4) {
+      border-top-color: var(--purple);
+    }
+
+    .kpi:nth-child(5) {
+      border-top-color: var(--cyan);
+    }
+
+    .kpi-label {
+      display: block;
+      min-height: 27px;
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 800;
+      letter-spacing: .07em;
+      line-height: 1.45;
+      text-transform: uppercase;
+    }
+
+    .kpi-value {
+      display: block;
+      margin-top: 10px;
+      overflow: hidden;
+      color: #ffffff;
+      font-size: clamp(16px, 1.3vw, 22px);
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -.06em;
+      text-align: right;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .kpi-sub {
+      display: block;
+      min-height: 13px;
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 8px;
+      font-weight: 800;
+      letter-spacing: .02em;
+      text-align: right;
+      text-transform: uppercase;
+    }
+
+    .positive {
+      color: var(--green) !important;
+    }
+
+    .negative {
+      color: var(--red) !important;
+    }
+
+    .neutral {
+      color: var(--text-soft) !important;
+    }
+
+    .chart-panel {
+      grid-column: span 8;
+      margin: 0;
+    }
+
+    #chart {
+      width: 100%;
+      min-height: 465px;
+    }
+
     .filter-section {
-      padding: 14px;
+      padding: 10px;
       border-bottom: 1px solid var(--line-soft);
     }
 
@@ -1589,39 +1821,42 @@ def generate_html_file():
       display: block;
       margin-bottom: 8px;
       color: var(--muted);
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.7px;
+      font-size: 8px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
     }
 
     .index-switch {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 6px;
+      gap: 5px;
     }
 
     .terminal-btn {
-      min-height: 32px;
-      padding: 7px 10px;
-      border: 1px solid var(--line);
-      border-radius: 0;
+      min-height: 29px;
+      padding: 6px 8px;
       color: var(--muted);
-      background: #0a111a;
+      border: 1px solid var(--line);
+      background: #07101a;
       cursor: pointer;
-      font-size: 11px;
-      font-weight: 700;
-      transition: 0.15s ease;
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: .05em;
+      transition: .15s ease;
     }
 
     .terminal-btn:hover {
-      border-color: var(--orange);
-      color: var(--orange-soft);
+      color: var(--amber-soft);
+      border-color: var(--amber);
+      background: rgba(246, 166, 35, .07);
     }
 
     .terminal-btn.active {
-      border-color: var(--orange);
-      color: #111;
-      background: var(--orange);
+      color: #071018;
+      border-color: var(--amber);
+      background: var(--amber);
+      box-shadow: 0 0 12px rgba(246, 166, 35, .24);
     }
 
     .period-grid {
@@ -1636,43 +1871,46 @@ def generate_html_file():
 
     .search-input {
       width: 100%;
-      padding: 9px 10px;
-      border: 1px solid var(--line);
-      outline: 0;
+      padding: 8px 9px;
       color: var(--text);
-      background: #080e16;
-      font-size: 12px;
+      outline: 0;
+      border: 1px solid var(--line);
+      background: #030a11;
+      font-size: 10px;
     }
 
     .search-input:focus {
-      border-color: var(--orange);
+      border-color: var(--amber);
+      box-shadow: 0 0 0 1px rgba(246, 166, 35, .12);
     }
 
     .selection-actions {
       display: flex;
-      gap: 6px;
-      margin: 9px 0;
+      gap: 9px;
+      margin: 8px 0;
     }
 
     .small-action {
       padding: 0;
-      border: 0;
       color: var(--blue);
+      border: 0;
       background: transparent;
       cursor: pointer;
-      font-size: 10px;
+      font-size: 8px;
+      font-weight: 800;
+      letter-spacing: .05em;
     }
 
     .small-action:hover {
-      color: var(--orange-soft);
+      color: var(--amber-soft);
     }
 
     .selected-summary {
       min-height: 32px;
-      margin-bottom: 9px;
-      padding: 6px;
+      margin-bottom: 8px;
+      padding: 5px;
       border: 1px solid var(--line-soft);
-      background: #09111a;
+      background: rgba(2, 8, 14, .74);
     }
 
     .chip {
@@ -1681,16 +1919,17 @@ def generate_html_file():
       gap: 5px;
       margin: 2px;
       padding: 3px 5px;
-      border: 1px solid #66502d;
-      color: var(--orange-soft);
-      background: #231b10;
-      font-size: 10px;
+      color: var(--amber-soft);
+      border: 1px solid #634b27;
+      background: #21190e;
+      font-size: 8px;
+      font-weight: 700;
     }
 
     .chip button {
       padding: 0;
+      color: var(--amber-soft);
       border: 0;
-      color: var(--orange-soft);
       background: transparent;
       cursor: pointer;
       font-size: 12px;
@@ -1698,21 +1937,22 @@ def generate_html_file():
     }
 
     .route-list {
-      max-height: 250px;
+      max-height: 295px;
       overflow-y: auto;
       border: 1px solid var(--line-soft);
-      background: #080e16;
+      background: #030a11;
     }
 
     .route-item {
       display: flex;
-      gap: 8px;
       align-items: center;
+      gap: 8px;
       padding: 8px 9px;
-      border-bottom: 1px solid #14202c;
-      color: #c6d3df;
+      color: var(--text-soft);
+      border-bottom: 1px solid rgba(30, 57, 78, .70);
       cursor: pointer;
-      font-size: 11px;
+      font-size: 9px;
+      font-weight: 700;
     }
 
     .route-item:last-child {
@@ -1720,156 +1960,163 @@ def generate_html_file():
     }
 
     .route-item:hover {
-      background: #152234;
+      background: rgba(66, 168, 245, .06);
     }
 
     .route-item input {
-      accent-color: var(--orange);
-    }
-
-    .main-area {
-      min-width: 0;
-    }
-
-    .main-titlebar {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: center;
-      margin-bottom: 12px;
-    }
-
-    .instrument-title {
-      margin: 0;
-      color: var(--white);
-      font-size: 20px;
-      font-weight: 700;
-      letter-spacing: -0.4px;
-    }
-
-    .instrument-meta {
-      margin-top: 5px;
-      color: var(--muted);
-      font-size: 11px;
+      accent-color: var(--amber);
     }
 
     .download-btn {
-      border-color: #34526e;
       color: var(--blue);
+      border-color: #28506d;
       white-space: nowrap;
     }
 
-    .kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 9px;
-      margin-bottom: 12px;
-    }
-
-    .kpi {
-      min-height: 104px;
-      padding: 13px;
-      border: 1px solid var(--line);
-      background: var(--panel);
-    }
-
-    .kpi-label {
-      display: block;
-      min-height: 25px;
-      color: var(--muted);
-      font-size: 10px;
-      letter-spacing: 0.4px;
-      line-height: 1.3;
-    }
-
-    .kpi-value {
-      display: block;
-      margin-top: 10px;
-      color: var(--white);
-      font-size: 20px;
-      font-weight: 700;
-      letter-spacing: -0.5px;
-    }
-
-    .kpi-sub {
-      display: block;
-      margin-top: 6px;
-      color: var(--muted);
-      font-size: 10px;
-    }
-
-    .positive { color: var(--green); }
-    .negative { color: var(--red); }
-    .neutral { color: var(--white); }
-
-    .chart-panel {
-      margin-bottom: 12px;
-    }
-
-    #chart {
-      width: 100%;
-      min-height: 520px;
+    .main-area > .panel:last-child {
+      grid-column: span 8;
     }
 
     .table-wrap {
-      max-height: 470px;
+      max-height: 430px;
       overflow: auto;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 11px;
+      font-size: 10px;
     }
 
-    th, td {
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--line-soft);
-      white-space: nowrap;
+    th,
+    td {
+      padding: 9px 10px;
+      color: var(--text-soft);
+      border-bottom: 1px solid rgba(32, 60, 82, .64);
+      font-variant-numeric: tabular-nums;
       text-align: right;
+      white-space: nowrap;
     }
 
     th {
       position: sticky;
       top: 0;
       z-index: 2;
-      color: var(--orange-soft);
-      background: #111c29;
-      font-size: 10px;
-      letter-spacing: 0.4px;
+      color: var(--amber-soft);
+      background: #0d1d2b;
+      font-size: 8px;
+      font-weight: 900;
+      letter-spacing: .06em;
+      text-transform: uppercase;
     }
 
-    th:first-child, td:first-child {
+    th:first-child,
+    td:first-child {
       text-align: left;
     }
 
-    td {
-      color: #d5e0e9;
-    }
-
     tr:hover td {
-      background: #132031;
+      background: rgba(66, 168, 245, .055);
     }
 
     .empty-message {
-      padding: 28px;
+      padding: 25px;
       color: var(--muted);
-      text-align: center;
+      text-align: center !important;
     }
 
-    @media (max-width: 1100px) {
-      .workspace { grid-template-columns: 1fr; }
-      .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+    .terminal::after {
+      display: block;
+      min-height: 31px;
+      margin-top: 6px;
+      padding: 9px 11px;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--green);
+      background: #02070d;
+      content:
+        "SYSTEM STATUS: NORMAL  |  MARKET HEALTH: MONITORED  |  SENTIMENT: DATA-DRIVEN  |  ALERTS: NO CRITICAL DATA EXCEPTIONS";
+      font-size: 8px;
+      font-weight: 800;
+      letter-spacing: .06em;
+      line-height: 1.4;
+      text-transform: uppercase;
+    }
+
+    @media (max-width: 1300px) {
+      .filter-panel {
+        grid-column: span 12;
+        grid-row: auto;
+      }
+
+      .main-area {
+        grid-column: span 12;
+      }
+
+      .route-list {
+        max-height: 190px;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .kpi-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .chart-panel,
+      .main-area > .panel:last-child {
+        grid-column: span 8;
+      }
     }
 
     @media (max-width: 680px) {
-      .top-status, .brand-subtitle, .brand-divider { display: none; }
-      .topbar { padding: 0 14px; }
-      .terminal { padding: 12px; }
-      .status-strip { display: block; line-height: 1.8; }
-      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
-      .main-titlebar { align-items: flex-start; }
-      .instrument-title { font-size: 17px; }
+      .terminal {
+        width: calc(100% - 10px);
+        margin-top: 5px;
+      }
+
+      .topbar {
+        padding: 0 10px;
+      }
+
+      .brand-subtitle,
+      .brand-divider,
+      .top-status {
+        display: none;
+      }
+
+      .status-strip {
+        align-items: flex-start;
+        flex-direction: column;
+        justify-content: center;
+        gap: 2px;
+        padding: 7px 10px;
+      }
+
+      .main-area {
+        display: block;
+      }
+
+      .main-area > * {
+        margin-bottom: 6px;
+      }
+
+      .kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .instrument-title {
+        font-size: 12px;
+      }
+
+      .main-titlebar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      #chart {
+        min-height: 390px;
+      }
     }
   </style>
 </head>
@@ -1880,7 +2127,7 @@ def generate_html_file():
       <span class="brand-mark">MI&lt;GO&gt;</span>
       <span class="brand-divider"></span>
       <span class="brand-title">SHIPPING INDEX</span>
-      <span class="brand-subtitle">SCFI / BDI MONITOR</span>
+      <span class="brand-subtitle">SCFI / BDI MARKET MONITOR</span>
     </div>
     <div id="lastUpdated" class="top-status">DATA LOADING...</div>
   </header>
@@ -1889,19 +2136,20 @@ def generate_html_file():
     <section class="status-strip">
       <div class="status-left">
         <span id="statusDot" class="status-dot"></span>
-        <strong id="statusTitle">SYSTEM / DATA LOADING</strong>
+        <strong id="statusTitle">MARKET DATA / LOADING</strong>
       </div>
       <span id="periodDisplay">PERIOD: -</span>
     </section>
 
     <div class="workspace">
-      <aside class="panel filter-panel">
+      <aside class="filter-panel">
         <div class="panel-header">
-          <span class="panel-title">FUNCTIONS / FILTERS</span>
+          <span class="panel-title">04. Watchlist / Functions</span>
+          <span class="panel-title">SCFI · BDI</span>
         </div>
 
         <section class="filter-section">
-          <span class="label">INDEX</span>
+          <span class="label">Index Selection</span>
           <div class="index-switch">
             <button id="scfiTab" class="terminal-btn active" onclick="selectIndex('SCFI')">SCFI</button>
             <button id="bdiTab" class="terminal-btn" onclick="selectIndex('BDI')">BDI</button>
@@ -1909,7 +2157,7 @@ def generate_html_file():
         </section>
 
         <section class="filter-section">
-          <span class="label">TIME RANGE</span>
+          <span class="label">Historical Range</span>
           <div class="period-grid">
             <button class="terminal-btn" data-period="1Y" onclick="setPreset('1Y')">1Y</button>
             <button class="terminal-btn" data-period="3Y" onclick="setPreset('3Y')">3Y</button>
@@ -1920,19 +2168,19 @@ def generate_html_file():
         </section>
 
         <section class="filter-section">
-          <span class="label">SELECT SERIES</span>
+          <span class="label">Series Watchlist</span>
 
           <input
             id="routeSearch"
             class="search-input"
             type="search"
-            placeholder="항로/지수 검색..."
+            placeholder="SEARCH SERIES..."
             oninput="renderRouteList()"
           >
 
           <div class="selection-actions">
-            <button class="small-action" onclick="selectVisibleRoutes()">VISIBLE ALL</button>
-            <button class="small-action" onclick="clearRoutes()">CLEAR</button>
+            <button class="small-action" onclick="selectVisibleRoutes()">SELECT VISIBLE</button>
+            <button class="small-action" onclick="clearRoutes()">CLEAR ALL</button>
           </div>
 
           <div id="selectedSummary" class="selected-summary"></div>
@@ -1953,47 +2201,48 @@ def generate_html_file():
 
         <section class="kpi-grid">
           <div class="kpi">
-            <span class="kpi-label">LATEST<br>SELECTED SERIES AVG</span>
+            <span class="kpi-label">Latest<br>Selected Average</span>
             <span id="latestValue" class="kpi-value">-</span>
             <span id="latestValueDate" class="kpi-sub">-</span>
           </div>
 
           <div class="kpi">
-            <span class="kpi-label">PERIOD<br>AVERAGE</span>
+            <span class="kpi-label">Period<br>Average</span>
             <span id="periodAverage" class="kpi-value">-</span>
             <span id="periodAverageSub" class="kpi-sub">-</span>
           </div>
 
           <div class="kpi">
-            <span class="kpi-label">PERIOD<br>HIGH / LOW</span>
+            <span class="kpi-label">Period<br>High / Low</span>
             <span id="highLowValue" class="kpi-value">-</span>
             <span id="highLowSub" class="kpi-sub">-</span>
           </div>
 
           <div class="kpi">
-            <span class="kpi-label">CHANGE<br>FIRST → LAST</span>
+            <span class="kpi-label">Change<br>First To Last</span>
             <span id="changeValue" class="kpi-value neutral">-</span>
             <span id="changeRate" class="kpi-sub">-</span>
           </div>
 
           <div class="kpi">
-            <span class="kpi-label">OBSERVATIONS<br> / SERIES</span>
+            <span class="kpi-label">Observations<br>/ Series</span>
             <span id="recordCount" class="kpi-value">-</span>
             <span id="regionCount" class="kpi-sub">-</span>
           </div>
         </section>
 
-        <section class="panel chart-panel">
+        <section class="chart-panel">
           <div class="panel-header">
-            <span class="panel-title">PRICE HISTORY / RANGE SLIDER ENABLED</span>
-            <span class="panel-title">DRAG BELOW CHART TO CHANGE PERIOD</span>
+            <span class="panel-title">03. Main Market Chart / Price History</span>
+            <span class="panel-title">Range Slider Enabled</span>
           </div>
           <div id="chart"></div>
         </section>
 
         <section class="panel">
           <div class="panel-header">
-            <span class="panel-title">DATA GRID / SELECTED PERIOD</span>
+            <span class="panel-title">05. Macro & Market Heatmap / Data Grid</span>
+            <span class="panel-title">Selected Period</span>
           </div>
           <div class="table-wrap">
             <table>
@@ -2012,7 +2261,7 @@ def generate_html_file():
     let dashboardData = null;
     let currentIndex = "SCFI";
     let selectedRegions = new Set();
-    let currentRange = null; // { start: "YYYY-MM-DD", end: "YYYY-MM-DD" } 또는 null(전체)
+    let currentRange = null;
     let currentPreset = "ALL";
 
     const INDEX_INFO = {
@@ -2027,8 +2276,8 @@ def generate_html_file():
     };
 
     const SERIES_COLORS = [
-      "#ff8a00", "#36a3ff", "#2ec27e", "#be8cff",
-      "#ff5c5c", "#f5d547", "#5bd6c7", "#d7e2eb"
+      "#f6a623", "#42a8f5", "#35ca82", "#b791ff",
+      "#ff6565", "#ffd166", "#39c7e2", "#d7e2eb"
     ];
 
     function formatNumber(value, decimals = 2) {
@@ -2063,7 +2312,9 @@ def generate_html_file():
     }
 
     function setStatus(ok, title, message) {
-      document.getElementById("statusDot").className = ok ? "status-dot" : "status-dot error";
+      document.getElementById("statusDot").className =
+        ok ? "status-dot" : "status-dot error";
+
       document.getElementById("statusTitle").textContent = title;
       document.getElementById("lastUpdated").textContent = message;
     }
@@ -2072,7 +2323,11 @@ def generate_html_file():
       if (!dashboardData || !dashboardData.indexes) {
         return { regions: [], records: [] };
       }
-      return dashboardData.indexes[currentIndex] || { regions: [], records: [] };
+
+      return dashboardData.indexes[currentIndex] || {
+        regions: [],
+        records: []
+      };
     }
 
     function getAllRecords() {
@@ -2081,17 +2336,14 @@ def generate_html_file():
       );
     }
 
-       function getDefaultRegions(regions) {
+    function getDefaultRegions(regions) {
       if (!regions || regions.length === 0) return [];
 
-      // 1. BDI의 경우: BDI 종합 지수 우선 선택
       if (currentIndex === "BDI") {
         if (regions.includes("BDI")) return ["BDI"];
         return [regions[0]];
       }
 
-      // 2. SCFI의 경우: '종합' 지수 1개만 기본 선택
-      // KSG 데이터 상의 종합 지수 표기 후보군 (우선순위 순)
       const compositeCandidates = [
         "SCFI",
         "종합",
@@ -2103,40 +2355,51 @@ def generate_html_file():
       ];
 
       for (const candidate of compositeCandidates) {
-        const matched = regions.find(r => r.trim().toUpperCase() === candidate);
+        const matched = regions.find(
+          region => region.trim().toUpperCase() === candidate
+        );
+
         if (matched) return [matched];
       }
 
-      // '종합' 또는 'COMPOSITE' 단어가 포함된 항로/지수명 탐색
-      const partialMatched = regions.find(r =>
-        r.includes("종합") || r.toUpperCase().includes("COMPOSITE") || r.toUpperCase().includes("SCFI")
+      const partialMatched = regions.find(
+        region =>
+          region.includes("종합") ||
+          region.toUpperCase().includes("COMPOSITE") ||
+          region.toUpperCase().includes("SCFI")
       );
+
       if (partialMatched) return [partialMatched];
 
-      // 만약 종합 지수 명칭을 찾지 못할 경우 첫 번째 항목 1개만 선택
       return [regions[0]];
     }
 
     function renderRouteList() {
       const indexData = getIndexData();
-      const keyword = document.getElementById("routeSearch").value.trim().toLowerCase();
-      const visibleRegions = indexData.regions.filter(region =>
-        region.toLowerCase().includes(keyword)
+      const keyword = document
+        .getElementById("routeSearch")
+        .value
+        .trim()
+        .toLowerCase();
+
+      const visibleRegions = indexData.regions.filter(
+        region => region.toLowerCase().includes(keyword)
       );
 
-      document.getElementById("routeList").innerHTML = visibleRegions.length
-        ? visibleRegions.map(region => `
-            <label class="route-item">
-              <input
-                type="checkbox"
-                value="${escapeHtml(region)}"
-                ${selectedRegions.has(region) ? "checked" : ""}
-                onchange="toggleRegion(this.value, this.checked)"
-              >
-              <span>${escapeHtml(region)}</span>
-            </label>
-          `).join("")
-        : `<div class="empty-message">NO MATCHING SERIES</div>`;
+      document.getElementById("routeList").innerHTML =
+        visibleRegions.length
+          ? visibleRegions.map(region => `
+              <label class="route-item">
+                <input
+                  type="checkbox"
+                  value="${escapeHtml(region)}"
+                  ${selectedRegions.has(region) ? "checked" : ""}
+                  onchange="toggleRegion(this.value, this.checked)"
+                >
+                <span>${escapeHtml(region)}</span>
+              </label>
+            `).join("")
+          : `<div class="empty-message">NO MATCHING SERIES</div>`;
 
       renderSelectedSummary();
     }
@@ -2145,7 +2408,8 @@ def generate_html_file():
       const container = document.getElementById("selectedSummary");
 
       if (!selectedRegions.size) {
-        container.innerHTML = `<span style="color:#8ea2b7;font-size:10px;">NO SERIES SELECTED</span>`;
+        container.innerHTML =
+          `<span style="color:#8298aa;font-size:8px;">NO SERIES SELECTED</span>`;
         return;
       }
 
@@ -2172,7 +2436,12 @@ def generate_html_file():
     }
 
     function selectVisibleRoutes() {
-      const keyword = document.getElementById("routeSearch").value.trim().toLowerCase();
+      const keyword = document
+        .getElementById("routeSearch")
+        .value
+        .trim()
+        .toLowerCase();
+
       getIndexData().regions
         .filter(region => region.toLowerCase().includes(keyword))
         .forEach(region => selectedRegions.add(region));
@@ -2189,8 +2458,15 @@ def generate_html_file():
 
     function getDateBounds() {
       const records = getAllRecords();
-      if (!records.length) return { min: null, max: null };
-      return { min: records[0].DATE, max: records[records.length - 1].DATE };
+
+      if (!records.length) {
+        return { min: null, max: null };
+      }
+
+      return {
+        min: records[0].DATE,
+        max: records[records.length - 1].DATE
+      };
     }
 
     function addYears(dateString, years) {
@@ -2201,6 +2477,7 @@ def generate_html_file():
 
     function setPreset(preset) {
       const bounds = getDateBounds();
+
       if (!bounds.max) return;
 
       currentPreset = preset;
@@ -2238,11 +2515,15 @@ def generate_html_file():
 
       if (!selectedRegions.size) return [];
 
-      records = records.filter(record => selectedRegions.has(record.REGION));
+      records = records.filter(
+        record => selectedRegions.has(record.REGION)
+      );
 
       if (currentRange) {
-        records = records.filter(record =>
-          record.DATE >= currentRange.start && record.DATE <= currentRange.end
+        records = records.filter(
+          record =>
+            record.DATE >= currentRange.start &&
+            record.DATE <= currentRange.end
         );
       }
 
@@ -2259,23 +2540,38 @@ def generate_html_file():
 
       return Object.keys(byDate).sort().map(date => ({
         date,
-        value: byDate[date].reduce((sum, value) => sum + value, 0) / byDate[date].length
+        value:
+          byDate[date].reduce(
+            (sum, value) => sum + value,
+            0
+          ) / byDate[date].length
       }));
     }
 
     function updateKpis(records) {
       const selectedCount = selectedRegions.size;
-      document.getElementById("recordCount").textContent = formatInteger(records.length);
-      document.getElementById("regionCount").textContent = `${formatInteger(selectedCount)} SERIES SELECTED`;
+
+      document.getElementById("recordCount").textContent =
+        formatInteger(records.length);
+
+      document.getElementById("regionCount").textContent =
+        `${formatInteger(selectedCount)} SERIES SELECTED`;
 
       if (!records.length) {
-        ["latestValue", "periodAverage", "highLowValue", "changeValue"].forEach(id => {
+        [
+          "latestValue",
+          "periodAverage",
+          "highLowValue",
+          "changeValue"
+        ].forEach(id => {
           document.getElementById(id).textContent = "-";
         });
+
         document.getElementById("latestValueDate").textContent = "NO DATA";
         document.getElementById("periodAverageSub").textContent = "-";
         document.getElementById("highLowSub").textContent = "-";
         document.getElementById("changeRate").textContent = "-";
+
         return;
       }
 
@@ -2283,123 +2579,175 @@ def generate_html_file():
       const latest = daily[daily.length - 1];
       const first = daily[0];
 
-      // 기간 평균: 선택된 모든 관측값의 단순 산술평균
-      const periodAverage = records.reduce(
-        (sum, record) => sum + Number(record.VALUE), 0
-      ) / records.length;
+      const periodAverage =
+        records.reduce(
+          (sum, record) => sum + Number(record.VALUE),
+          0
+        ) / records.length;
 
       const values = records.map(record => Number(record.VALUE));
       const high = Math.max(...values);
       const low = Math.min(...values);
 
       const change = latest.value - first.value;
-      const changeRate = first.value !== 0 ? (change / first.value) * 100 : 0;
-      const changeClass = change > 0 ? "positive" : change < 0 ? "negative" : "neutral";
+      const changeRate =
+        first.value !== 0
+          ? (change / first.value) * 100
+          : 0;
 
-      document.getElementById("latestValue").textContent = formatNumber(latest.value);
-      document.getElementById("latestValueDate").textContent = `${formatDate(latest.date)} AVG`;
+      const changeClass =
+        change > 0
+          ? "positive"
+          : change < 0
+            ? "negative"
+            : "neutral";
 
-      document.getElementById("periodAverage").textContent = formatNumber(periodAverage);
-      document.getElementById("periodAverageSub").textContent = "SELECTED PERIOD / SIMPLE AVG";
+      document.getElementById("latestValue").textContent =
+        formatNumber(latest.value);
+
+      document.getElementById("latestValueDate").textContent =
+        `${formatDate(latest.date)} AVG`;
+
+      document.getElementById("periodAverage").textContent =
+        formatNumber(periodAverage);
+
+      document.getElementById("periodAverageSub").textContent =
+        "SELECTED PERIOD / SIMPLE AVG";
 
       document.getElementById("highLowValue").textContent =
         `${formatNumber(high, 0)} / ${formatNumber(low, 0)}`;
-      document.getElementById("highLowSub").textContent = "HIGH / LOW";
+
+      document.getElementById("highLowSub").textContent =
+        "HIGH / LOW";
 
       const sign = change > 0 ? "+" : "";
       const changeElement = document.getElementById("changeValue");
-      changeElement.textContent = `${sign}${formatNumber(change)}`;
-      changeElement.className = `kpi-value ${changeClass}`;
+
+      changeElement.textContent =
+        `${sign}${formatNumber(change)}`;
+
+      changeElement.className =
+        `kpi-value ${changeClass}`;
+
       document.getElementById("changeRate").textContent =
-        `${sign}${formatNumber(changeRate)}% / ${formatDate(first.date)} → ${formatDate(latest.date)}`;
+        `${sign}${formatNumber(changeRate)}% / ` +
+        `${formatDate(first.date)} → ${formatDate(latest.date)}`;
     }
 
     function renderChart(records) {
       const chart = document.getElementById("chart");
-      const allRecords = getAllRecords();
       const bounds = getDateBounds();
 
       if (!records.length) {
         Plotly.purge(chart);
-        chart.innerHTML = `<div class="empty-message">SELECT AT LEAST ONE SERIES TO DISPLAY DATA</div>`;
+        chart.innerHTML =
+          `<div class="empty-message">SELECT AT LEAST ONE SERIES TO DISPLAY DATA</div>`;
         return;
       }
 
       const grouped = {};
+
       records.forEach(record => {
-        if (!grouped[record.REGION]) grouped[record.REGION] = [];
+        if (!grouped[record.REGION]) {
+          grouped[record.REGION] = [];
+        }
+
         grouped[record.REGION].push(record);
       });
 
-      const traces = Object.entries(grouped).map(([region, rows], index) => ({
-        x: rows.map(row => row.DATE),
-        y: rows.map(row => Number(row.VALUE)),
-        type: "scatter",
-        mode: "lines",
-        name: region,
-        line: {
-          color: SERIES_COLORS[index % SERIES_COLORS.length],
-          width: region === "BDI" ? 2.8 : 1.8
-        },
-        hovertemplate:
-          `<b>${escapeHtml(region)}</b>` +
-          "<br>DATE: %{x}<br>VALUE: %{y:,.2f}<extra></extra>"
-      }));
+      const traces = Object.entries(grouped).map(
+        ([region, rows], index) => ({
+          x: rows.map(row => row.DATE),
+          y: rows.map(row => Number(row.VALUE)),
+          type: "scatter",
+          mode: "lines",
+          name: region,
+          line: {
+            color: SERIES_COLORS[index % SERIES_COLORS.length],
+            width: region === "BDI" ? 2.7 : 1.8
+          },
+          hovertemplate:
+            `<b>${escapeHtml(region)}</b>` +
+            "<br>DATE: %{x}<br>VALUE: %{y:,.2f}<extra></extra>"
+        })
+      );
 
       const xRange = currentRange
         ? [currentRange.start, currentRange.end]
         : [bounds.min, bounds.max];
 
       const layout = {
-        margin: { l: 72, r: 26, t: 20, b: 66 },
-        paper_bgcolor: "#0e1621",
-        plot_bgcolor: "#0e1621",
+        margin: { l: 72, r: 26, t: 26, b: 66 },
+        paper_bgcolor: "#07111c",
+        plot_bgcolor: "#07111c",
         font: {
-          family: '"Roboto Mono", Consolas, monospace',
-          color: "#c9d6e2",
-          size: 11
+          family: '"IBM Plex Mono", Consolas, monospace',
+          color: "#c4d2dc",
+          size: 10
         },
         hovermode: "x unified",
         hoverlabel: {
-          bgcolor: "#111c29",
-          bordercolor: "#ff8a00",
-          font: { color: "#edf3f8" }
+          bgcolor: "#07111c",
+          bordercolor: "#2b506d",
+          font: {
+            color: "#f1f6fa",
+            family: '"IBM Plex Mono", Consolas, monospace'
+          }
         },
         legend: {
           orientation: "h",
           y: 1.12,
           x: 0,
-          font: { size: 10, color: "#c9d6e2" }
+          font: {
+            size: 9,
+            color: "#c4d2dc"
+          }
         },
         xaxis: {
           type: "date",
           range: xRange,
-          gridcolor: "#1f3040",
-          linecolor: "#405568",
-          tickfont: { color: "#8ea2b7" },
+          gridcolor: "rgba(40, 76, 104, .38)",
+          linecolor: "#2b506d",
+          tickfont: {
+            color: "#8298aa",
+            size: 9
+          },
           rangeslider: {
             visible: true,
-            bgcolor: "#09111a",
-            bordercolor: "#405568",
-            thickness: 0.09
+            bgcolor: "#030a11",
+            bordercolor: "#1c3448",
+            thickness: 0.085
           }
         },
         yaxis: {
-          title: { text: "INDEX VALUE", font: { size: 10, color: "#8ea2b7" } },
-          gridcolor: "#1f3040",
-          zerolinecolor: "#2c4052",
-          linecolor: "#405568",
-          tickfont: { color: "#8ea2b7" }
+          title: {
+            text: "INDEX VALUE",
+            font: {
+              size: 9,
+              color: "#8298aa"
+            }
+          },
+          gridcolor: "rgba(40, 76, 104, .42)",
+          zerolinecolor: "#2b506d",
+          linecolor: "#2b506d",
+          tickfont: {
+            color: "#8298aa",
+            size: 9
+          }
         }
       };
 
       Plotly.newPlot(chart, traces, layout, {
         responsive: true,
         displaylogo: false,
-        modeBarButtonsToRemove: ["select2d", "lasso2d"]
+        modeBarButtonsToRemove: [
+          "select2d",
+          "lasso2d"
+        ]
       });
 
       chart.removeAllListeners?.("plotly_relayout");
+
       chart.on("plotly_relayout", eventData => {
         const start = eventData["xaxis.range[0]"];
         const end = eventData["xaxis.range[1]"];
@@ -2409,6 +2757,7 @@ def generate_html_file():
             start: String(start).slice(0, 10),
             end: String(end).slice(0, 10)
           };
+
           currentPreset = "CUSTOM";
           updatePeriodButtons();
           renderDashboard(false);
@@ -2430,13 +2779,18 @@ def generate_html_file():
 
       if (!records.length || !regions.length) {
         tableHead.innerHTML = "<tr><th>DATE</th></tr>";
-        tableBody.innerHTML = `<tr><td class="empty-message">NO DATA FOR SELECTED CONDITIONS</td></tr>`;
+        tableBody.innerHTML =
+          `<tr><td class="empty-message">NO DATA FOR SELECTED CONDITIONS</td></tr>`;
         return;
       }
 
       const pivot = {};
+
       records.forEach(record => {
-        if (!pivot[record.DATE]) pivot[record.DATE] = {};
+        if (!pivot[record.DATE]) {
+          pivot[record.DATE] = {};
+        }
+
         pivot[record.DATE][record.REGION] = record.VALUE;
       });
 
@@ -2447,14 +2801,24 @@ def generate_html_file():
         </tr>
       `;
 
-      tableBody.innerHTML = Object.keys(pivot).sort().reverse().map(date => `
-        <tr>
-          <td>${escapeHtml(formatDate(date))}</td>
-          ${regions.map(region => `
-            <td>${pivot[date][region] !== undefined ? formatNumber(pivot[date][region]) : "-"}</td>
-          `).join("")}
-        </tr>
-      `).join("");
+      tableBody.innerHTML = Object.keys(pivot)
+        .sort()
+        .reverse()
+        .map(date => `
+          <tr>
+            <td>${escapeHtml(formatDate(date))}</td>
+            ${regions.map(region => `
+              <td>
+                ${
+                  pivot[date][region] !== undefined
+                    ? formatNumber(pivot[date][region])
+                    : "-"
+                }
+              </td>
+            `).join("")}
+          </tr>
+        `)
+        .join("");
     }
 
     function updatePeriodDisplay() {
@@ -2472,10 +2836,14 @@ def generate_html_file():
 
     function renderDashboard(renderChartToo = true) {
       const records = getFilteredRecords();
+
       updatePeriodDisplay();
       updateKpis(records);
 
-      if (renderChartToo) renderChart(records);
+      if (renderChartToo) {
+        renderChart(records);
+      }
+
       renderTable(records);
     }
 
@@ -2485,12 +2853,27 @@ def generate_html_file():
       currentPreset = "ALL";
 
       const indexData = getIndexData();
-      selectedRegions = new Set(getDefaultRegions(indexData.regions));
 
-      document.getElementById("scfiTab").classList.toggle("active", indexName === "SCFI");
-      document.getElementById("bdiTab").classList.toggle("active", indexName === "BDI");
-      document.getElementById("dashboardTitle").textContent = INDEX_INFO[indexName].title;
-      document.getElementById("dashboardDescription").textContent = INDEX_INFO[indexName].description;
+      selectedRegions = new Set(
+        getDefaultRegions(indexData.regions)
+      );
+
+      document
+        .getElementById("scfiTab")
+        .classList
+        .toggle("active", indexName === "SCFI");
+
+      document
+        .getElementById("bdiTab")
+        .classList
+        .toggle("active", indexName === "BDI");
+
+      document.getElementById("dashboardTitle").textContent =
+        INDEX_INFO[indexName].title;
+
+      document.getElementById("dashboardDescription").textContent =
+        INDEX_INFO[indexName].description;
+
       document.getElementById("routeSearch").value = "";
 
       updatePeriodButtons();
@@ -2508,39 +2891,57 @@ def generate_html_file():
       }
 
       const pivot = {};
+
       records.forEach(record => {
-        if (!pivot[record.DATE]) pivot[record.DATE] = {};
+        if (!pivot[record.DATE]) {
+          pivot[record.DATE] = {};
+        }
+
         pivot[record.DATE][record.REGION] = record.VALUE;
       });
 
       const rows = [
         ["DATE", ...regions].join(","),
-        ...Object.keys(pivot).sort().reverse().map(date => [
-          date,
-          ...regions.map(region => pivot[date][region] ?? "")
-        ].join(","))
+        ...Object.keys(pivot)
+          .sort()
+          .reverse()
+          .map(date => [
+            date,
+            ...regions.map(
+              region => pivot[date][region] ?? ""
+            )
+          ].join(","))
       ];
 
       const blob = new Blob(
         ["\uFEFF" + rows.join("\n")],
-        { type: "text/csv;charset=utf-8;" }
+        {
+          type: "text/csv;charset=utf-8;"
+        }
       );
 
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
+
       anchor.href = url;
-      anchor.download = `${currentIndex}_shipping_index_${currentPreset}.csv`;
+      anchor.download =
+        `${currentIndex}_shipping_index_${currentPreset}.csv`;
+
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
+
       URL.revokeObjectURL(url);
     }
 
     async function loadDashboardData() {
       try {
-        const response = await fetch("shipping_index_data.json?ts=" + Date.now(), {
-          cache: "no-store"
-        });
+        const response = await fetch(
+          "shipping_index_data.json?ts=" + Date.now(),
+          {
+            cache: "no-store"
+          }
+        );
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
@@ -2550,7 +2951,7 @@ def generate_html_file():
 
         setStatus(
           true,
-          "SYSTEM / DATA ONLINE",
+          "SYSTEM / MARKET DATA ONLINE",
           `LAST REFRESH: ${dashboardData.generated_at || "-"}`
         );
 
@@ -2558,6 +2959,7 @@ def generate_html_file():
 
       } catch (error) {
         console.error(error);
+
         setStatus(
           false,
           "SYSTEM / DATA ERROR",
@@ -2566,7 +2968,10 @@ def generate_html_file():
       }
     }
 
-    document.addEventListener("DOMContentLoaded", loadDashboardData);
+    document.addEventListener(
+      "DOMContentLoaded",
+      loadDashboardData
+    );
   </script>
 </body>
 </html>
@@ -2574,6 +2979,7 @@ def generate_html_file():
 
     atomic_write_text(HTML_PATH, html_content)
     log(f"[HTML] 저장 완료: {HTML_PATH}")
+
 
     
 # =============================================================================
