@@ -111,7 +111,6 @@ def init_db():
         conn.close()
 
 def has_existing_data_in_db():
-    """기존 DB에 대시보드 생성 가능한 스냅샷 데이터가 있는지 확인합니다."""
     if not DB_PATH.exists():
         return False
 
@@ -120,16 +119,10 @@ def has_existing_data_in_db():
             conn = sqlite3.connect(DB_PATH)
             cur = conn.cursor()
 
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM snapshot_meta
-            """)
+            cur.execute("SELECT COUNT(*) FROM snapshot_meta")
             snapshot_count = cur.fetchone()[0]
 
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM operator_snapshots
-            """)
+            cur.execute("SELECT COUNT(*) FROM operator_snapshots")
             operator_count = cur.fetchone()[0]
 
             conn.close()
@@ -304,18 +297,11 @@ def get_chrome_driver(headless=True):
 
     if chrome_binary:
         chrome_binary_path = Path(chrome_binary)
-
         if chrome_binary_path.exists():
             options.binary_location = str(chrome_binary_path)
-            logger.info(
-                "Using Chrome binary: %s",
-                chrome_binary_path
-            )
+            logger.info("Using Chrome binary: %s", chrome_binary_path)
         else:
-            logger.warning(
-                "Configured Chrome binary was not found: %s",
-                chrome_binary
-            )
+            logger.warning("Configured Chrome binary was not found: %s", chrome_binary)
 
     chromedriver_path = (
         os.getenv("CHROMEDRIVER", "").strip()
@@ -325,87 +311,55 @@ def get_chrome_driver(headless=True):
     try:
         if chromedriver_path:
             chromedriver_file = Path(chromedriver_path)
-
             if chromedriver_file.exists():
-                logger.info(
-                    "Using ChromeDriver from environment: %s",
-                    chromedriver_file
-                )
-
+                logger.info("Using ChromeDriver from environment: %s", chromedriver_file)
                 driver = webdriver.Chrome(
                     service=Service(str(chromedriver_file)),
                     options=options
                 )
             else:
                 logger.warning(
-                    "Configured ChromeDriver was not found: %s. "
-                    "Falling back to Selenium Manager.",
+                    "Configured ChromeDriver was not found: %s. Falling back to default.",
                     chromedriver_path
                 )
-
                 driver = webdriver.Chrome(options=options)
         else:
             driver = webdriver.Chrome(options=options)
 
-        # 페이지가 로드되기 전에 webdriver 속성을 처리해야 하므로
-        # execute_script가 아닌 CDP NewDocument 스크립트를 사용합니다.
         driver.execute_cdp_cmd(
             "Page.addScriptToEvaluateOnNewDocument",
             {
                 "source": """
-                    Object.defineProperty(navigator, 'webdriver', {
-                        get: () => undefined
-                    });
-
-                    Object.defineProperty(navigator, 'languages', {
-                        get: () => ['en-US', 'en']
-                    });
-
-                    Object.defineProperty(navigator, 'plugins', {
-                        get: () => [1, 2, 3, 4, 5]
-                    });
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                    Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+                    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
                 """
             }
         )
 
         driver.set_page_load_timeout(60)
         driver.implicitly_wait(2)
-
         return driver
 
     except WebDriverException as exc:
         logger.exception("Failed to initialize Selenium Driver.")
-
         raise RuntimeError(
             "Chrome/ChromeDriver initialization failed. "
             "Verify Chrome, ChromeDriver, and GitHub Actions environment configuration."
         ) from exc
 
 def wait_for_extjs_store(driver):
-    """
-    ExtJS가 준비되고 Top100description Store 또는 Grid Store에
-    최소 MIN_EXPECTED_OPERATOR_COUNT 건 이상의 레코드가 적재될 때까지 대기합니다.
-    """
     readiness_script = f"""
         try {{
             if (typeof Ext === 'undefined' || !Ext.isReady) {{
-                return {{
-                    ready: false,
-                    count: 0,
-                    source: 'Ext not ready'
-                }};
+                return {{ ready: false, count: 0, source: 'Ext not ready' }};
             }}
 
             var store = null;
             var source = '';
 
-            if (
-                Ext.data &&
-                Ext.data.StoreManager &&
-                Ext.data.StoreManager.lookup
-            ) {{
+            if (Ext.data && Ext.data.StoreManager && Ext.data.StoreManager.lookup) {{
                 store = Ext.data.StoreManager.lookup('Top100description');
-
                 if (store) {{
                     source = 'Top100description';
                 }}
@@ -413,11 +367,9 @@ def wait_for_extjs_store(driver):
 
             if (!store && Ext.ComponentQuery) {{
                 var grids = Ext.ComponentQuery.query('gridpanel');
-
                 for (var i = 0; i < grids.length; i++) {{
                     if (grids[i] && grids[i].getStore) {{
                         var candidate = grids[i].getStore();
-
                         if (candidate && candidate.getCount() > 0) {{
                             store = candidate;
                             source = 'gridpanel[' + i + ']';
@@ -435,25 +387,15 @@ def wait_for_extjs_store(driver):
                 source: source || 'No store found'
             }};
         }} catch (e) {{
-            return {{
-                ready: false,
-                count: 0,
-                source: 'Error: ' + e.toString()
-            }};
+            return {{ ready: false, count: 0, source: 'Error: ' + e.toString() }};
         }}
     """
 
-    last_status = {
-        "ready": False,
-        "count": 0,
-        "source": "Not checked"
-    }
+    last_status = {"ready": False, "count": 0, "source": "Not checked"}
 
     def store_is_ready(browser):
         nonlocal last_status
-
         last_status = browser.execute_script(readiness_script)
-
         if last_status.get("ready"):
             logger.info(
                 "ExtJS data store is ready: source=%s, records=%s",
@@ -467,7 +409,6 @@ def wait_for_extjs_store(driver):
             last_status.get("source"),
             last_status.get("count")
         )
-
         return False
 
     try:
@@ -488,25 +429,19 @@ def wait_for_extjs_store(driver):
 def parse_numeric_value(value):
     if value is None:
         return 0
-
     if isinstance(value, (int, float)):
         return value
-
     numeric_text = re.sub(r"[^\d.]", "", str(value))
-
     if not numeric_text:
         return 0
-
     return float(numeric_text) if "." in numeric_text else int(numeric_text)
 
 def crawl_alphaliner():
     logger.info("Initializing Selenium Driver for Alphaliner...")
-
     driver = None
 
     try:
         driver = get_chrome_driver(headless=True)
-
         logger.info("Loading Alphaliner URL: %s", TARGET_URL)
         driver.get(TARGET_URL)
 
@@ -514,7 +449,6 @@ def crawl_alphaliner():
             "Waiting for ExtJS store to contain at least %s records...",
             MIN_EXPECTED_OPERATOR_COUNT
         )
-
         wait_for_extjs_store(driver)
 
         js_extractor = """
@@ -527,15 +461,8 @@ def crawl_alphaliner():
 
         try {
             var store = null;
-
-            if (
-                typeof Ext !== 'undefined' &&
-                Ext.data &&
-                Ext.data.StoreManager &&
-                Ext.data.StoreManager.lookup
-            ) {
+            if (typeof Ext !== 'undefined' && Ext.data && Ext.data.StoreManager && Ext.data.StoreManager.lookup) {
                 store = Ext.data.StoreManager.lookup('Top100description');
-
                 if (store) {
                     result.source = 'Top100description';
                 }
@@ -543,11 +470,9 @@ def crawl_alphaliner():
 
             if (!store && typeof Ext !== 'undefined' && Ext.ComponentQuery) {
                 var grids = Ext.ComponentQuery.query('gridpanel');
-
                 for (var i = 0; i < grids.length; i++) {
                     if (grids[i] && grids[i].getStore) {
                         var candidate = grids[i].getStore();
-
                         if (candidate && candidate.getCount() > 0) {
                             store = candidate;
                             result.source = 'gridpanel[' + i + ']';
@@ -559,7 +484,7 @@ def crawl_alphaliner():
 
             if (store) {
                 store.each(function(rec) {
-                    result.records.push(rec.data);
+                    result.records.push(rec.data || rec);
                 });
             }
 
@@ -585,99 +510,58 @@ def crawl_alphaliner():
                 "ExtJS store was ready but data extraction returned zero records."
             )
 
+        if records and isinstance(records[0], dict):
+            logger.info("Sample record keys: %s", list(records[0].keys()))
+
         today_str = datetime.now().strftime("%Y-%m-%d")
         operators = []
         orderbook_total_teu = 0
 
-        for record in records:
-            rank = int(parse_numeric_value(
-                record.get("rank")
-                or record.get("Rank")
-                or record.get("id")
-                or 0
-            ))
-
-            if rank <= 0 or rank > 100:
+        for idx, record in enumerate(records, start=1):
+            if not isinstance(record, dict):
                 continue
 
+            # 대소문자 및 언더스코어 구분 없이 검색할 수 있도록 키 정규화
+            norm_rec = {
+                re.sub(r"[^a-z0-9]", "", str(k).lower()): v
+                for k, v in record.items()
+            }
+
+            def get_field(candidates, default=""):
+                for cand in candidates:
+                    norm_cand = re.sub(r"[^a-z0-9]", "", cand.lower())
+                    if norm_cand in norm_rec and norm_rec[norm_cand] is not None:
+                        return norm_rec[norm_cand]
+                return default
+
+            # 순위(Rank): 레코드 필드 매핑 실패 시 인덱스(1~100)로 자동 대체
+            rank_val = parse_numeric_value(
+                get_field(["rank", "ranking", "pos", "position", "id", "idx", "num", "no"], idx)
+            )
+            rank = int(rank_val) if rank_val > 0 else idx
+
             operator_name = str(
-                record.get("operator")
-                or record.get("Operator")
-                or record.get("liner")
-                or record.get("name")
-                or f"Operator {rank}"
+                get_field(["operator", "liner", "name", "carrier", "company", "label", "title"], f"Operator {rank}")
             ).strip()
 
-            total_teu = int(parse_numeric_value(
-                record.get("tot_teu")
-                or record.get("total_teu")
-                or record.get("teu")
-                or 0
-            ))
+            # HTML 태그 제거 (간혹 링크 태그가 포함되어 있을 경우)
+            operator_name = re.sub(r"<[^>]+>", "", operator_name).strip()
 
-            total_ships = int(parse_numeric_value(
-                record.get("tot_ships")
-                or record.get("total_ships")
-                or record.get("ships")
-                or 0
-            ))
+            total_teu = int(parse_numeric_value(get_field(["totteu", "totalteu", "teu", "capacity"])))
+            total_ships = int(parse_numeric_value(get_field(["totships", "totalships", "ships", "vessels"])))
+            market_share = float(parse_numeric_value(get_field(["share", "marketshare", "market_share"])))
 
-            market_share = float(parse_numeric_value(
-                record.get("share")
-                or record.get("market_share")
-                or 0.0
-            ))
+            owned_teu = int(parse_numeric_value(get_field(["ownedteu", "ownteu"])))
+            owned_ships = int(parse_numeric_value(get_field(["ownedships", "ownships"])))
+            owned_share = float(parse_numeric_value(get_field(["ownedshare", "ownshare"])))
 
-            owned_teu = int(parse_numeric_value(
-                record.get("owned_teu")
-                or 0
-            ))
+            chartered_teu = int(parse_numeric_value(get_field(["charteredteu", "chateu", "charterteu"])))
+            chartered_ships = int(parse_numeric_value(get_field(["charteredships", "chaships", "charterships"])))
+            chartered_share = float(parse_numeric_value(get_field(["charteredshare", "chashare", "chartershare"])))
 
-            owned_ships = int(parse_numeric_value(
-                record.get("owned_ships")
-                or 0
-            ))
-
-            owned_share = float(parse_numeric_value(
-                record.get("owned_share")
-                or 0.0
-            ))
-
-            chartered_teu = int(parse_numeric_value(
-                record.get("chartered_teu")
-                or record.get("cha_teu")
-                or 0
-            ))
-
-            chartered_ships = int(parse_numeric_value(
-                record.get("chartered_ships")
-                or record.get("cha_ships")
-                or 0
-            ))
-
-            chartered_share = float(parse_numeric_value(
-                record.get("chartered_share")
-                or record.get("cha_share")
-                or 0.0
-            ))
-
-            orderbook_teu = int(parse_numeric_value(
-                record.get("orderbook_teu")
-                or record.get("ord_teu")
-                or 0
-            ))
-
-            orderbook_ships = int(parse_numeric_value(
-                record.get("orderbook_ships")
-                or record.get("ord_ships")
-                or 0
-            ))
-
-            orderbook_share = float(parse_numeric_value(
-                record.get("orderbook_share")
-                or record.get("ord_share")
-                or 0.0
-            ))
+            orderbook_teu = int(parse_numeric_value(get_field(["orderbookteu", "ordteu", "orderteu"])))
+            orderbook_ships = int(parse_numeric_value(get_field(["orderbookships", "ordships", "orderships"])))
+            orderbook_share = float(parse_numeric_value(get_field(["orderbookshare", "ordshare", "ordershare"])))
 
             orderbook_total_teu += orderbook_teu
 
@@ -713,26 +597,19 @@ def crawl_alphaliner():
 
         raw_text = data.get("rawText", "")
 
-        global_teu_match = re.search(
-            r"Total:\s*([\d,]+)\s*TEU",
-            raw_text
-        )
-
-        global_ships_match = re.search(
-            r"Total:\s*[\d,]+\s*TEU\s*\(\s*([\d,]+)\s*Ships\)",
-            raw_text
-        )
+        global_teu_match = re.search(r"Total:\s*([\d,]+)\s*TEU", raw_text)
+        global_ships_match = re.search(r"Total:\s*[\d,]+\s*TEU\s*\(\s*([\d,]+)\s*Ships\)", raw_text)
 
         global_total_teu = (
             int(re.sub(r"[^\d]", "", global_teu_match.group(1)))
             if global_teu_match
-            else int(top100_teu / 0.95)
+            else int(top100_teu / 0.95) if top100_teu > 0 else 0
         )
 
         global_total_ships = (
             int(re.sub(r"[^\d]", "", global_ships_match.group(1)))
             if global_ships_match
-            else int(top100_ships / 0.90)
+            else int(top100_ships / 0.90) if top100_ships > 0 else 0
         )
 
         top10_share = round(
@@ -758,15 +635,10 @@ def crawl_alphaliner():
             "Crawl completed successfully: %s operators processed.",
             len(operators)
         )
-
         return True
 
     except Exception as exc:
-        logger.error(
-            "Alphaliner crawl failed: %s",
-            exc,
-            exc_info=True
-        )
+        logger.error("Alphaliner crawl failed: %s", exc, exc_info=True)
         return False
 
     finally:
@@ -978,13 +850,11 @@ input[type="text"]:focus {
 .kpi-sub {
   font-size: 11px;
   font-family: var(--font-mono);
+  color: var(--text-muted);
   display: flex;
+  align-items: center;
   gap: 6px;
 }
-
-.delta-pos { color: var(--accent-green); }
-.delta-neg { color: var(--accent-red); }
-.delta-zero { color: var(--text-dim); }
 
 .col-chart {
   grid-column: span 12;
@@ -995,9 +865,17 @@ input[type="text"]:focus {
   grid-column: span 12;
 }
 
-.table-wrapper {
+.table-toolbar {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.table-container {
   overflow-x: auto;
-  max-height: 650px;
+  max-height: 600px;
 }
 
 table {
@@ -1005,7 +883,12 @@ table {
   border-collapse: collapse;
   font-family: var(--font-mono);
   font-size: 12px;
+}
+
+th, td {
+  padding: 6px 10px;
   text-align: right;
+  border-bottom: 1px solid var(--border-subtle);
   white-space: nowrap;
 }
 
@@ -1013,132 +896,75 @@ th {
   background: var(--bg-tertiary);
   color: var(--text-muted);
   font-weight: 600;
-  padding: 6px 10px;
-  border: 1px solid var(--border-subtle);
+  text-transform: uppercase;
+  font-size: 11px;
   position: sticky;
   top: 0;
   z-index: 10;
-  text-transform: uppercase;
-  font-size: 11px;
 }
 
-th.th-group {
+th.group-header {
   text-align: center;
-  border-bottom: 1px solid var(--border-focus);
+  border-left: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
 }
 
-th.align-left,
-td.align-left {
-  text-align: left;
+.border-left {
+  border-left: 1px solid var(--border-subtle);
 }
 
-th.align-center,
-td.align-center {
-  text-align: center;
+tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
 }
 
-td {
-  padding: 5px 10px;
-  border: 1px solid rgba(27, 48, 67, 0.4);
-  color: var(--text-main);
-}
-
-tr:nth-child(even) {
-  background: rgba(13, 29, 43, 0.3);
-}
-
-tr:hover {
-  background: rgba(69, 169, 245, 0.08);
-}
+td.align-left, th.align-left { text-align: left; }
+td.align-center, th.align-center { text-align: center; }
 
 .rank-badge {
   display: inline-block;
-  min-width: 24px;
+  width: 24px;
   text-align: center;
-  padding: 1px 4px;
-  background: var(--bg-tertiary);
-  border-radius: 2px;
-  color: var(--accent-blue);
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--text-muted);
 }
 
 .rank-top10 {
-  background: rgba(246, 166, 35, 0.2);
   color: var(--accent-orange);
 }
 
-.delta-inline {
-  font-size: 10px;
-  margin-left: 4px;
-}
+.delta-pos { color: var(--accent-green); }
+.delta-neg { color: var(--accent-red); }
+.delta-inline { font-size: 10px; margin-left: 4px; }
 
-.terminal-footer {
-  background: var(--bg-secondary);
-  border-top: 1px solid var(--border-subtle);
-  padding: 6px 16px;
+.footer-status {
+  padding: 12px 16px;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-dim);
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  position: fixed;
-  bottom: 0;
-  width: 100%;
-  z-index: 100;
-}
-
-.status-indicator {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  background: var(--accent-green);
-  border-radius: 50%;
-  margin-right: 6px;
-}
-
-@media (max-width: 1200px) {
-  .col-kpi {
-    grid-column: span 6;
-  }
-}
-
-@media (max-width: 768px) {
-  .col-kpi {
-    grid-column: span 12;
-  }
-
-  .terminal-header {
-    flex-direction: column;
-    gap: 8px;
-    align-items: flex-start;
-  }
-
-  .terminal-controls {
-    flex-wrap: wrap;
-    width: 100%;
-    justify-content: space-between;
-  }
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  margin-top: 20px;
 }
 </style>
 </head>
-
 <body>
 
 <header class="terminal-header">
   <div class="brand">
-    <span class="brand-tag">MI-TERM</span>
-    <span class="brand-title">ALPHALINER TOP 100 / FLEET CAPACITY DEPLOYMENT</span>
+    <span class="brand-tag">ALPHALINER</span>
+    <span class="brand-title">TOP 100 Global Liner Operators Terminal</span>
   </div>
 
   <div class="terminal-controls">
     <div class="select-wrapper">
-      <span>SNAPSHOT:</span>
-      <select id="dateSelect" onchange="switchSnapshot()"></select>
+      <label for="dateSelect">SNAPSHOT:</label>
+      <select id="dateSelect" onchange="changeSnapshot()"></select>
     </div>
 
     <div class="select-wrapper">
-      <span>COMPARE TO:</span>
+      <label for="compareSelect">COMPARE TO:</label>
       <select id="compareSelect" onchange="recalculateDeltas()"></select>
     </div>
 
@@ -1146,102 +972,98 @@ tr:hover {
   </div>
 </header>
 
-<main class="container" style="margin-bottom: 30px;">
+<main class="container">
   <section class="panel col-kpi">
-    <div class="panel-header">TOTAL GLOBAL FLEET</div>
+    <div class="panel-header"><span>GLOBAL CAPACITY</span></div>
     <div class="panel-body kpi-card">
-      <div class="kpi-title">Capacity & Ships</div>
-      <div class="kpi-value" id="kpiGlobalTeu">-- TEU</div>
+      <div class="kpi-title">TOTAL FLEET TEU</div>
+      <div class="kpi-value" id="kpiGlobalTeu">--</div>
       <div class="kpi-sub">
         <span id="kpiGlobalShips">-- Ships</span>
-        <span id="deltaGlobalTeu" class="delta-zero"></span>
+        <span id="deltaGlobalTeu" class="delta-inline"></span>
       </div>
     </div>
   </section>
 
   <section class="panel col-kpi">
-    <div class="panel-header">TOP 100 OPERATORS</div>
+    <div class="panel-header"><span>TOP 100 SHARE</span></div>
     <div class="panel-body kpi-card">
-      <div class="kpi-title">Deployed Capacity</div>
-      <div class="kpi-value" id="kpiTop100Teu">-- TEU</div>
+      <div class="kpi-title">TOP 100 TOTAL TEU</div>
+      <div class="kpi-value" id="kpiTop100Teu">--</div>
       <div class="kpi-sub">
         <span id="kpiTop100Ships">-- Ships</span>
-        <span id="deltaTop100Teu" class="delta-zero"></span>
+        <span id="deltaTop100Teu" class="delta-inline"></span>
       </div>
     </div>
   </section>
 
   <section class="panel col-kpi">
-    <div class="panel-header">TOP 10 CONCENTRATION</div>
+    <div class="panel-header"><span>CONCENTRATION</span></div>
     <div class="panel-body kpi-card">
-      <div class="kpi-title">Global Share</div>
-      <div class="kpi-value" id="kpiTop10Share">-- %</div>
+      <div class="kpi-title">TOP 10 MARKET SHARE</div>
+      <div class="kpi-value" id="kpiTop10Share" style="color: var(--accent-orange);">--</div>
       <div class="kpi-sub">
         <span id="kpiTop10Teu">-- TEU</span>
-        <span id="deltaTop10Share" class="delta-zero"></span>
+        <span id="deltaTop10Share" class="delta-inline"></span>
       </div>
     </div>
   </section>
 
   <section class="panel col-kpi">
-    <div class="panel-header">ORDERBOOK (TOP 100)</div>
+    <div class="panel-header"><span>ORDERBOOK</span></div>
     <div class="panel-body kpi-card">
-      <div class="kpi-title">On Order Capacity</div>
-      <div class="kpi-value" id="kpiOrderbookTeu">-- TEU</div>
+      <div class="kpi-title">PIPELINE CAPACITY</div>
+      <div class="kpi-value" id="kpiOrderbookTeu" style="color: var(--accent-purple);">--</div>
       <div class="kpi-sub">
         <span id="kpiOrderbookRatio">-- % of active</span>
-        <span id="deltaOrderbookTeu" class="delta-zero"></span>
+        <span id="deltaOrderbookTeu" class="delta-inline"></span>
       </div>
     </div>
   </section>
 
   <section class="panel col-chart">
     <div class="panel-header">
-      <span>TOP 10 OPERATOR CAPACITY DISTRIBUTION (TEU)</span>
-      <span id="chartSubTitle" style="color: var(--accent-orange);"></span>
+      <span>TOP 10 OPERATOR CAPACITY PROFILE (TEU)</span>
+      <span id="chartSubTitle">--</span>
     </div>
-
-    <div class="panel-body" style="position: relative; height: 100%;">
+    <div class="panel-body" style="position: relative;">
       <canvas id="topChart"></canvas>
     </div>
   </section>
 
   <section class="panel col-table">
-    <div class="panel-header">
-      <span>TOP 100 LINER OPERATORS BREAKDOWN</span>
-      <input
-        type="text"
-        id="filterInput"
-        placeholder="Filter operator..."
-        onkeyup="filterTable()"
-        style="width: 180px;"
-      >
+    <div class="table-toolbar">
+      <div style="font-weight: 600; font-family: var(--font-mono); font-size: 11px;">
+        TOP 100 DETAILED FLEET BREAKDOWN
+      </div>
+      <div>
+        <input type="text" id="filterInput" placeholder="Filter operator..." onkeyup="filterTable()">
+      </div>
     </div>
-
-    <div class="table-wrapper">
-      <table id="operatorTable">
+    <div class="table-container">
+      <table>
         <thead>
           <tr>
-            <th rowspan="2" class="align-center" style="width: 50px;">RANK</th>
+            <th rowspan="2" class="align-center">#</th>
             <th rowspan="2" class="align-left">OPERATOR</th>
-            <th colspan="3" class="th-group">TOTAL FLEET</th>
-            <th colspan="3" class="th-group">OWNED</th>
-            <th colspan="3" class="th-group">CHARTERED</th>
-            <th colspan="3" class="th-group">ORDERBOOK</th>
+            <th colspan="3" class="group-header">TOTAL CAPACITY</th>
+            <th colspan="3" class="group-header">OWNED FLEET</th>
+            <th colspan="3" class="group-header">CHARTERED FLEET</th>
+            <th colspan="3" class="group-header">ORDERBOOK</th>
           </tr>
           <tr>
             <th>TEU</th>
             <th>SHIPS</th>
             <th>SHARE</th>
-            <th>TEU</th>
+            <th class="border-left">TEU</th>
             <th>SHIPS</th>
             <th>% OWN</th>
-            <th>TEU</th>
+            <th class="border-left">TEU</th>
             <th>SHIPS</th>
             <th>% CHT</th>
-            <th>TEU</th>
+            <th class="border-left">TEU</th>
             <th>SHIPS</th>
-            <th>% O.B.</th>
+            <th>% FLEET</th>
           </tr>
         </thead>
         <tbody id="tableBody"></tbody>
@@ -1250,82 +1072,71 @@ tr:hover {
   </section>
 </main>
 
-<footer class="terminal-footer">
-  <div>
-    <span class="status-indicator"></span>
-    <span id="systemStatus">STATUS: TERMINAL CONNECTED (PORT 8050)</span>
-  </div>
+<footer class="footer-status">
+  <div>SYSTEM STATUS: <span style="color: var(--accent-green);">ONLINE</span> | SOURCE: ALPHALINER PUBLIC TOP 100</div>
   <div id="collectedTimestamp">DATA COLLECTED: --</div>
 </footer>
 
 <script>
-let DATA_STORE = null;
+let DATA_STORE = { dates: [], snapshots: {} };
 let currentChart = null;
 
 function fmt(n) {
-  if (n === null || n === undefined || isNaN(n)) return "0";
-  return Number(n).toLocaleString("en-US");
+  if (n === null || n === undefined || isNaN(n)) return "--";
+  return Number(n).toLocaleString();
 }
 
-function fmtDelta(diff, isPercent = false) {
-  if (diff === null || diff === undefined || isNaN(diff) || diff === 0) {
-    return `<span class="delta-zero">-</span>`;
-  }
-
-  const cls = diff > 0 ? "delta-pos" : "delta-neg";
-  const sign = diff > 0 ? "+" : "";
-  const val = isPercent ? diff.toFixed(2) + "%" : fmt(diff);
-
-  return `<span class="${cls}">${sign}${val}</span>`;
+function fmtDelta(val, isPercent = false) {
+  if (val === null || val === undefined || isNaN(val) || val === 0) return "";
+  const sign = val > 0 ? "+" : "";
+  const cls = val > 0 ? "delta-pos" : "delta-neg";
+  const formatted = isPercent ? val.toFixed(1) + "%" : fmt(val);
+  return `<span class="${cls}">(${sign}${formatted})</span>`;
 }
 
 async function initDashboard() {
   try {
-    const response = await fetch("alphaliner_data.json?t=" + Date.now());
-    DATA_STORE = await response.json();
+    const res = await fetch("alphaliner_data.json");
+    if (!res.ok) throw new Error("Failed to load JSON dataset");
+    DATA_STORE = await res.json();
 
-    setupDateSelectors();
+    if (!DATA_STORE.dates || DATA_STORE.dates.length === 0) {
+      document.body.innerHTML = "<div style='color:white;padding:40px;font-family:monospace;'>No snapshot data available. Run crawler first.</div>";
+      return;
+    }
+
+    populateDropdowns();
     renderAll();
-  } catch (error) {
-    console.error("Dashboard initialization error:", error);
-
-    document.getElementById("systemStatus").innerText =
-      "STATUS: DATA LOAD FAILURE";
-
-    document.getElementById("systemStatus")
-      .previousElementSibling
-      .style
-      .background = "var(--accent-red)";
+  } catch (err) {
+    console.error("Initialization error:", err);
   }
 }
 
-function setupDateSelectors() {
-  const dateSelect = document.getElementById("dateSelect");
-  const compareSelect = document.getElementById("compareSelect");
+function populateDropdowns() {
+  const dateSel = document.getElementById("dateSelect");
+  const compSel = document.getElementById("compareSelect");
 
-  dateSelect.innerHTML = "";
-  compareSelect.innerHTML = "";
+  dateSel.innerHTML = "";
+  compSel.innerHTML = '<option value="none">None (Latest Only)</option>';
 
-  if (!DATA_STORE.dates || DATA_STORE.dates.length === 0) {
-    return;
-  }
+  DATA_STORE.dates.forEach((dt, idx) => {
+    const opt = document.createElement("option");
+    opt.value = dt;
+    opt.innerText = dt + (idx === 0 ? " (Latest)" : "");
+    dateSel.appendChild(opt);
 
-  DATA_STORE.dates.forEach(date => {
-    dateSelect.add(new Option(date, date));
-  });
-
-  compareSelect.add(new Option("NONE", "none"));
-
-  DATA_STORE.dates.forEach(date => {
-    compareSelect.add(new Option(date, date));
+    const compOpt = document.createElement("option");
+    compOpt.value = dt;
+    compOpt.innerText = dt;
+    compSel.appendChild(compOpt);
   });
 
   if (DATA_STORE.dates.length > 1) {
-    compareSelect.selectedIndex = 2;
+    compSel.value = DATA_STORE.dates[1];
   }
 }
 
-function switchSnapshot() {
+function changeSnapshot() {
   renderAll();
 }
 
@@ -1337,16 +1148,12 @@ function renderAll() {
   const activeDate = document.getElementById("dateSelect").value;
   const compareDate = document.getElementById("compareSelect").value;
 
-  if (!DATA_STORE.snapshots[activeDate]) {
-    return;
-  }
+  if (!DATA_STORE.snapshots[activeDate]) return;
 
   const currentSnapshot = DATA_STORE.snapshots[activeDate];
-
-  const compareSnapshot =
-    compareDate !== "none" && DATA_STORE.snapshots[compareDate]
-      ? DATA_STORE.snapshots[compareDate]
-      : null;
+  const compareSnapshot = (compareDate !== "none" && DATA_STORE.snapshots[compareDate])
+    ? DATA_STORE.snapshots[compareDate]
+    : null;
 
   renderKPIs(currentSnapshot, compareSnapshot);
   renderChart(currentSnapshot);
@@ -1360,96 +1167,55 @@ function renderKPIs(currentSnapshot, compareSnapshot) {
   const currentMeta = currentSnapshot.meta;
   const previousMeta = compareSnapshot ? compareSnapshot.meta : null;
 
-  document.getElementById("kpiGlobalTeu").innerText =
-    `${fmt(currentMeta.global_total_teu)} TEU`;
+  document.getElementById("kpiGlobalTeu").innerText = `${fmt(currentMeta.global_total_teu)} TEU`;
+  document.getElementById("kpiGlobalShips").innerText = `${fmt(currentMeta.global_total_ships)} Ships`;
+  document.getElementById("deltaGlobalTeu").innerHTML = previousMeta
+    ? fmtDelta(currentMeta.global_total_teu - previousMeta.global_total_teu) + " TEU"
+    : "";
 
-  document.getElementById("kpiGlobalShips").innerText =
-    `${fmt(currentMeta.global_total_ships)} Ships`;
+  document.getElementById("kpiTop100Teu").innerText = `${fmt(currentMeta.top100_total_teu)} TEU`;
+  document.getElementById("kpiTop100Ships").innerText = `${fmt(currentMeta.top100_total_ships)} Ships`;
+  document.getElementById("deltaTop100Teu").innerHTML = previousMeta
+    ? fmtDelta(currentMeta.top100_total_teu - previousMeta.top100_total_teu) + " TEU"
+    : "";
 
-  document.getElementById("deltaGlobalTeu").innerHTML =
-    previousMeta
-      ? fmtDelta(currentMeta.global_total_teu - previousMeta.global_total_teu) + " TEU"
-      : "";
+  document.getElementById("kpiTop10Share").innerText = `${currentMeta.top10_share ? currentMeta.top10_share.toFixed(1) : "0.0"} %`;
+  document.getElementById("kpiTop10Teu").innerText = `${fmt(currentMeta.top10_total_teu)} TEU`;
+  document.getElementById("deltaTop10Share").innerHTML = previousMeta
+    ? fmtDelta(currentMeta.top10_share - previousMeta.top10_share, true)
+    : "";
 
-  document.getElementById("kpiTop100Teu").innerText =
-    `${fmt(currentMeta.top100_total_teu)} TEU`;
-
-  document.getElementById("kpiTop100Ships").innerText =
-    `${fmt(currentMeta.top100_total_ships)} Ships`;
-
-  document.getElementById("deltaTop100Teu").innerHTML =
-    previousMeta
-      ? fmtDelta(currentMeta.top100_total_teu - previousMeta.top100_total_teu) + " TEU"
-      : "";
-
-  document.getElementById("kpiTop10Share").innerText =
-    `${currentMeta.top10_share ? currentMeta.top10_share.toFixed(1) : "0.0"} %`;
-
-  document.getElementById("kpiTop10Teu").innerText =
-    `${fmt(currentMeta.top10_total_teu)} TEU`;
-
-  document.getElementById("deltaTop10Share").innerHTML =
-    previousMeta
-      ? fmtDelta(currentMeta.top10_share - previousMeta.top10_share, true)
-      : "";
-
-  document.getElementById("kpiOrderbookTeu").innerText =
-    `${fmt(currentMeta.orderbook_total_teu)} TEU`;
-
-  const orderbookRatio =
-    currentMeta.top100_total_teu > 0
-      ? ((currentMeta.orderbook_total_teu / currentMeta.top100_total_teu) * 100).toFixed(1)
-      : "0.0";
-
-  document.getElementById("kpiOrderbookRatio").innerText =
-    `${orderbookRatio} % of active`;
-
-  document.getElementById("deltaOrderbookTeu").innerHTML =
-    previousMeta
-      ? fmtDelta(
-          currentMeta.orderbook_total_teu -
-          previousMeta.orderbook_total_teu
-        ) + " TEU"
-      : "";
+  document.getElementById("kpiOrderbookTeu").innerText = `${fmt(currentMeta.orderbook_total_teu)} TEU`;
+  const orderbookRatio = currentMeta.top100_total_teu > 0
+    ? ((currentMeta.orderbook_total_teu / currentMeta.top100_total_teu) * 100).toFixed(1)
+    : "0.0";
+  document.getElementById("kpiOrderbookRatio").innerText = `${orderbookRatio} % of active`;
+  document.getElementById("deltaOrderbookTeu").innerHTML = previousMeta
+    ? fmtDelta(currentMeta.orderbook_total_teu - previousMeta.orderbook_total_teu) + " TEU"
+    : "";
 }
 
 function renderChart(snapshot) {
   const top10 = snapshot.operators.slice(0, 10);
+  const labels = top10.map(op => `${op.rank}. ${op.operator}`);
+  const owned = top10.map(op => op.owned_teu);
+  const chartered = top10.map(op => op.chartered_teu);
+  const orderbook = top10.map(op => op.orderbook_teu);
 
-  const labels = top10.map(operator =>
-    `${operator.rank}. ${operator.operator}`
-  );
-
-  const owned = top10.map(operator => operator.owned_teu);
-  const chartered = top10.map(operator => operator.chartered_teu);
-  const orderbook = top10.map(operator => operator.orderbook_teu);
-
-  document.getElementById("chartSubTitle").innerText =
-    `AS OF ${snapshot.meta.snapshot_date}`;
+  document.getElementById("chartSubTitle").innerText = `AS OF ${snapshot.meta.snapshot_date}`;
 
   if (currentChart) {
     currentChart.destroy();
   }
 
   const context = document.getElementById("topChart").getContext("2d");
-
   currentChart = new Chart(context, {
     type: "bar",
     data: {
       labels: labels,
       datasets: [
-        {
-          label: "Owned TEU",
-          data: owned,
-          backgroundColor: "#45a9f5",
-          stack: "active"
-        },
-        {
-          label: "Chartered TEU",
-          data: chartered,
-          backgroundColor: "#f6a623",
-          stack: "active"
-        },
+        { label: "Owned TEU", data: owned, backgroundColor: "#45a9f5", stack: "active" },
+        { label: "Chartered TEU", data: chartered, backgroundColor: "#f6a623", stack: "active" },
         {
           label: "Orderbook TEU",
           data: orderbook,
@@ -1466,42 +1232,23 @@ function renderChart(snapshot) {
       plugins: {
         legend: {
           position: "top",
-          labels: {
-            color: "#879caf",
-            font: {
-              family: "JetBrains Mono",
-              size: 11
-            }
-          }
+          labels: { color: "#879caf", font: { family: "JetBrains Mono", size: 11 } }
         }
       },
       scales: {
         x: {
           stacked: true,
-          ticks: {
-            color: "#879caf",
-            font: {
-              family: "JetBrains Mono",
-              size: 10
-            }
-          },
-          grid: {
-            color: "rgba(27, 48, 67, 0.5)"
-          }
+          ticks: { color: "#879caf", font: { family: "JetBrains Mono", size: 10 } },
+          grid: { color: "rgba(27, 48, 67, 0.5)" }
         },
         y: {
           stacked: true,
           ticks: {
             color: "#879caf",
-            font: {
-              family: "JetBrains Mono",
-              size: 10
-            },
-            callback: value => (value / 1000000).toFixed(1) + "M"
+            font: { family: "JetBrains Mono", size: 10 },
+            callback: v => (v / 1000000).toFixed(1) + "M"
           },
-          grid: {
-            color: "rgba(27, 48, 67, 0.5)"
-          }
+          grid: { color: "rgba(27, 48, 67, 0.5)" }
         }
       }
     }
@@ -1513,80 +1260,49 @@ function renderTable(currentSnapshot, compareSnapshot) {
   tableBody.innerHTML = "";
 
   const compareMap = {};
-
   if (compareSnapshot && compareSnapshot.operators) {
-    compareSnapshot.operators.forEach(operator => {
-      compareMap[operator.operator.toLowerCase()] = operator;
+    compareSnapshot.operators.forEach(op => {
+      compareMap[op.operator.toLowerCase()] = op;
     });
   }
 
-  currentSnapshot.operators.forEach(operator => {
-    const previous = compareMap[operator.operator.toLowerCase()];
+  currentSnapshot.operators.forEach(op => {
+    const prev = compareMap[op.operator.toLowerCase()];
     const row = document.createElement("tr");
 
     let rankDelta = "";
     let teuDelta = "";
     let shipsDelta = "";
 
-    if (previous) {
-      const rankDifference = previous.rank - operator.rank;
-
-      if (rankDifference !== 0) {
-        const cssClass = rankDifference > 0 ? "delta-pos" : "delta-neg";
-        const symbol = rankDifference > 0 ? "▲" : "▼";
-
-        rankDelta =
-          `<span class="${cssClass} delta-inline">` +
-          `${symbol}${Math.abs(rankDifference)}</span>`;
+    if (prev) {
+      const diff = prev.rank - op.rank;
+      if (diff !== 0) {
+        const cls = diff > 0 ? "delta-pos" : "delta-neg";
+        const sym = diff > 0 ? "▲" : "▼";
+        rankDelta = `<span class="${cls} delta-inline">${sym}${Math.abs(diff)}</span>`;
       }
-
-      teuDelta =
-        `<div class="delta-inline">` +
-        `${fmtDelta(operator.total_teu - previous.total_teu)}` +
-        `</div>`;
-
-      shipsDelta =
-        `<div class="delta-inline">` +
-        `${fmtDelta(operator.total_ships - previous.total_ships)}` +
-        `</div>`;
+      teuDelta = `<div class="delta-inline">${fmtDelta(op.total_teu - prev.total_teu)}</div>`;
+      shipsDelta = `<div class="delta-inline">${fmtDelta(op.total_ships - prev.total_ships)}</div>`;
     }
 
-    const rankClass =
-      operator.rank <= 10
-        ? "rank-badge rank-top10"
-        : "rank-badge";
+    const rankClass = op.rank <= 10 ? "rank-badge rank-top10" : "rank-badge";
 
     row.innerHTML = `
-      <td class="align-center">
-        <span class="${rankClass}">${operator.rank}</span>${rankDelta}
-      </td>
-      <td class="align-left" style="font-weight: 600;">
-        ${operator.operator}
-      </td>
-      <td>
-        <strong>${fmt(operator.total_teu)}</strong>${teuDelta}
-      </td>
-      <td>
-        ${fmt(operator.total_ships)}${shipsDelta}
-      </td>
-      <td>${Number(operator.market_share || 0).toFixed(1)}%</td>
-      <td>${fmt(operator.owned_teu)}</td>
-      <td>${fmt(operator.owned_ships)}</td>
-      <td>${Number(operator.owned_share || 0).toFixed(1)}%</td>
-      <td>${fmt(operator.chartered_teu)}</td>
-      <td>${fmt(operator.chartered_ships)}</td>
-      <td>${Number(operator.chartered_share || 0).toFixed(1)}%</td>
-      <td style="color: var(--accent-purple);">
-        ${fmt(operator.orderbook_teu)}
-      </td>
-      <td style="color: var(--accent-purple);">
-        ${fmt(operator.orderbook_ships)}
-      </td>
-      <td style="color: var(--accent-purple);">
-        ${Number(operator.orderbook_share || 0).toFixed(1)}%
-      </td>
+      <td class="align-center"><span class="${rankClass}">${op.rank}</span>${rankDelta}</td>
+      <td class="align-left" style="font-weight: 600;">${op.operator}</td>
+      <td><strong>${fmt(op.total_teu)}</strong>${teuDelta}</td>
+      <td>${fmt(op.total_ships)}${shipsDelta}</td>
+      <td>${Number(op.market_share || 0).toFixed(1)}%</td>
+      <td class="border-left">${fmt(op.owned_teu)}</td>
+      <td>${fmt(op.owned_ships)}</td>
+      <td>${Number(op.owned_share || 0).toFixed(1)}%</td>
+      <td class="border-left">${fmt(op.chartered_teu)}</td>
+      <td>${fmt(op.chartered_ships)}</td>
+      <td>${Number(op.chartered_share || 0).toFixed(1)}%</td>
+      <td class="border-left" style="color: var(--accent-purple);">${fmt(op.orderbook_teu)}</td>
+      <td style="color: var(--accent-purple);">${fmt(op.orderbook_ships)}</td>
+      <td style="color: var(--accent-purple);">${Number(op.orderbook_share || 0).toFixed(1)}%</td>
     `;
-
     tableBody.appendChild(row);
   });
 }
@@ -1594,62 +1310,27 @@ function renderTable(currentSnapshot, compareSnapshot) {
 function filterTable() {
   const query = document.getElementById("filterInput").value.toLowerCase();
   const rows = document.querySelectorAll("#tableBody tr");
-
   rows.forEach(row => {
-    const operator = row.cells[1].innerText.toLowerCase();
-    row.style.display = operator.includes(query) ? "" : "none";
+    const op = row.cells[1].innerText.toLowerCase();
+    row.style.display = op.includes(query) ? "" : "none";
   });
 }
 
 function exportCSV() {
   const activeDate = document.getElementById("dateSelect").value;
-
-  if (!DATA_STORE || !DATA_STORE.snapshots[activeDate]) {
-    return;
-  }
+  if (!DATA_STORE || !DATA_STORE.snapshots[activeDate]) return;
 
   const snapshot = DATA_STORE.snapshots[activeDate];
+  let csv = "\uFEFFRank,Operator,Total TEU,Total Ships,Market Share %,Owned TEU,Owned Ships,Owned Share %,Chartered TEU,Chartered Ships,Chartered Share %,Orderbook TEU,Orderbook Ships,Orderbook % of Fleet\n";
 
-  let csv = "\uFEFF";
-
-  csv +=
-    "Rank,Operator,Total TEU,Total Ships,Market Share %," +
-    "Owned TEU,Owned Ships,Owned Share %," +
-    "Chartered TEU,Chartered Ships,Chartered Share %," +
-    "Orderbook TEU,Orderbook Ships,Orderbook % of Fleet\n";
-
-  snapshot.operators.forEach(operator => {
-    csv +=
-      `"${operator.rank}",` +
-      `"${operator.operator.replace(/"/g, '""')}",` +
-      `${operator.total_teu},` +
-      `${operator.total_ships},` +
-      `${operator.market_share},` +
-      `${operator.owned_teu},` +
-      `${operator.owned_ships},` +
-      `${operator.owned_share},` +
-      `${operator.chartered_teu},` +
-      `${operator.chartered_ships},` +
-      `${operator.chartered_share},` +
-      `${operator.orderbook_teu},` +
-      `${operator.orderbook_ships},` +
-      `${operator.orderbook_share}\n`;
+  snapshot.operators.forEach(op => {
+    csv += `"${op.rank}","${op.operator.replace(/"/g, '""')}",${op.total_teu},${op.total_ships},${op.market_share},${op.owned_teu},${op.owned_ships},${op.owned_share},${op.chartered_teu},${op.chartered_ships},${op.chartered_share},${op.orderbook_teu},${op.orderbook_ships},${op.orderbook_share}\n`;
   });
 
-  const blob = new Blob(
-    [csv],
-    { type: "text/csv;charset=utf-8;" }
-  );
-
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const link = document.createElement("a");
-
   link.href = URL.createObjectURL(blob);
-
-  link.setAttribute(
-    "download",
-    `Alphaliner_TOP100_${activeDate}.csv`
-  );
-
+  link.setAttribute("download", `Alphaliner_TOP100_${activeDate}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -1675,12 +1356,7 @@ def generate_static_files():
         return False
 
     with open(JSON_PATH, "w", encoding="utf-8") as file:
-        json.dump(
-            data,
-            file,
-            ensure_ascii=False,
-            indent=2
-        )
+        json.dump(data, file, ensure_ascii=False, indent=2)
 
     logger.info("Generated static data JSON: %s", JSON_PATH)
 
@@ -1688,7 +1364,6 @@ def generate_static_files():
         file.write(HTML_TEMPLATE)
 
     logger.info("Generated static HTML dashboard: %s", HTML_PATH)
-
     return True
 
 # =========================================================
@@ -1698,14 +1373,12 @@ def generate_static_files():
 def index():
     if not HTML_PATH.exists():
         generate_static_files()
-
     return send_from_directory(BASE_DIR, "index.html")
 
 @app.route("/alphaliner_data.json")
 def get_json():
     if not JSON_PATH.exists():
         generate_static_files()
-
     return send_from_directory(BASE_DIR, "alphaliner_data.json")
 
 @app.route("/api/snapshots")
@@ -1719,7 +1392,6 @@ def api_crawl():
     if not crawl_success:
         if has_existing_data_in_db():
             generate_static_files()
-
             return jsonify({
                 "status": "fallback",
                 "message": (
@@ -1737,7 +1409,6 @@ def api_crawl():
         }), 502
 
     generate_static_files()
-
     return jsonify({
         "status": "success",
         "message": "Crawler executed and static files refreshed."
@@ -1786,17 +1457,14 @@ def main():
             "Crawling skipped by --no-crawl flag. "
             "Generating static artifacts from existing database."
         )
-
         generate_static_files()
 
     else:
         logger.info("Executing scheduled crawl routine...")
-
         crawl_success = crawl_alphaliner()
 
         if crawl_success:
             generate_static_files()
-
         else:
             logger.warning(
                 "Live crawler validation failed. "
@@ -1805,18 +1473,15 @@ def main():
 
             if has_existing_data_in_db():
                 generate_static_files()
-
                 logger.warning(
                     "Fallback dashboard generation completed using "
                     "the previous valid database snapshot."
                 )
-
             else:
                 logger.error(
                     "No usable historical database snapshot exists. "
                     "Static files cannot be generated."
                 )
-
                 if args.cron:
                     sys.exit(1)
 
