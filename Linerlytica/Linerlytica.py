@@ -914,264 +914,1201 @@ def generate_dashboard_html(conn: sqlite3.Connection) -> None:
         status: [] for status in REQUIRED_STATUSES
     }
 
+    ships_series: Dict[str, List[Optional[int]]] = {
+        status: [] for status in REQUIRED_STATUSES
+    }
+
     for snapshot_date in completed_dates:
         for status in REQUIRED_STATUSES:
             data = history_map.get((snapshot_date, status))
-            teu_series[status].append(data["teu"] if data else None)
+
+            teu_series[status].append(
+                data["teu"] if data else None
+            )
+
+            ships_series[status].append(
+                data["ships"] if data else None
+            )
+
+    sorted_statuses = sorted(
+        REQUIRED_STATUSES,
+        key=lambda status: latest_data.get(status, {}).get("ships", 0),
+        reverse=True,
+    )
 
     table_rows = ""
 
-    for status in REQUIRED_STATUSES:
+    for status in sorted_statuses:
         latest = latest_data.get(status, {})
         previous = previous_data.get(status, {})
 
         table_rows += f"""
         <tr>
             <td class="status">{html.escape(status)}</td>
-            <td>{format_number(latest.get("ships"))}</td>
-            <td>{format_delta(latest.get("ships"), previous.get("ships"))}</td>
-            <td>{format_number(latest.get("teu"))}</td>
-            <td>{format_delta(latest.get("teu"), previous.get("teu"))}</td>
+            <td class="number">{format_number(latest.get("ships"))}</td>
+            <td class="number">{format_number(latest.get("teu"))}</td>
+            <td class="number">
+                {format_delta(latest.get("ships"), previous.get("ships"))}
+            </td>
         </tr>
+        """
+
+    ticker_items = ""
+
+    for status in REQUIRED_STATUSES:
+        latest = latest_data.get(status, {})
+        previous = previous_data.get(status, {})
+
+        ships = latest.get("ships")
+        prior_ships = previous.get("ships")
+
+        delta = (
+            ships - prior_ships
+            if ships is not None and prior_ships is not None
+            else None
+        )
+
+        if delta is None:
+            delta_class = "neutral"
+            delta_text = "N/A"
+        elif delta > 0:
+            delta_class = "up"
+            delta_text = f"↗ +{delta:,}"
+        elif delta < 0:
+            delta_class = "down"
+            delta_text = f"↘ {delta:,}"
+        else:
+            delta_class = "neutral"
+            delta_text = "→ 0"
+
+        ticker_items += f"""
+        <div class="ticker-item">
+            <span class="ticker-label">{html.escape(status)}</span>
+            <span class="ticker-value">{format_number(ships)}</span>
+            <span class="ticker-delta {delta_class}">{delta_text}</span>
+        </div>
         """
 
     active_latest = latest_data.get("Active Ships", {})
     active_previous = previous_data.get("Active Ships", {})
+
+    port_latest = latest_data.get("Ships at port", {})
+    port_previous = previous_data.get("Ships at port", {})
+
+    anchorage_latest = latest_data.get("Ships at anchorage", {})
+    anchorage_previous = previous_data.get("Ships at anchorage", {})
+
+    inactive_latest = latest_data.get("Inactive Ships", {})
+    inactive_previous = previous_data.get("Inactive Ships", {})
+
+    shipyard_latest = latest_data.get("Ships in shipyard", {})
+    shipyard_previous = previous_data.get("Ships in shipyard", {})
+
+    total_latest_ships = sum(
+        latest_data.get(status, {}).get("ships", 0)
+        for status in REQUIRED_STATUSES
+    )
+
+    total_previous_ships = sum(
+        previous_data.get(status, {}).get("ships", 0)
+        for status in REQUIRED_STATUSES
+    )
+
+    total_latest_teu = sum(
+        latest_data.get(status, {}).get("teu", 0)
+        for status in REQUIRED_STATUSES
+    )
+
+    total_previous_teu = sum(
+        previous_data.get(status, {}).get("teu", 0)
+        for status in REQUIRED_STATUSES
+    )
+
+    heatmap_statuses = sorted(
+        REQUIRED_STATUSES,
+        key=lambda status: latest_data.get(status, {}).get("teu", 0),
+        reverse=True,
+    )
+
+    heatmap_rows = ""
+
+    max_teu = max(
+        [
+            latest_data.get(status, {}).get("teu", 0)
+            for status in REQUIRED_STATUSES
+        ]
+        or [1]
+    )
+
+    for status in heatmap_statuses:
+        latest = latest_data.get(status, {})
+        previous = previous_data.get(status, {})
+
+        current_teu = latest.get("teu", 0)
+        previous_teu = previous.get("teu")
+
+        width = (
+            (current_teu / max_teu) * 100
+            if max_teu > 0
+            else 0
+        )
+
+        delta = (
+            current_teu - previous_teu
+            if previous_teu is not None
+            else None
+        )
+
+        if delta is None:
+            change_class = "neutral"
+            change_text = "N/A"
+        elif delta > 0:
+            change_class = "up"
+            change_text = f"+{delta:,}"
+        elif delta < 0:
+            change_class = "down"
+            change_text = f"{delta:,}"
+        else:
+            change_class = "neutral"
+            change_text = "0"
+
+        heatmap_rows += f"""
+        <div class="heatmap-row">
+            <div class="heatmap-header">
+                <span>{html.escape(status)}</span>
+                <span>{format_number(current_teu)} TEU</span>
+            </div>
+            <div class="heatmap-track">
+                <div class="heatmap-bar" style="width:{width:.1f}%"></div>
+            </div>
+            <div class="heatmap-footer">
+                <span class="{change_class}">MOM: {change_text}</span>
+                <span>{width:.1f}% OF MAX</span>
+            </div>
+        </div>
+        """
+
+    latest_active_teu = active_latest.get("teu")
+    previous_active_teu = active_previous.get("teu")
+
+    active_teu_change = (
+        latest_active_teu - previous_active_teu
+        if latest_active_teu is not None
+        and previous_active_teu is not None
+        else None
+    )
+
+    inactive_teu_change = (
+        inactive_latest.get("teu") - inactive_previous.get("teu")
+        if inactive_latest.get("teu") is not None
+        and inactive_previous.get("teu") is not None
+        else None
+    )
+
+    port_teu_change = (
+        port_latest.get("teu") - port_previous.get("teu")
+        if port_latest.get("teu") is not None
+        and port_previous.get("teu") is not None
+        else None
+    )
+
+    latest_active_share = (
+        (active_latest.get("teu", 0) / total_latest_teu) * 100
+        if total_latest_teu > 0
+        else 0
+    )
+
+    latest_inactive_share = (
+        (inactive_latest.get("teu", 0) / total_latest_teu) * 100
+        if total_latest_teu > 0
+        else 0
+    )
+
+    latest_port_share = (
+        (port_latest.get("teu", 0) / total_latest_teu) * 100
+        if total_latest_teu > 0
+        else 0
+    )
+
+    active_trend_text = (
+        "ACTIVE FLEET CAPACITY EXPANDED MONTH-ON-MONTH."
+        if active_teu_change is not None and active_teu_change > 0
+        else (
+            "ACTIVE FLEET CAPACITY CONTRACTED MONTH-ON-MONTH."
+            if active_teu_change is not None and active_teu_change < 0
+            else "ACTIVE FLEET CAPACITY WAS BROADLY UNCHANGED."
+        )
+    )
+
+    port_trend_text = (
+        "PORT-BASED CAPACITY INCREASED, INDICATING HIGHER PORT INVENTORY."
+        if port_teu_change is not None and port_teu_change > 0
+        else (
+            "PORT-BASED CAPACITY DECLINED VERSUS THE PREVIOUS SNAPSHOT."
+            if port_teu_change is not None and port_teu_change < 0
+            else "PORT-BASED CAPACITY WAS BROADLY UNCHANGED."
+        )
+    )
+
+    inactive_trend_text = (
+        "INACTIVE CAPACITY ROSE, WARRANTING SUPPLY-SIDE MONITORING."
+        if inactive_teu_change is not None and inactive_teu_change > 0
+        else (
+            "INACTIVE CAPACITY DECLINED, SUPPORTING UTILIZATION CONDITIONS."
+            if inactive_teu_change is not None and inactive_teu_change < 0
+            else "INACTIVE CAPACITY WAS BROADLY UNCHANGED."
+        )
+    )
 
     dashboard_html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Linerlytica | Fleet Snapshot Terminal</title>
+<title>Linerlytica | MI Fleet Terminal</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+
 <style>
 :root {{
-    --bg:#090d14;
-    --panel:#111824;
-    --panel2:#0d131d;
-    --line:#293548;
-    --text:#e7edf6;
-    --muted:#8c9aad;
-    --orange:#ff9d00;
-    --green:#00d084;
-    --red:#ff5c6c;
-    --blue:#29b6f6;
-    --yellow:#ffd166;
+    --bg-core: #02060b;
+    --bg-base: #040a11;
+    --panel: #07111c;
+    --panel-2: #0a1724;
+    --panel-3: #0d1d2b;
+    --line: #193348;
+    --line-strong: #294b66;
+
+    --text: #f3f7fb;
+    --text-soft: #b5c5d2;
+    --muted: #8298aa;
+    --dim: #4c6579;
+
+    --amber: #f6a623;
+    --amber-soft: #ffc05e;
+    --blue: #42a8f5;
+    --cyan: #37c7e0;
+    --green: #36ca82;
+    --red: #ff6666;
+    --yellow: #ffd166;
+    --purple: #b18cff;
+
+    --shadow:
+        0 6px 22px rgba(0, 0, 0, .58),
+        0 0 18px rgba(38, 127, 184, .08);
 }}
-* {{ box-sizing:border-box; }}
+
+* {{
+    box-sizing: border-box;
+}}
+
+html,
 body {{
-    margin:0;
-    padding:24px;
-    color:var(--text);
-    background:var(--bg);
-    font-family:Arial, Helvetica, sans-serif;
+    min-height: 100%;
 }}
-.container {{ max-width:1600px; margin:0 auto; }}
-.header {{
-    display:flex;
-    justify-content:space-between;
-    align-items:flex-end;
-    gap:20px;
-    padding-bottom:15px;
-    margin-bottom:20px;
-    border-bottom:2px solid var(--orange);
+
+body {{
+    margin: 0;
+    color: var(--text);
+    background:
+        radial-gradient(
+            circle at 50% -20%,
+            rgba(38, 112, 163, .15),
+            transparent 44%
+        ),
+        linear-gradient(
+            180deg,
+            rgba(246, 166, 35, .025),
+            transparent 250px
+        ),
+        var(--bg-core);
+    font-family:
+        "IBM Plex Mono",
+        "Roboto Mono",
+        "SFMono-Regular",
+        Consolas,
+        "Liberation Mono",
+        monospace;
+    font-size: 11px;
+    line-height: 1.35;
+    -webkit-font-smoothing: antialiased;
 }}
-.title {{
-    font-size:23px;
-    font-weight:800;
-    letter-spacing:.5px;
+
+.container {{
+    width: min(1920px, calc(100% - 16px));
+    max-width: 1920px;
+    margin: 8px auto 14px;
 }}
-.title::before {{
-    content:"";
-    display:inline-block;
-    width:11px;
-    height:11px;
-    margin-right:10px;
-    background:var(--orange);
+
+.terminal-header {{
+    min-height: 54px;
+    display: flex;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 14px;
+    overflow: hidden;
+    border: 1px solid var(--line-strong);
+    background:
+        linear-gradient(
+            180deg,
+            rgba(13, 32, 49, .98),
+            rgba(3, 9, 15, .98)
+        );
+    box-shadow: var(--shadow);
 }}
-.subtitle, .meta, .footer {{
-    color:var(--muted);
-    font:12px Consolas, monospace;
+
+.terminal-brand {{
+    min-width: 58px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #02060b;
+    background: var(--amber);
+    font-size: 13px;
+    font-weight: 900;
+    letter-spacing: .10em;
+    box-shadow: 0 0 16px rgba(246, 166, 35, .35);
 }}
-.subtitle {{ margin-top:7px; }}
-.meta {{ text-align:right; line-height:1.7; }}
-.kpis {{
-    display:grid;
-    grid-template-columns:repeat(3, 1fr);
-    gap:16px;
-    margin-bottom:20px;
+
+.terminal-title {{
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
 }}
-.kpi, .card {{
-    background:var(--panel);
-    border:1px solid var(--line);
-    padding:18px;
+
+.terminal-title h1 {{
+    margin: 0;
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 900;
+    letter-spacing: .10em;
+    text-transform: uppercase;
 }}
-.kpi {{ border-left:4px solid var(--blue); }}
+
+.terminal-title p {{
+    margin: 4px 0 0;
+    color: var(--muted);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+}}
+
+.header-meta {{
+    min-width: 320px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    padding: 7px 14px;
+    color: var(--muted);
+    border-left: 1px solid var(--line);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .05em;
+    line-height: 1.5;
+    text-align: right;
+    text-transform: uppercase;
+}}
+
+.header-meta strong {{
+    color: var(--text-soft);
+}}
+
+.ticker-bar {{
+    display: flex;
+    margin-top: 6px;
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    background: #02070d;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, .32);
+}}
+
+.ticker-heading {{
+    min-width: 116px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    color: #071018;
+    background: var(--amber);
+    font-size: 8px;
+    font-weight: 900;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+}}
+
+.ticker-item {{
+    min-width: 230px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 3px 10px;
+    padding: 7px 12px;
+    border-right: 1px solid var(--line);
+    background:
+        linear-gradient(
+            180deg,
+            rgba(13, 29, 43, .68),
+            rgba(2, 8, 14, .88)
+        );
+}}
+
+.ticker-label {{
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+}}
+
+.ticker-value {{
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}}
+
+.ticker-delta {{
+    grid-column: 1 / -1;
+    font-size: 9px;
+    font-weight: 800;
+    text-align: right;
+}}
+
+.dashboard-grid {{
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 6px;
+}}
+
+.panel {{
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    background:
+        linear-gradient(
+            145deg,
+            rgba(14, 33, 49, .76),
+            rgba(4, 11, 18, .98)
+        );
+    box-shadow: var(--shadow);
+}}
+
+.panel::before {{
+    display: block;
+    height: 2px;
+    content: "";
+    background: linear-gradient(
+        90deg,
+        var(--amber),
+        rgba(246, 166, 35, .18) 42%,
+        transparent 78%
+    );
+}}
+
+.panel-title {{
+    min-height: 31px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0;
+    padding: 0 10px;
+    color: var(--amber);
+    border-bottom: 1px solid var(--line);
+    background:
+        linear-gradient(
+            180deg,
+            rgba(13, 31, 47, .94),
+            rgba(7, 17, 27, .90)
+        );
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+}}
+
+.panel-title span:last-child {{
+    color: var(--muted);
+    font-size: 8px;
+    font-weight: 700;
+    text-align: right;
+}}
+
+.kpi-grid {{
+    grid-column: span 12;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+}}
+
+.kpi {{
+    min-height: 91px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-top: 2px solid var(--blue);
+    background:
+        linear-gradient(
+            135deg,
+            rgba(38, 108, 155, .18),
+            transparent 62%
+        ),
+        var(--panel);
+    box-shadow: var(--shadow);
+}}
+
+.kpi:nth-child(2) {{
+    border-top-color: var(--green);
+}}
+
+.kpi:nth-child(3) {{
+    border-top-color: var(--amber);
+}}
+
+.kpi:nth-child(4) {{
+    border-top-color: var(--purple);
+}}
+
 .kpi-label {{
-    color:var(--muted);
-    font:11px Consolas, monospace;
-    text-transform:uppercase;
+    color: var(--muted);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
 }}
+
 .kpi-value {{
-    margin-top:11px;
-    color:#fff;
-    font:700 25px Consolas, monospace;
+    margin-top: 8px;
+    overflow: hidden;
+    color: #ffffff;
+    font-size: clamp(17px, 1.55vw, 25px);
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.06em;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }}
-.kpi-delta {{
-    min-height:18px;
-    margin-top:7px;
-    font:11px Consolas, monospace;
+
+.kpi-sub {{
+    min-height: 15px;
+    margin-top: 5px;
+    font-size: 9px;
+    font-weight: 800;
+    text-align: right;
 }}
-.grid {{
-    display:grid;
-    grid-template-columns:minmax(650px, 1.1fr) minmax(500px, 1fr);
-    gap:20px;
+
+.main-chart-panel {{
+    grid-column: span 8;
 }}
-.card-title {{
-    display:flex;
-    justify-content:space-between;
-    gap:12px;
-    margin-bottom:16px;
-    color:var(--orange);
-    font:700 13px Consolas, monospace;
-    text-transform:uppercase;
+
+.watchlist-panel {{
+    grid-column: span 4;
 }}
-.card-date {{
-    color:var(--muted);
-    font-size:11px;
-    font-weight:400;
+
+.chart-wrap {{
+    position: relative;
+    min-height: 389px;
+    padding: 10px;
 }}
-table {{
-    width:100%;
-    border-collapse:collapse;
-    font:12px Consolas, monospace;
+
+.watchlist-table {{
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
 }}
-th {{
-    padding:10px;
-    color:var(--muted);
-    text-align:right;
-    background:var(--panel2);
-    border-bottom:1px solid var(--line);
+
+.watchlist-table th {{
+    padding: 9px 10px;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+    background: rgba(2, 8, 14, .58);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-align: right;
+    text-transform: uppercase;
 }}
-th:first-child {{ text-align:left; }}
-td {{
-    padding:12px 10px;
-    text-align:right;
-    border-bottom:1px solid rgba(255,255,255,.06);
+
+.watchlist-table th:first-child {{
+    text-align: left;
 }}
-td:first-child {{ text-align:left; }}
-.status {{ color:#fff; font-weight:700; }}
-.up {{ color:var(--green); }}
-.down {{ color:var(--red); }}
-.neutral {{ color:var(--muted); }}
-.chart-wrap {{ position:relative; height:325px; }}
-.footer {{
-    margin-top:18px;
-    font-size:11px;
+
+.watchlist-table td {{
+    padding: 11px 10px;
+    color: var(--text-soft);
+    border-bottom: 1px solid rgba(39, 71, 95, .52);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
 }}
-@media(max-width:1100px) {{
-    .grid {{ grid-template-columns:1fr; }}
+
+.watchlist-table td:first-child {{
+    text-align: left;
 }}
-@media(max-width:720px) {{
-    body {{ padding:14px; }}
-    .header {{
-        align-items:flex-start;
-        flex-direction:column;
+
+.watchlist-table tr:hover {{
+    background: rgba(66, 168, 245, .05);
+}}
+
+.status {{
+    color: #ffffff !important;
+    font-weight: 800;
+}}
+
+.number {{
+    color: var(--text) !important;
+}}
+
+.watchlist-note {{
+    padding: 9px 10px;
+    color: var(--muted);
+    border-top: 1px solid var(--line);
+    background: rgba(2, 8, 14, .58);
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: .03em;
+    line-height: 1.6;
+    text-transform: uppercase;
+}}
+
+.heatmap-panel {{
+    grid-column: span 4;
+}}
+
+.news-panel {{
+    grid-column: span 4;
+}}
+
+.risk-panel {{
+    grid-column: span 4;
+}}
+
+.heatmap-content {{
+    padding: 9px 10px 10px;
+}}
+
+.heatmap-row {{
+    padding: 7px 0;
+    border-bottom: 1px solid rgba(39, 71, 95, .48);
+}}
+
+.heatmap-row:last-child {{
+    border-bottom: 0;
+}}
+
+.heatmap-header,
+.heatmap-footer {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}}
+
+.heatmap-header {{
+    color: var(--text-soft);
+    font-size: 9px;
+    font-weight: 800;
+}}
+
+.heatmap-header span:last-child {{
+    color: #ffffff;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}}
+
+.heatmap-track {{
+    height: 6px;
+    margin: 6px 0;
+    overflow: hidden;
+    background: #02070d;
+    border: 1px solid #173249;
+}}
+
+.heatmap-bar {{
+    height: 100%;
+    min-width: 2px;
+    background:
+        linear-gradient(
+            90deg,
+            #1676b5,
+            var(--blue),
+            var(--cyan)
+        );
+    box-shadow: 0 0 10px rgba(55, 199, 224, .35);
+}}
+
+.heatmap-footer {{
+    color: var(--dim);
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+}}
+
+.terminal-list {{
+    min-height: 264px;
+    margin: 0;
+    padding: 7px 11px 10px 28px;
+    color: var(--text-soft);
+    background:
+        linear-gradient(
+            180deg,
+            rgba(4, 12, 20, .34),
+            rgba(2, 7, 12, .12)
+        );
+}}
+
+.terminal-list li {{
+    padding: 8px 2px;
+    border-bottom: 1px solid rgba(39, 71, 95, .52);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .01em;
+    line-height: 1.5;
+}}
+
+.terminal-list li:last-child {{
+    border-bottom: 0;
+}}
+
+.terminal-list li::marker {{
+    color: var(--amber);
+}}
+
+.risk-metrics {{
+    padding: 8px 10px 10px;
+}}
+
+.risk-row {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid rgba(39, 71, 95, .52);
+}}
+
+.risk-row:last-child {{
+    border-bottom: 0;
+}}
+
+.risk-label {{
+    color: var(--muted);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}}
+
+.risk-value {{
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}}
+
+.risk-meter {{
+    width: 82px;
+    height: 5px;
+    overflow: hidden;
+    border: 1px solid #1c3a52;
+    background: #02070d;
+}}
+
+.risk-meter span {{
+    display: block;
+    height: 100%;
+    background: var(--amber);
+    box-shadow: 0 0 9px rgba(246, 166, 35, .40);
+}}
+
+.footer-status {{
+    min-height: 30px;
+    grid-column: span 12;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 10px;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--green);
+    background: #02070d;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}}
+
+.footer-status strong {{
+    color: var(--text-soft);
+}}
+
+.up {{
+    color: var(--green) !important;
+}}
+
+.down {{
+    color: var(--red) !important;
+}}
+
+.neutral {{
+    color: var(--muted) !important;
+}}
+
+@media (max-width: 1200px) {{
+    .terminal-header {{
+        flex-wrap: wrap;
     }}
-    .meta {{ text-align:left; }}
-    .kpis {{ grid-template-columns:1fr; }}
-    .table-wrap {{ overflow-x:auto; }}
+
+    .header-meta {{
+        width: 100%;
+        min-width: 100%;
+        border-top: 1px solid var(--line);
+        border-left: 0;
+        text-align: left;
+    }}
+
+    .main-chart-panel {{
+        grid-column: span 12;
+    }}
+
+    .watchlist-panel {{
+        grid-column: span 12;
+    }}
+
+    .heatmap-panel,
+    .news-panel,
+    .risk-panel {{
+        grid-column: span 12;
+    }}
+}}
+
+@media (max-width: 760px) {{
+    .container {{
+        width: calc(100% - 10px);
+        margin-top: 5px;
+    }}
+
+    .terminal-brand {{
+        min-width: 46px;
+    }}
+
+    .terminal-title h1 {{
+        font-size: 11px;
+        letter-spacing: .06em;
+    }}
+
+    .terminal-title p {{
+        font-size: 7px;
+    }}
+
+    .kpi-grid {{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }}
+
+    .ticker-heading {{
+        min-width: 95px;
+    }}
+
+    .ticker-item {{
+        min-width: 205px;
+    }}
+
+    .footer-status {{
+        align-items: flex-start;
+        flex-direction: column;
+        justify-content: center;
+        padding: 7px 10px;
+    }}
+}}
+
+@media (max-width: 480px) {{
+    .kpi-grid {{
+        grid-template-columns: 1fr;
+    }}
+
+    .watchlist-panel {{
+        overflow-x: auto;
+    }}
+
+    .watchlist-table {{
+        min-width: 580px;
+    }}
 }}
 </style>
 </head>
+
 <body>
 <div class="container">
 
-<header class="header">
-    <div>
-        <div class="title">LINERLYTICA FLEET SNAPSHOT</div>
-        <div class="subtitle">
-            GLOBAL CONTAINERSHIP FLEET STATUS | MONTHLY 17TH HISTORY
-        </div>
-    </div>
-    <div class="meta">
-        LATEST SNAPSHOT: <strong>{html.escape(latest_date)}</strong><br>
-        PREVIOUS SNAPSHOT: <strong>{html.escape(previous_date or "N/A")}</strong>
-    </div>
-</header>
+    <header class="terminal-header">
+        <div class="terminal-brand">MI</div>
 
-<section class="kpis">
-    <div class="kpi">
-        <div class="kpi-label">Active Ships</div>
-        <div class="kpi-value">
-            {format_number(active_latest.get("ships"))} Ships
-        </div>
-        <div class="kpi-delta">
-            {format_delta(active_latest.get("ships"), active_previous.get("ships"))}
-        </div>
-    </div>
-
-    <div class="kpi">
-        <div class="kpi-label">Active Capacity</div>
-        <div class="kpi-value">
-            {format_number(active_latest.get("teu"))} TEU
-        </div>
-        <div class="kpi-delta">
-            {format_delta(active_latest.get("teu"), active_previous.get("teu"))}
-        </div>
-    </div>
-
-    <div class="kpi">
-        <div class="kpi-label">Historical Snapshots</div>
-        <div class="kpi-value">{len(completed_dates)} Months</div>
-        <div class="kpi-delta">
-            <span class="neutral">Monthly 17th records only</span>
-        </div>
-    </div>
-</section>
-
-<main class="grid">
-    <section class="card">
-        <div class="card-title">
-            <span>Current Fleet Status</span>
-            <span class="card-date">AS OF {html.escape(latest_date)}</span>
+        <div class="terminal-title">
+            <h1>Linerlytica Global Containership Fleet Terminal</h1>
+            <p>
+                Fleet Supply Intelligence | Monthly 17th Snapshot History |
+                Ships and Capacity Monitoring
+            </p>
         </div>
 
-        <div class="table-wrap">
-            <table>
+        <div class="header-meta">
+            <div>
+                LATEST SNAPSHOT:
+                <strong>{html.escape(latest_date)}</strong>
+            </div>
+            <div>
+                PREVIOUS SNAPSHOT:
+                <strong>{html.escape(previous_date or "N/A")}</strong>
+            </div>
+            <div>
+                SOURCE:
+                <strong>LINERLYTICA</strong>
+            </div>
+        </div>
+    </header>
+
+    <section class="ticker-bar">
+        <div class="ticker-heading">Fleet Ticker</div>
+        {ticker_items}
+    </section>
+
+    <main class="dashboard-grid">
+
+        <section class="kpi-grid">
+            <div class="kpi">
+                <div class="kpi-label">Total Fleet Ships</div>
+                <div class="kpi-value">
+                    {format_number(total_latest_ships)}
+                </div>
+                <div class="kpi-sub">
+                    {format_delta(total_latest_ships, total_previous_ships)}
+                </div>
+            </div>
+
+            <div class="kpi">
+                <div class="kpi-label">Total Fleet Capacity</div>
+                <div class="kpi-value">
+                    {format_number(total_latest_teu)}
+                </div>
+                <div class="kpi-sub">
+                    {format_delta(total_latest_teu, total_previous_teu)}
+                </div>
+            </div>
+
+            <div class="kpi">
+                <div class="kpi-label">Active Fleet Capacity</div>
+                <div class="kpi-value">
+                    {format_number(active_latest.get("teu"))}
+                </div>
+                <div class="kpi-sub">
+                    {format_delta(
+                        active_latest.get("teu"),
+                        active_previous.get("teu")
+                    )}
+                </div>
+            </div>
+
+            <div class="kpi">
+                <div class="kpi-label">Historical Observations</div>
+                <div class="kpi-value">
+                    {len(completed_dates)} MOS
+                </div>
+                <div class="kpi-sub">
+                    <span class="neutral">17TH OF EACH MONTH</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel main-chart-panel">
+            <h2 class="panel-title">
+                <span>01. Fleet Capacity Trend | TEU</span>
+                <span>{html.escape(completed_dates[0])} — {html.escape(latest_date)}</span>
+            </h2>
+
+            <div class="chart-wrap">
+                <canvas id="teuChart"></canvas>
+            </div>
+        </section>
+
+        <section class="panel watchlist-panel">
+            <h2 class="panel-title">
+                <span>02. Fleet Status Watchlist</span>
+                <span>Latest Snapshot</span>
+            </h2>
+
+            <table class="watchlist-table">
                 <thead>
                     <tr>
-                        <th>Ship Status</th>
+                        <th>Fleet Segment</th>
                         <th>Ships</th>
-                        <th>vs Previous</th>
-                        <th>TEU</th>
-                        <th>vs Previous</th>
+                        <th>Capacity</th>
+                        <th>MoM Change</th>
                     </tr>
                 </thead>
                 <tbody>
                     {table_rows}
                 </tbody>
             </table>
-        </div>
-    </section>
 
-    <section class="card">
-        <div class="card-title">
-            <span>Capacity Trend</span>
-            <span class="card-date">TEU</span>
-        </div>
-        <div class="chart-wrap">
-            <canvas id="teuChart"></canvas>
-        </div>
-    </section>
-</main>
+            <div class="watchlist-note">
+                CHANGE METRIC REPRESENTS MONTH-ON-MONTH SHIP COUNT MOVEMENT.
+                CAPACITY VALUES ARE REPORTED IN TEU.
+            </div>
+        </section>
 
-<div class="footer">
-    SOURCE: LINERLYTICA | DATA POLICY: MONTHLY SNAPSHOT ON THE 17TH |
-    GENERATED FROM Linerlytica.db
-</div>
+        <section class="panel heatmap-panel">
+            <h2 class="panel-title">
+                <span>03. Capacity Heatmap</span>
+                <span>TEU Distribution</span>
+            </h2>
 
+            <div class="heatmap-content">
+                {heatmap_rows}
+            </div>
+        </section>
+
+        <section class="panel news-panel">
+            <h2 class="panel-title">
+                <span>04. Market Intelligence</span>
+                <span>Supply Narrative</span>
+            </h2>
+
+            <ul class="terminal-list">
+                <li>
+                    ACTIVE FLEET REPRESENTS
+                    {latest_active_share:.1f}% OF THE LATEST OBSERVED
+                    FLEET CAPACITY.
+                </li>
+                <li>
+                    {active_trend_text}
+                </li>
+                <li>
+                    {port_trend_text}
+                </li>
+                <li>
+                    SHIPS AT ANCHORAGE ACCOUNT FOR
+                    {(anchorage_latest.get("teu", 0) / total_latest_teu * 100 if total_latest_teu > 0 else 0):.1f}%
+                    OF OBSERVED CAPACITY.
+                </li>
+                <li>
+                    SHIPYARD CAPACITY STANDS AT
+                    {format_number(shipyard_latest.get("teu"))} TEU.
+                </li>
+            </ul>
+        </section>
+
+        <section class="panel risk-panel">
+            <h2 class="panel-title">
+                <span>05. Risk Indicators</span>
+                <span>Fleet Utilization Signals</span>
+            </h2>
+
+            <div class="risk-metrics">
+                <div class="risk-row">
+                    <div>
+                        <div class="risk-label">Active Capacity Share</div>
+                        <div class="risk-value">
+                            {latest_active_share:.1f}% OF TOTAL TEU
+                        </div>
+                    </div>
+                    <div class="risk-meter">
+                        <span style="width:{min(latest_active_share, 100):.1f}%"></span>
+                    </div>
+                </div>
+
+                <div class="risk-row">
+                    <div>
+                        <div class="risk-label">Port Capacity Share</div>
+                        <div class="risk-value">
+                            {latest_port_share:.1f}% OF TOTAL TEU
+                        </div>
+                    </div>
+                    <div class="risk-meter">
+                        <span style="width:{min(latest_port_share, 100):.1f}%"></span>
+                    </div>
+                </div>
+
+                <div class="risk-row">
+                    <div>
+                        <div class="risk-label">Inactive Capacity Share</div>
+                        <div class="risk-value">
+                            {latest_inactive_share:.1f}% OF TOTAL TEU
+                        </div>
+                    </div>
+                    <div class="risk-meter">
+                        <span style="width:{min(latest_inactive_share, 100):.1f}%"></span>
+                    </div>
+                </div>
+
+                <div class="risk-row">
+                    <div>
+                        <div class="risk-label">Inactive Fleet Signal</div>
+                        <div class="risk-value">
+                            {format_number(inactive_latest.get("teu"))} TEU
+                        </div>
+                    </div>
+                    <div class="risk-meter">
+                        <span style="width:{min(latest_inactive_share * 4, 100):.1f}%"></span>
+                    </div>
+                </div>
+
+                <div class="risk-row">
+                    <div>
+                        <div class="risk-label">Risk Assessment</div>
+                        <div class="risk-value">
+                            {"ELEVATED" if latest_inactive_share >= 3 else "MONITORED"}
+                        </div>
+                    </div>
+                    <div class="risk-meter">
+                        <span style="width:{min(max(latest_inactive_share * 15, 18), 100):.1f}%"></span>
+                    </div>
+                </div>
+
+                <div class="risk-row">
+                    <div>
+                        <div class="risk-label">Capacity Signal</div>
+                        <div class="risk-value">
+                            {"EXPANDING" if active_teu_change is not None and active_teu_change > 0 else "CONTRACTING" if active_teu_change is not None and active_teu_change < 0 else "STABLE"}
+                        </div>
+                    </div>
+                    <div class="risk-meter">
+                        <span style="width:{70 if active_teu_change is not None and active_teu_change > 0 else 45 if active_teu_change is not None and active_teu_change < 0 else 55}%"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="watchlist-note">
+                {inactive_trend_text}
+            </div>
+        </section>
+
+        <footer class="footer-status">
+            <div>
+                SYSTEM STATUS:
+                <strong>NORMAL</strong>
+                | MARKET HEALTH:
+                <strong>MONITORED</strong>
+                | SENTIMENT:
+                <strong>DATA-DRIVEN</strong>
+            </div>
+            <div>
+                ALERTS:
+                <strong>NO CRITICAL DATA EXCEPTIONS</strong>
+                | GENERATED FROM LINERLYTICA.DB
+            </div>
+        </footer>
+
+    </main>
 </div>
 
 <script>
@@ -1183,44 +2120,59 @@ new Chart(document.getElementById("teuChart"), {{
         labels: labels,
         datasets: [
             {{
-                label: "Active Ships",
+                label: "ACTIVE SHIPS",
                 data: {json.dumps(teu_series["Active Ships"])},
-                borderColor: "#00d084",
-                borderWidth: 2.2,
+                borderColor: "#36ca82",
+                backgroundColor: "rgba(54, 202, 130, .08)",
+                borderWidth: 2.5,
                 pointRadius: 2,
-                tension: 0.2
+                pointHoverRadius: 4,
+                fill: true,
+                tension: 0.20
             }},
             {{
-                label: "Ships at Port",
+                label: "SHIPS AT PORT",
                 data: {json.dumps(teu_series["Ships at port"])},
-                borderColor: "#ff9d00",
-                borderWidth: 1.7,
+                borderColor: "#f6a623",
+                backgroundColor: "transparent",
+                borderWidth: 1.8,
                 pointRadius: 1.5,
-                tension: 0.2
+                pointHoverRadius: 3,
+                fill: false,
+                tension: 0.20
             }},
             {{
-                label: "Ships at Anchorage",
+                label: "SHIPS AT ANCHORAGE",
                 data: {json.dumps(teu_series["Ships at anchorage"])},
-                borderColor: "#29b6f6",
+                borderColor: "#42a8f5",
+                backgroundColor: "transparent",
                 borderWidth: 1.7,
                 pointRadius: 1.5,
-                tension: 0.2
+                pointHoverRadius: 3,
+                fill: false,
+                tension: 0.20
             }},
             {{
-                label: "Inactive Ships",
+                label: "INACTIVE SHIPS",
                 data: {json.dumps(teu_series["Inactive Ships"])},
-                borderColor: "#ff5c6c",
-                borderWidth: 1.5,
+                borderColor: "#ff6666",
+                backgroundColor: "transparent",
+                borderWidth: 1.6,
                 pointRadius: 1.5,
-                tension: 0.2
+                pointHoverRadius: 3,
+                fill: false,
+                tension: 0.20
             }},
             {{
-                label: "Ships in Shipyard",
+                label: "SHIPS IN SHIPYARD",
                 data: {json.dumps(teu_series["Ships in shipyard"])},
                 borderColor: "#ffd166",
-                borderWidth: 1.5,
+                backgroundColor: "transparent",
+                borderWidth: 1.6,
                 pointRadius: 1.5,
-                tension: 0.2
+                pointHoverRadius: 3,
+                fill: false,
+                tension: 0.20
             }}
         ]
     }},
@@ -1235,18 +2187,39 @@ new Chart(document.getElementById("teuChart"), {{
             legend: {{
                 position: "bottom",
                 labels: {{
-                    color: "#dce4f0",
+                    color: "#b5c5d2",
                     boxWidth: 12,
-                    padding: 14
+                    boxHeight: 2,
+                    padding: 14,
+                    font: {{
+                        family: "Consolas, monospace",
+                        size: 9,
+                        weight: "700"
+                    }}
                 }}
             }},
             tooltip: {{
-                backgroundColor: "#111824",
-                borderColor: "#293548",
+                backgroundColor: "rgba(5, 14, 23, .96)",
+                titleColor: "#f3f7fb",
+                bodyColor: "#b5c5d2",
+                borderColor: "#294b66",
                 borderWidth: 1,
+                padding: 10,
+                titleFont: {{
+                    family: "Consolas, monospace",
+                    size: 10,
+                    weight: "700"
+                }},
+                bodyFont: {{
+                    family: "Consolas, monospace",
+                    size: 10
+                }},
                 callbacks: {{
                     label: function(context) {{
-                        if (context.raw === null || context.raw === undefined) {{
+                        if (
+                            context.raw === null ||
+                            context.raw === undefined
+                        ) {{
                             return context.dataset.label + ": N/A";
                         }}
 
@@ -1259,20 +2232,30 @@ new Chart(document.getElementById("teuChart"), {{
         scales: {{
             x: {{
                 grid: {{
-                    color: "rgba(255,255,255,.05)"
+                    color: "rgba(43, 80, 108, .32)",
+                    drawBorder: false
                 }},
                 ticks: {{
-                    color: "#8c9aad",
+                    color: "#8298aa",
                     maxRotation: 0,
-                    maxTicksLimit: 8
+                    maxTicksLimit: 9,
+                    font: {{
+                        family: "Consolas, monospace",
+                        size: 9
+                    }}
                 }}
             }},
             y: {{
                 grid: {{
-                    color: "rgba(255,255,255,.07)"
+                    color: "rgba(43, 80, 108, .38)",
+                    drawBorder: false
                 }},
                 ticks: {{
-                    color: "#8c9aad",
+                    color: "#8298aa",
+                    font: {{
+                        family: "Consolas, monospace",
+                        size: 9
+                    }},
                     callback: function(value) {{
                         return (value / 1000000).toFixed(1) + "M";
                     }}
