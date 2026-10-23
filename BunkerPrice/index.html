@@ -8,247 +8,764 @@
 <style>
 :root {
   --bg: #02060b;
+  --bg2: #040a11;
   --panel: #07111c;
-  --panel2: #0b1825;
-  --panel3: #0e2131;
-  --line: #23394d;
-  --text: #dce9f5;
-  --muted: #8aa0b5;
-  --orange: #ff8a00;
-  --blue: #39a8ff;
-  --green: #2bd682;
-  --red: #ff5c5c;
-  --purple: #be7bff;
+  --panel2: #0a1724;
+  --panel3: #0d1d2b;
+  --line: #1b3043;
+  --line2: #29445c;
+  --text: #f3f7fb;
+  --muted: #879caf;
+  --dim: #536c80;
+  --orange: #f6a623;
+  --amber: #ffb000;
+  --blue: #45a9f5;
+  --green: #36ca82;
+  --red: #ff6262;
+  --purple: #bb86fc;
+  --shadow: 0 0 18px rgba(34, 115, 173, .08);
 }
-* { box-sizing: border-box; }
-html, body { min-height: 100%; }
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
 body {
   margin: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(circle at 50% -20%, rgba(34, 106, 154, .12), transparent 42%),
+    linear-gradient(180deg, #03070c 0%, #02060b 100%);
   color: var(--text);
-  font-family: "Roboto Mono", Consolas, "Noto Sans KR", monospace;
-  font-size: 12px;
+  font-family: "Roboto Mono", "SFMono-Regular", Consolas, "Noto Sans KR", monospace;
+  font-size: 11px;
+  letter-spacing: -.05px;
 }
-button, input { font: inherit; }
-a { color: inherit; text-decoration: none; }
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  outline: none;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ==========================================================================
+   1. TOP TICKER BAR
+   ========================================================================== */
 
 .topbar {
-  min-height: 54px;
-  padding: 0 20px;
+  height: 43px;
+  padding: 0 16px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 15px;
-  border-bottom: 1px solid var(--line);
-  background: #050a11;
-}
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.brand-mark {
-  color: var(--orange);
-  font-size: 18px;
-  font-weight: 900;
-}
-.brand-title {
-  font-size: 13px;
-  color: white;
-  letter-spacing: .8px;
-  font-weight: 700;
-}
-.nav-link {
-  padding: 7px 11px;
-  border: 1px solid #34526e;
-  color: var(--blue);
-  font-size: 11px;
-}
-.nav-link:hover {
-  color: #fff;
-  background: #12344f;
+  gap: 18px;
+  border-bottom: 1px solid var(--line2);
+  background:
+    linear-gradient(180deg, rgba(12, 27, 41, .98) 0%, rgba(3, 9, 15, .98) 100%);
+  box-shadow: 0 3px 14px rgba(0, 0, 0, .42);
 }
 
-.terminal {
-  max-width: 1720px;
-  margin: 0 auto;
-  padding: 18px 20px 32px;
-}
-.status {
-  padding: 9px 12px;
+.brand {
+  min-width: 230px;
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--muted);
-  border: 1px solid var(--line);
-  background: var(--panel);
-  font-size: 10px;
+  align-items: center;
+  gap: 10px;
+  padding-right: 17px;
+  border-right: 1px solid var(--line);
 }
-.workspace {
-  margin-top: 14px;
+
+.brand-mark {
+  color: #05070a;
+  background: var(--orange);
+  padding: 3px 5px;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: -.7px;
+}
+
+.brand-title {
+  color: #fff;
+  font-size: 11px;
+  letter-spacing: .9px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.ticker-stream {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ticker-item {
+  min-width: 164px;
+  height: 27px;
+  padding: 0 15px;
   display: grid;
-  grid-template-columns: 245px minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: 12px 12px;
+  column-gap: 9px;
+  border-right: 1px solid var(--line);
 }
+
+.ticker-symbol {
+  grid-column: 1;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .7px;
+}
+
+.ticker-value {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  align-self: center;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ticker-change {
+  color: var(--green);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.ticker-change.negative {
+  color: var(--red);
+}
+
+.nav-link {
+  min-width: 142px;
+  padding: 6px 9px;
+  border: 1px solid #2d506e;
+  color: var(--blue);
+  background: rgba(25, 71, 105, .13);
+  text-align: center;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .65px;
+  transition: .15s ease;
+}
+
+.nav-link:hover {
+  color: #fff;
+  border-color: var(--blue);
+  background: rgba(57, 168, 255, .17);
+}
+
+/* ==========================================================================
+   MAIN 12-COLUMN TERMINAL GRID
+   ========================================================================== */
+
+.terminal {
+  max-width: 1920px;
+  margin: 0 auto;
+  padding: 10px 14px 12px;
+}
+
+.status {
+  min-height: 29px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--green);
+  background: linear-gradient(90deg, #07131d 0%, #05101a 100%);
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: .4px;
+}
+
+.status strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.workspace {
+  margin-top: 9px;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 9px;
+}
+
+/* ==========================================================================
+   2. KPI ROW
+   ========================================================================== */
+
+.kpi-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.kpi {
+  min-height: 84px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-top-color: #2c4b64;
+  background:
+    linear-gradient(145deg, rgba(14, 34, 50, .95), rgba(5, 14, 23, .97));
+  box-shadow: var(--shadow);
+}
+
+.kpi-label {
+  display: block;
+  min-height: 24px;
+  color: var(--muted);
+  font-size: 8.5px;
+  font-weight: 800;
+  line-height: 1.35;
+  letter-spacing: .65px;
+  text-transform: uppercase;
+}
+
+.kpi-value {
+  display: block;
+  margin-top: 7px;
+  color: #fff;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-sub {
+  display: block;
+  margin-top: 7px;
+  padding-top: 4px;
+  border-top: 1px dotted #254157;
+  color: var(--muted);
+  font-size: 8.5px;
+  text-align: right;
+}
+
+.positive {
+  color: var(--green) !important;
+}
+
+.negative {
+  color: var(--red) !important;
+}
+
+/* ==========================================================================
+   PANEL SYSTEM
+   ========================================================================== */
+
 .panel {
   border: 1px solid var(--line);
   background: var(--panel);
+  box-shadow: var(--shadow);
+  overflow: hidden;
 }
+
 .panel-header {
-  min-height: 39px;
-  padding: 0 12px;
+  height: 31px;
+  padding: 0 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 9px;
-  background: var(--panel2);
+  gap: 8px;
   border-bottom: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, #0c1c2a 0%, #07111c 100%);
 }
+
 .panel-title {
   color: var(--orange);
-  font-size: 10px;
-  letter-spacing: .8px;
-  font-weight: 700;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .75px;
+  text-transform: uppercase;
 }
+
+.panel-meta {
+  color: var(--muted);
+  font-size: 8.5px;
+  text-align: right;
+}
+
+/* ==========================================================================
+   FILTER PANEL
+   ========================================================================== */
+
+.filter-panel {
+  grid-column: span 2;
+  align-self: start;
+}
+
 .filter-section {
-  padding: 13px;
-  border-bottom: 1px solid #172a3a;
+  padding: 10px;
+  border-bottom: 1px solid #15293a;
 }
+
+.filter-section:last-child {
+  border-bottom: none;
+}
+
 .label {
   display: block;
+  margin-bottom: 7px;
   color: var(--muted);
-  font-size: 10px;
-  letter-spacing: .65px;
-  margin-bottom: 8px;
-  font-weight: 700;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: .7px;
 }
+
 .button-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 5px;
+  gap: 4px;
 }
-.all-button { grid-column: span 2; }
+
+.all-button {
+  grid-column: span 2;
+}
+
 .btn {
-  min-height: 31px;
-  padding: 6px 8px;
-  border: 1px solid var(--line);
-  background: #07101a;
+  min-height: 27px;
+  padding: 5px 6px;
+  border: 1px solid #263e52;
+  background: #06101a;
   color: var(--muted);
   cursor: pointer;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .3px;
+  transition: .15s ease;
 }
+
 .btn:hover {
   border-color: var(--orange);
   color: var(--orange);
 }
+
 .btn.active {
   border-color: var(--orange);
   background: var(--orange);
-  color: #0a0a0a;
+  color: #080a0d;
 }
+
 .series-list {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
+
 .series-item {
+  min-height: 29px;
+  padding: 0 7px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px;
-  border: 1px solid #1d3041;
+  gap: 7px;
+  border: 1px solid #203749;
   background: #06101a;
-  color: #d6e2ec;
+  color: #dbe8f4;
   cursor: pointer;
+  font-size: 9px;
 }
-.series-item input { accent-color: var(--orange); }
 
-.heading {
+.series-item:hover {
+  border-color: #3b637f;
+  background: #091827;
+}
+
+.series-item input {
+  accent-color: var(--orange);
+}
+
+/* ==========================================================================
+   3. MAIN CHART PANEL
+   ========================================================================== */
+
+.main-chart-panel {
+  grid-column: span 7;
+  min-width: 0;
+}
+
+.chart-heading {
+  padding: 9px 10px 8px;
   display: flex;
-  justify-content: space-between;
   align-items: flex-start;
+  justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  border-bottom: 1px solid #15293a;
+  background: linear-gradient(90deg, rgba(12, 33, 48, .48), transparent);
 }
-h1 {
-  color: #fff;
+
+.chart-heading h1 {
   margin: 0;
-  font-size: 20px;
-  letter-spacing: .2px;
-}
-.subtitle {
-  color: var(--muted);
-  font-size: 10px;
-  margin-top: 6px;
-}
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 9px;
-  margin-bottom: 12px;
-}
-.kpi {
-  min-height: 94px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-}
-.kpi-label {
-  display: block;
-  min-height: 25px;
-  color: var(--muted);
-  font-size: 9px;
-  line-height: 1.3;
-}
-.kpi-value {
-  display: block;
-  margin-top: 10px;
   color: #fff;
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: .15px;
 }
-.kpi-sub {
-  display: block;
-  margin-top: 5px;
+
+.subtitle {
+  margin-top: 4px;
   color: var(--muted);
+  font-size: 8.5px;
+  letter-spacing: .3px;
+}
+
+.chart-stat {
+  color: var(--blue);
   font-size: 9px;
+  font-weight: 700;
+  text-align: right;
 }
-.positive { color: var(--green); }
-.negative { color: var(--red); }
-#chart { width: 100%; min-height: 510px; }
-.empty {
-  padding: 45px 15px;
-  color: var(--muted);
-  text-align: center;
+
+#chart {
+  width: 100%;
+  min-height: 407px;
 }
-.table-wrap {
-  overflow-x: auto;
-  padding: 12px;
+
+/* ==========================================================================
+   4. WATCHLIST PANEL
+   ========================================================================== */
+
+.watchlist-panel {
+  grid-column: span 3;
+  min-width: 0;
 }
-table {
+
+.watchlist-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 11px;
+  font-size: 9px;
 }
-th, td {
-  padding: 9px 10px;
-  text-align: right;
-  border-bottom: 1px solid #1c3041;
+
+.watchlist-table th,
+.watchlist-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid #142939;
+  font-variant-numeric: tabular-nums;
 }
-th {
+
+.watchlist-table th {
   color: var(--muted);
-  background: #0a1723;
-  font-size: 10px;
+  background: #07131e;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .4px;
+  text-align: right;
 }
-td:first-child, th:first-child { text-align: left; }
-@media (max-width: 1100px) {
-  .workspace { grid-template-columns: 1fr; }
+
+.watchlist-table td {
+  color: #dfeaf3;
+  text-align: right;
+}
+
+.watchlist-table th:first-child,
+.watchlist-table td:first-child {
+  text-align: left;
+}
+
+.watchlist-table tr:hover td {
+  background: #0b1b2a;
+}
+
+.watch-symbol {
+  color: #fff !important;
+  font-weight: 700;
+}
+
+.watch-sub {
+  display: block;
+  margin-top: 2px;
+  color: var(--dim);
+  font-size: 7.5px;
+}
+
+.watch-positive {
+  color: var(--green) !important;
+}
+
+.watch-negative {
+  color: var(--red) !important;
+}
+
+/* ==========================================================================
+   5. BOTTOM-LEFT HEATMAP
+   ========================================================================== */
+
+.heatmap-panel {
+  grid-column: span 4;
+}
+
+.heatmap-grid {
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+
+.heat-cell {
+  min-height: 62px;
+  padding: 7px;
+  border: 1px solid #1c3547;
+  background: #081520;
+}
+
+.heat-cell-name {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .35px;
+}
+
+.heat-cell-value {
+  margin-top: 9px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.heat-cell-change {
+  margin-top: 4px;
+  font-size: 8px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.heat-up {
+  border-left: 2px solid var(--green);
+  background: linear-gradient(135deg, rgba(31, 169, 100, .18), rgba(5, 20, 28, .92));
+}
+
+.heat-down {
+  border-left: 2px solid var(--red);
+  background: linear-gradient(135deg, rgba(180, 53, 53, .18), rgba(5, 20, 28, .92));
+}
+
+.heat-neutral {
+  border-left: 2px solid var(--blue);
+}
+
+/* ==========================================================================
+   6. NEWS / MOVERS / RISK
+   ========================================================================== */
+
+.news-panel {
+  grid-column: span 4;
+}
+
+.news-list {
+  padding: 5px 9px;
+}
+
+.news-item {
+  padding: 7px 0;
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  gap: 7px;
+  border-bottom: 1px dotted #243c4d;
+}
+
+.news-item:last-child {
+  border-bottom: none;
+}
+
+.news-time {
+  color: var(--orange);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.news-text {
+  color: #d7e2eb;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.news-text strong {
+  color: #fff;
+}
+
+.risk-panel {
+  grid-column: span 4;
+}
+
+.risk-content {
+  padding: 9px;
+}
+
+.risk-row {
+  margin-bottom: 11px;
+}
+
+.risk-row:last-child {
+  margin-bottom: 0;
+}
+
+.risk-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 8.5px;
+  font-weight: 700;
+}
+
+.risk-label-row strong {
+  color: #fff;
+  font-size: 9px;
+}
+
+.risk-track {
+  height: 6px;
+  overflow: hidden;
+  border: 1px solid #213a4d;
+  background: #040b12;
+}
+
+.risk-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--blue), #66c5ff);
+}
+
+.risk-fill.warning {
+  background: linear-gradient(90deg, #c58114, var(--amber));
+}
+
+.risk-fill.alert {
+  background: linear-gradient(90deg, #bd4242, var(--red));
+}
+
+/* ==========================================================================
+   7. FOOTER STATUS BAR
+   ========================================================================== */
+
+.footer-status {
+  grid-column: 1 / -1;
+  min-height: 30px;
+  padding: 0 10px;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr 1.2fr;
+  align-items: center;
+  border: 1px solid var(--line);
+  background: #050d15;
+  color: var(--muted);
+  font-size: 8.5px;
+}
+
+.footer-item {
+  padding: 0 9px;
+  border-right: 1px solid var(--line);
+}
+
+.footer-item:last-child {
+  border-right: none;
+  text-align: right;
+}
+
+.footer-item strong {
+  color: #fff;
+  font-weight: 700;
+}
+
+.footer-green {
+  color: var(--green) !important;
+}
+
+.footer-amber {
+  color: var(--amber) !important;
+}
+
+/* ==========================================================================
+   RESPONSIVE
+   ========================================================================== */
+
+@media (max-width: 1250px) {
+  .filter-panel { grid-column: span 3; }
+  .main-chart-panel { grid-column: span 6; }
+  .watchlist-panel { grid-column: span 3; }
   .kpi-grid { grid-template-columns: repeat(3, 1fr); }
 }
-@media (max-width: 650px) {
-  .terminal { padding: 12px; }
-  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
-  .status { display: block; line-height: 1.8; }
+
+@media (max-width: 960px) {
+  .topbar {
+    height: auto;
+    min-height: 43px;
+    flex-wrap: wrap;
+    padding: 7px 10px;
+  }
+
+  .brand {
+    min-width: auto;
+    border-right: none;
+  }
+
+  .ticker-stream {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .workspace {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+
+  .filter-panel,
+  .main-chart-panel,
+  .watchlist-panel,
+  .heatmap-panel,
+  .news-panel,
+  .risk-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 620px) {
+  .terminal {
+    padding: 8px;
+  }
+
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .footer-status {
+    grid-template-columns: 1fr;
+    gap: 5px;
+    padding: 7px;
+  }
+
+  .footer-item {
+    padding: 2px 0;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .footer-item:last-child {
+    border-bottom: none;
+    text-align: left;
+  }
+
+  .heatmap-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 </style>
 </head>
@@ -257,19 +774,61 @@ td:first-child, th:first-child { text-align: left; }
 <header class="topbar">
   <div class="brand">
     <span class="brand-mark">MI&lt;GO&gt;</span>
-    <span class="brand-title">BUNKER PRICE MONITOR</span>
+    <span class="brand-title">ENERGY MARKET TERMINAL</span>
   </div>
-  <a class="nav-link" href="./OilPrice/index.html">CRUDE OIL →</a>
+
+  <div class="ticker-stream" id="tickerStream"></div>
+
+  <a class="nav-link" href="./OilPrice/index.html">CRUDE OIL MONITOR →</a>
 </header>
 
 <main class="terminal">
   <section class="status">
-    <span>SYSTEM / SHIP &amp; BUNKER DATA ONLINE</span>
-    <span>LAST REFRESH: 2026-10-23 07:19:40</span>
+    <span>SYSTEM STATUS / <strong>SHIP &amp; BUNKER MARKET DATA ONLINE</strong></span>
+    <span>LAST REFRESH / <strong>2026-10-23 10:18:57</strong></span>
   </section>
 
-  <div class="workspace">
-    <aside class="panel">
+  <section class="workspace">
+
+    <section class="kpi-grid">
+      <div class="kpi">
+        <span class="kpi-label">SELECTED MARKET<br>LATEST AVG</span>
+        <span class="kpi-value" id="latestValue">-</span>
+        <span class="kpi-sub" id="latestDate">-</span>
+      </div>
+
+      <div class="kpi">
+        <span class="kpi-label">PERIOD<br>AVERAGE</span>
+        <span class="kpi-value" id="averageValue">-</span>
+        <span class="kpi-sub">USD / MT</span>
+      </div>
+
+      <div class="kpi">
+        <span class="kpi-label">PERIOD<br>HIGH / LOW</span>
+        <span class="kpi-value" id="highLow">-</span>
+        <span class="kpi-sub">RANGE ANALYSIS</span>
+      </div>
+
+      <div class="kpi">
+        <span class="kpi-label">PERIOD<br>CHANGE</span>
+        <span class="kpi-value" id="changeValue">-</span>
+        <span class="kpi-sub" id="changeRate">-</span>
+      </div>
+
+      <div class="kpi">
+        <span class="kpi-label">OBSERVATIONS<br>/ MARKETS</span>
+        <span class="kpi-value" id="recordCount">-</span>
+        <span class="kpi-sub" id="portCount">-</span>
+      </div>
+
+      <div class="kpi">
+        <span class="kpi-label">MARKET<br>VOLATILITY</span>
+        <span class="kpi-value" id="volatilityValue">-</span>
+        <span class="kpi-sub">STD DEV / USD MT</span>
+      </div>
+    </section>
+
+    <aside class="panel filter-panel">
       <div class="panel-header">
         <span class="panel-title">FUNCTIONS / FILTERS</span>
       </div>
@@ -286,11 +845,11 @@ td:first-child, th:first-child { text-align: left; }
       </section>
 
       <section class="filter-section">
-        <span class="label">SELECT PORTS</span>
+        <span class="label">SELECT BUNKER MARKETS</span>
         <div class="series-list">
-          <label class="series-item"><input type="checkbox" value="Rotterdam" checked onchange="render()"> Rotterdam</label>
-          <label class="series-item"><input type="checkbox" value="Fujairah" checked onchange="render()"> Fujairah</label>
-          <label class="series-item"><input type="checkbox" value="Singapore" checked onchange="render()"> Singapore</label>
+          <label class="series-item"><input type="checkbox" value="Rotterdam" checked onchange="render()"> ROTTERDAM</label>
+          <label class="series-item"><input type="checkbox" value="Fujairah" checked onchange="render()"> FUJAIRAH</label>
+          <label class="series-item"><input type="checkbox" value="Singapore" checked onchange="render()"> SINGAPORE</label>
         </div>
       </section>
 
@@ -305,62 +864,62 @@ td:first-child, th:first-child { text-align: left; }
       </section>
 
       <section class="filter-section">
-        <button class="btn" style="width:100%;border-color:#34526e;color:#39a8ff;" onclick="downloadCSV()">EXPORT FILTERED CSV</button>
+        <button class="btn" style="width:100%;border-color:#2f6287;color:#45a9f5;" onclick="downloadCSV()">
+          EXPORT FILTERED CSV
+        </button>
       </section>
     </aside>
 
-    <section>
-      <div class="heading">
+    <section class="panel main-chart-panel">
+      <div class="chart-heading">
         <div>
-          <h1>VLSFO BUNKER PRICE</h1>
-          <div class="subtitle">Rotterdam · Fujairah · Singapore / USD per Metric Ton</div>
+          <h1>VLSFO BUNKER PRICE HISTORY</h1>
+          <div class="subtitle">ROTTERDAM · FUJAIRAH · SINGAPORE / USD PER METRIC TON</div>
         </div>
+        <div class="chart-stat">LINE CHART / RANGE SLIDER ENABLED</div>
       </div>
-
-      <section class="kpi-grid">
-        <div class="kpi">
-          <span class="kpi-label">LATEST<br>SELECTED AVG</span>
-          <span class="kpi-value" id="latestValue">-</span>
-          <span class="kpi-sub" id="latestDate">-</span>
-        </div>
-        <div class="kpi">
-          <span class="kpi-label">PERIOD<br>AVERAGE</span>
-          <span class="kpi-value" id="averageValue">-</span>
-          <span class="kpi-sub">USD / MT</span>
-        </div>
-        <div class="kpi">
-          <span class="kpi-label">PERIOD<br>HIGH / LOW</span>
-          <span class="kpi-value" id="highLow">-</span>
-          <span class="kpi-sub">HIGH / LOW</span>
-        </div>
-        <div class="kpi">
-          <span class="kpi-label">CHANGE<br>FIRST → LAST</span>
-          <span class="kpi-value" id="changeValue">-</span>
-          <span class="kpi-sub" id="changeRate">-</span>
-        </div>
-        <div class="kpi">
-          <span class="kpi-label">OBSERVATIONS<br>/ PORTS</span>
-          <span class="kpi-value" id="recordCount">-</span>
-          <span class="kpi-sub" id="portCount">-</span>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-header">
-          <span class="panel-title">VLSFO PRICE HISTORY / RANGE SLIDER ENABLED</span>
-          <span class="panel-title">FORECAST = DOTTED LINE</span>
-        </div>
-        <div id="chart"></div>
-      </section>
-
-      <section class="panel" style="margin-top:14px;">
-        <div class="panel-header">
-          <span class="panel-title">BUNKER PRICE FORECAST / USD PER MT</span>
-        </div>
-        <div class="table-wrap" id="forecastTable"></div>
-      </section>
+      <div id="chart"></div>
     </section>
-  </div>
+
+    <section class="panel watchlist-panel">
+      <div class="panel-header">
+        <span class="panel-title">ENERGY WATCHLIST</span>
+        <span class="panel-meta">LAST / Δ / VOL</span>
+      </div>
+      <div id="watchlist"></div>
+    </section>
+
+    <section class="panel heatmap-panel">
+      <div class="panel-header">
+        <span class="panel-title">MARKET HEATMAP</span>
+        <span class="panel-meta">LATEST DAILY MOVE</span>
+      </div>
+      <div class="heatmap-grid" id="heatmap"></div>
+    </section>
+
+    <section class="panel news-panel">
+      <div class="panel-header">
+        <span class="panel-title">MARKET INTELLIGENCE / MOVERS</span>
+        <span class="panel-meta">DERIVED SIGNALS</span>
+      </div>
+      <div class="news-list" id="newsFeed"></div>
+    </section>
+
+    <section class="panel risk-panel">
+      <div class="panel-header">
+        <span class="panel-title">RISK INDICATORS</span>
+        <span class="panel-meta">MARKET CONDITIONS</span>
+      </div>
+      <div class="risk-content" id="riskPanel"></div>
+    </section>
+
+    <footer class="footer-status">
+      <div class="footer-item">MARKET HEALTH / <strong class="footer-green">NORMAL</strong></div>
+      <div class="footer-item">SENTIMENT / <strong id="footerSentiment">NEUTRAL</strong></div>
+      <div class="footer-item">ALERTS / <strong class="footer-amber" id="footerAlert">MONITORING ACTIVE</strong></div>
+      <div class="footer-item">SOURCE / <strong>SHIP &amp; BUNKER</strong></div>
+    </footer>
+  </section>
 </main>
 
 <script>
@@ -368,54 +927,76 @@ const PRODUCT_DATA = [{"PORT": "Fujairah", "series_name": "Fujairah VLSFO", "sou
 const FORECAST_DATA = [{"Period": "2026 Q4", "VLSFO": 743.0, "MGO": 1236.0, "LSMGO": 1236.0, "HSFO": 649.0, "GRAPH_DATE": "2026-12-31", "source_url": "https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO", "PORT": "Rotterdam"}, {"Period": "Full Year 2026", "VLSFO": 683.0, "MGO": 1137.0, "LSMGO": 1137.0, "HSFO": 597.0, "GRAPH_DATE": NaN, "source_url": "https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO", "PORT": "Rotterdam"}, {"Period": "2027 Q1", "VLSFO": 673.0, "MGO": 1121.0, "LSMGO": 1121.0, "HSFO": 588.0, "GRAPH_DATE": "2027-03-31", "source_url": "https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO", "PORT": "Rotterdam"}, {"Period": "2027 Q2", "VLSFO": 617.0, "MGO": 1027.0, "LSMGO": 1027.0, "HSFO": 539.0, "GRAPH_DATE": "2027-06-30", "source_url": "https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO", "PORT": "Rotterdam"}, {"Period": "2027 Q3", "VLSFO": 568.0, "MGO": 945.0, "LSMGO": 945.0, "HSFO": 496.0, "GRAPH_DATE": "2027-09-30", "source_url": "https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO", "PORT": "Rotterdam"}, {"Period": "2027 Q4", "VLSFO": 525.0, "MGO": 873.0, "LSMGO": 873.0, "HSFO": 458.0, "GRAPH_DATE": "2027-12-31", "source_url": "https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO", "PORT": "Rotterdam"}, {"Period": "Full Year 2027", "VLSFO": 594.0, "MGO": 989.0, "LSMGO": 989.0, "HSFO": 519.0, "GRAPH_DATE": NaN, "source_url": "https://shipandbunker.com/prices/emea/nwe/nl-rtm-rotterdam#_VLSFO", "PORT": "Rotterdam"}, {"Period": "2026 Q4", "VLSFO": 892.0, "MGO": 1464.0, "LSMGO": 1464.0, "HSFO": 673.0, "GRAPH_DATE": "2026-12-31", "source_url": "https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO", "PORT": "Fujairah"}, {"Period": "Full Year 2026", "VLSFO": 821.0, "MGO": 1347.0, "LSMGO": 1347.0, "HSFO": 620.0, "GRAPH_DATE": NaN, "source_url": "https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO", "PORT": "Fujairah"}, {"Period": "2027 Q1", "VLSFO": 809.0, "MGO": 1327.0, "LSMGO": 1327.0, "HSFO": 610.0, "GRAPH_DATE": "2027-03-31", "source_url": "https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO", "PORT": "Fujairah"}, {"Period": "2027 Q2", "VLSFO": 742.0, "MGO": 1217.0, "LSMGO": 1217.0, "HSFO": 560.0, "GRAPH_DATE": "2027-06-30", "source_url": "https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO", "PORT": "Fujairah"}, {"Period": "2027 Q3", "VLSFO": 682.0, "MGO": 1119.0, "LSMGO": 1119.0, "HSFO": 515.0, "GRAPH_DATE": "2027-09-30", "source_url": "https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO", "PORT": "Fujairah"}, {"Period": "2027 Q4", "VLSFO": 630.0, "MGO": 1034.0, "LSMGO": 1034.0, "HSFO": 476.0, "GRAPH_DATE": "2027-12-31", "source_url": "https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO", "PORT": "Fujairah"}, {"Period": "Full Year 2027", "VLSFO": 714.0, "MGO": 1171.0, "LSMGO": 1171.0, "HSFO": 539.0, "GRAPH_DATE": NaN, "source_url": "https://shipandbunker.com/prices/emea/me/ae-fjr-fujairah#_VLSFO", "PORT": "Fujairah"}, {"Period": "2026 Q4", "VLSFO": 842.0, "MGO": 1284.0, "LSMGO": 1285.0, "HSFO": 683.0, "GRAPH_DATE": "2026-12-31", "source_url": "https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO", "PORT": "Singapore"}, {"Period": "Full Year 2026", "VLSFO": 775.0, "MGO": 1181.0, "LSMGO": 1182.0, "HSFO": 629.0, "GRAPH_DATE": NaN, "source_url": "https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO", "PORT": "Singapore"}, {"Period": "2027 Q1", "VLSFO": 763.0, "MGO": 1164.0, "LSMGO": 1164.0, "HSFO": 620.0, "GRAPH_DATE": "2027-03-31", "source_url": "https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO", "PORT": "Singapore"}, {"Period": "2027 Q2", "VLSFO": 700.0, "MGO": 1067.0, "LSMGO": 1068.0, "HSFO": 568.0, "GRAPH_DATE": "2027-06-30", "source_url": "https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO", "PORT": "Singapore"}, {"Period": "2027 Q3", "VLSFO": 644.0, "MGO": 982.0, "LSMGO": 982.0, "HSFO": 522.0, "GRAPH_DATE": "2027-09-30", "source_url": "https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO", "PORT": "Singapore"}, {"Period": "2027 Q4", "VLSFO": 595.0, "MGO": 907.0, "LSMGO": 907.0, "HSFO": 483.0, "GRAPH_DATE": "2027-12-31", "source_url": "https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO", "PORT": "Singapore"}, {"Period": "Full Year 2027", "VLSFO": 674.0, "MGO": 1027.0, "LSMGO": 1028.0, "HSFO": 547.0, "GRAPH_DATE": NaN, "source_url": "https://shipandbunker.com/prices/apac/sea/sg-sin-singapore#_VLSFO", "PORT": "Singapore"}];
 
 const COLORS = {
-  Rotterdam: "#39a8ff",
-  Fujairah: "#2bd682",
-  Singapore: "#be7bff"
+  Rotterdam: "#45a9f5",
+  Fujairah: "#36ca82",
+  Singapore: "#bb86fc"
 };
 
 let currentRange = null;
 let currentPreset = "ALL";
 let currentMA = "OFF";
 
-function selectedPorts() {
-  return Array.from(document.querySelectorAll(".series-list input:checked"))
-    .map(x => x.value);
-}
+function formatNumber(value, decimals = 1) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "-";
+  }
 
-function formatNumber(value, decimals=1) {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
   return Number(value).toLocaleString("en-US", {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals
   });
 }
 
+function signed(value, decimals = 1) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "-";
+  }
+
+  return (Number(value) > 0 ? "+" : "") + formatNumber(value, decimals);
+}
+
+function selectedPorts() {
+  return Array.from(document.querySelectorAll(".series-list input:checked"))
+    .map(element => element.value);
+}
+
 function bounds() {
-  const data = [...PRODUCT_DATA].sort((a,b) => a.DATE.localeCompare(b.DATE));
+  const sorted = [...PRODUCT_DATA].sort((a, b) => a.DATE.localeCompare(b.DATE));
+
   return {
-    min: data[0]?.DATE || null,
-    max: data[data.length - 1]?.DATE || null
+    min: sorted[0]?.DATE || null,
+    max: sorted[sorted.length - 1]?.DATE || null
   };
 }
 
 function setPreset(preset) {
-  const b = bounds();
-  if (!b.max) return;
+  const marketBounds = bounds();
+
+  if (!marketBounds.max) {
+    return;
+  }
 
   currentPreset = preset;
 
   if (preset === "ALL") {
     currentRange = null;
   } else if (preset === "YTD") {
-    currentRange = { start: b.max.slice(0,4) + "-01-01", end: b.max };
+    currentRange = {
+      start: marketBounds.max.slice(0, 4) + "-01-01",
+      end: marketBounds.max
+    };
   } else {
-    const date = new Date(b.max + "T00:00:00");
-    date.setFullYear(date.getFullYear() - Number(preset.replace("Y","")));
-    currentRange = { start: date.toISOString().slice(0,10), end: b.max };
+    const date = new Date(marketBounds.max + "T00:00:00");
+    date.setFullYear(date.getFullYear() - Number(preset.replace("Y", "")));
+
+    currentRange = {
+      start: date.toISOString().slice(0, 10),
+      end: marketBounds.max
+    };
   }
 
-  document.querySelectorAll("[data-period]").forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.period === preset);
+  document.querySelectorAll("[data-period]").forEach(button => {
+    button.classList.toggle("active", button.dataset.period === preset);
   });
 
   render();
@@ -424,8 +1005,8 @@ function setPreset(preset) {
 function setMA(mode) {
   currentMA = mode;
 
-  document.querySelectorAll("[data-ma]").forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.ma === mode);
+  document.querySelectorAll("[data-ma]").forEach(button => {
+    button.classList.toggle("active", button.dataset.ma === mode);
   });
 
   render();
@@ -435,69 +1016,130 @@ function filteredData() {
   const ports = selectedPorts();
 
   return PRODUCT_DATA.filter(row => {
-    if (!ports.includes(row.PORT)) return false;
-    if (!currentRange) return true;
+    if (!ports.includes(row.PORT)) {
+      return false;
+    }
+
+    if (!currentRange) {
+      return true;
+    }
+
     return row.DATE >= currentRange.start && row.DATE <= currentRange.end;
   });
+}
+
+function getPortStats(port, rows = PRODUCT_DATA) {
+  const portRows = rows
+    .filter(row => row.PORT === port)
+    .sort((a, b) => a.DATE.localeCompare(b.DATE));
+
+  if (!portRows.length) {
+    return null;
+  }
+
+  const latest = portRows[portRows.length - 1];
+  const previous = portRows.length > 1 ? portRows[portRows.length - 2] : latest;
+  const values = portRows.map(row => Number(row.PRICE));
+  const change = Number(latest.PRICE) - Number(previous.PRICE);
+  const changePct = previous && Number(previous.PRICE)
+    ? change / Number(previous.PRICE) * 100
+    : 0;
+
+  return {
+    port,
+    latest: Number(latest.PRICE),
+    previous: Number(previous.PRICE),
+    date: latest.DATE,
+    change,
+    changePct,
+    high: Math.max(...values),
+    low: Math.min(...values),
+    observations: portRows.length
+  };
 }
 
 function dailyAverage(rows) {
   const grouped = {};
 
   rows.forEach(row => {
-    if (!grouped[row.DATE]) grouped[row.DATE] = [];
+    if (!grouped[row.DATE]) {
+      grouped[row.DATE] = [];
+    }
     grouped[row.DATE].push(Number(row.PRICE));
   });
 
   return Object.keys(grouped).sort().map(date => ({
     date,
-    value: grouped[date].reduce((a,b) => a+b, 0) / grouped[date].length
+    value: grouped[date].reduce((sum, value) => sum + value, 0) / grouped[date].length
   }));
+}
+
+function standardDeviation(values) {
+  if (!values.length) {
+    return 0;
+  }
+
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const variance = values.reduce(
+    (sum, value) => sum + Math.pow(value - mean, 2),
+    0
+  ) / values.length;
+
+  return Math.sqrt(variance);
 }
 
 function updateKpis(rows) {
   document.getElementById("recordCount").textContent = rows.length.toLocaleString("en-US");
-  document.getElementById("portCount").textContent = selectedPorts().length + " PORTS SELECTED";
+  document.getElementById("portCount").textContent = selectedPorts().length + " MARKETS SELECTED";
 
   if (!rows.length) {
-    ["latestValue","averageValue","highLow","changeValue"].forEach(id => {
+    ["latestValue", "averageValue", "highLow", "changeValue", "volatilityValue"].forEach(id => {
       document.getElementById(id).textContent = "-";
     });
+
     document.getElementById("latestDate").textContent = "NO DATA";
     document.getElementById("changeRate").textContent = "-";
     return;
   }
 
-  const avgByDay = dailyAverage(rows);
-  const first = avgByDay[0];
-  const latest = avgByDay[avgByDay.length - 1];
+  const averages = dailyAverage(rows);
+  const first = averages[0];
+  const latest = averages[averages.length - 1];
   const values = rows.map(row => Number(row.PRICE));
-
-  const avg = values.reduce((a,b) => a+b, 0) / values.length;
+  const average = values.reduce((sum, value) => sum + value, 0) / values.length;
   const high = Math.max(...values);
   const low = Math.min(...values);
   const change = latest.value - first.value;
   const rate = first.value ? change / first.value * 100 : 0;
+  const volatility = standardDeviation(values);
 
   document.getElementById("latestValue").textContent = formatNumber(latest.value);
   document.getElementById("latestDate").textContent = latest.date + " AVG";
-  document.getElementById("averageValue").textContent = formatNumber(avg);
+  document.getElementById("averageValue").textContent = formatNumber(average);
   document.getElementById("highLow").textContent =
-    formatNumber(high,0) + " / " + formatNumber(low,0);
+    formatNumber(high, 0) + " / " + formatNumber(low, 0);
+  document.getElementById("volatilityValue").textContent = formatNumber(volatility, 1);
 
-  const el = document.getElementById("changeValue");
-  el.textContent = (change > 0 ? "+" : "") + formatNumber(change);
-  el.className = "kpi-value " + (change > 0 ? "positive" : change < 0 ? "negative" : "");
+  const changeElement = document.getElementById("changeValue");
+  changeElement.textContent = signed(change);
+  changeElement.className =
+    "kpi-value " + (change > 0 ? "positive" : change < 0 ? "negative" : "");
 
   document.getElementById("changeRate").textContent =
-    (rate > 0 ? "+" : "") + formatNumber(rate,2) + "% / " +
-    first.date + " → " + latest.date;
+    signed(rate, 2) + "% / " + first.date + " → " + latest.date;
+
+  document.getElementById("footerSentiment").textContent =
+    change > 0 ? "BULLISH" : change < 0 ? "BEARISH" : "NEUTRAL";
+
+  document.getElementById("footerSentiment").className =
+    change > 0 ? "footer-green" : change < 0 ? "negative" : "";
 }
 
 function movingAverage(values, windowSize) {
   return values.map((item, index) => {
     const start = Math.max(0, index - windowSize + 1);
     const range = values.slice(start, index + 1);
+
     return range.reduce((sum, row) => sum + row.y, 0) / range.length;
   });
 }
@@ -514,14 +1156,16 @@ function renderChart(rows) {
   const groups = {};
 
   rows.forEach(row => {
-    if (!groups[row.PORT]) groups[row.PORT] = [];
+    if (!groups[row.PORT]) {
+      groups[row.PORT] = [];
+    }
     groups[row.PORT].push(row);
   });
 
   const traces = [];
 
   Object.entries(groups).forEach(([port, data]) => {
-    data.sort((a,b) => a.DATE.localeCompare(b.DATE));
+    data.sort((a, b) => a.DATE.localeCompare(b.DATE));
 
     const series = data.map(row => ({
       x: row.DATE,
@@ -529,114 +1173,306 @@ function renderChart(rows) {
     }));
 
     traces.push({
-      x: series.map(x => x.x),
-      y: series.map(x => x.y),
+      x: series.map(item => item.x),
+      y: series.map(item => item.y),
       type: "scatter",
       mode: "lines",
-      name: port,
-      line: { color: COLORS[port], width: 2.2 },
-      hovertemplate: "<b>" + port + "</b><br>DATE: %{x}<br>PRICE: $%{y:,.1f}/mt<extra></extra>"
+      name: port.toUpperCase(),
+      line: {
+        color: COLORS[port],
+        width: 2
+      },
+      hovertemplate:
+        "<b>" + port.toUpperCase() + "</b>" +
+        "<br>DATE: %{x}" +
+        "<br>PRICE: $%{y:,.1f}/MT" +
+        "<extra></extra>"
     });
 
     if (currentMA !== "OFF") {
       const ma = movingAverage(series, Number(currentMA));
 
       traces.push({
-        x: series.map(x => x.x),
+        x: series.map(item => item.x),
         y: ma,
         type: "scatter",
         mode: "lines",
-        name: port + " " + currentMA + "D MA",
-        line: { color: COLORS[port], width: 1.1, dash: "dot" },
+        name: port.toUpperCase() + " " + currentMA + "D MA",
+        line: {
+          color: COLORS[port],
+          width: 1,
+          dash: "dot"
+        },
         hoverinfo: "skip"
       });
     }
   });
 
-  const b = bounds();
+  const marketBounds = bounds();
   const chartRange = currentRange
     ? [currentRange.start, currentRange.end]
-    : [b.min, b.max];
+    : [marketBounds.min, marketBounds.max];
 
   const layout = {
-    margin: { l:72, r:26, t:22, b:68 },
+    margin: {
+      l: 62,
+      r: 19,
+      t: 18,
+      b: 57
+    },
     paper_bgcolor: "#07111c",
     plot_bgcolor: "#07111c",
-    font: { family: '"Roboto Mono", Consolas, monospace', color:"#c9d6e2", size:11 },
+    font: {
+      family: '"Roboto Mono", Consolas, monospace',
+      color: "#cdd9e4",
+      size: 10
+    },
     hovermode: "x unified",
-    legend: { orientation:"h", x:0, y:1.12 },
+    hoverlabel: {
+      bgcolor: "#07111c",
+      bordercolor: "#385976",
+      font: {
+        color: "#ffffff",
+        family: '"Roboto Mono", Consolas, monospace'
+      }
+    },
+    legend: {
+      orientation: "h",
+      x: 0,
+      y: 1.11,
+      font: {
+        size: 9,
+        color: "#a9bdce"
+      }
+    },
     xaxis: {
       type: "date",
       range: chartRange,
-      gridcolor:"#1f3040",
-      linecolor:"#405568",
-      rangeslider: { visible:true, bgcolor:"#050c14", bordercolor:"#405568", thickness:.09 }
+      gridcolor: "#142939",
+      linecolor: "#365268",
+      zerolinecolor: "#142939",
+      tickfont: {
+        size: 9,
+        color: "#8aa0b5"
+      },
+      rangeslider: {
+        visible: true,
+        bgcolor: "#040b12",
+        bordercolor: "#29465d",
+        thickness: .085
+      }
     },
     yaxis: {
-      title:"USD / MT",
-      gridcolor:"#1f3040",
-      linecolor:"#405568"
+      title: {
+        text: "USD / MT",
+        font: {
+          size: 9,
+          color: "#8aa0b5"
+        }
+      },
+      gridcolor: "#142939",
+      linecolor: "#365268",
+      tickfont: {
+        size: 9,
+        color: "#8aa0b5"
+      }
     }
   };
 
   Plotly.newPlot(chart, traces, layout, {
-    responsive:true,
-    displaylogo:false,
-    modeBarButtonsToRemove:["select2d","lasso2d"]
+    responsive: true,
+    displaylogo: false,
+    modeBarButtonsToRemove: ["select2d", "lasso2d"]
   });
 
   chart.on("plotly_relayout", event => {
     const start = event["xaxis.range[0]"];
     const end = event["xaxis.range[1]"];
 
-    if (start && end) {
-      currentRange = {
-        start: String(start).slice(0,10),
-        end: String(end).slice(0,10)
-      };
-      currentPreset = "CUSTOM";
-
-      document.querySelectorAll("[data-period]").forEach(btn => {
-        btn.classList.remove("active");
-      });
-
-      render();
+    if (!start || !end) {
+      return;
     }
+
+    currentRange = {
+      start: String(start).slice(0, 10),
+      end: String(end).slice(0, 10)
+    };
+
+    currentPreset = "CUSTOM";
+
+    document.querySelectorAll("[data-period]").forEach(button => {
+      button.classList.remove("active");
+    });
+
+    render();
   });
 }
 
-function renderForecast() {
-  const selected = selectedPorts();
+function renderTicker() {
+  const stats = ["Rotterdam", "Fujairah", "Singapore"]
+    .map(port => getPortStats(port))
+    .filter(Boolean);
 
-  const rows = FORECAST_DATA.filter(row => selected.includes(row.PORT));
+  const html = stats.map(item => {
+    const directionClass = item.change >= 0 ? "" : "negative";
+    const arrow = item.change >= 0 ? "▲" : "▼";
 
-  if (!rows.length) {
-    document.getElementById("forecastTable").innerHTML =
-      '<div class="empty">NO FORECAST DATA AVAILABLE</div>';
-    return;
-  }
+    return `
+      <div class="ticker-item">
+        <span class="ticker-symbol">${item.port.toUpperCase()} VLSFO</span>
+        <span class="ticker-value">${formatNumber(item.latest, 1)}</span>
+        <span class="ticker-change ${directionClass}">
+          ${arrow} ${signed(item.change, 1)} / ${signed(item.changePct, 2)}%
+        </span>
+      </div>
+    `;
+  }).join("");
 
-  let html = "<table><thead><tr><th>PORT / PERIOD</th><th>VLSFO</th><th>MGO</th><th>LSMGO</th><th>HSFO</th></tr></thead><tbody>";
+  document.getElementById("tickerStream").innerHTML = html;
+}
 
-  rows.forEach(row => {
-    html += "<tr>" +
-      "<td>" + row.PORT + " / " + row.Period + "</td>" +
-      "<td>" + formatNumber(row.VLSFO,0) + "</td>" +
-      "<td>" + formatNumber(row.MGO,0) + "</td>" +
-      "<td>" + formatNumber(row.LSMGO,0) + "</td>" +
-      "<td>" + formatNumber(row.HSFO,0) + "</td>" +
-      "</tr>";
+function renderWatchlist() {
+  const stats = ["Rotterdam", "Fujairah", "Singapore"]
+    .map(port => getPortStats(port))
+    .filter(Boolean);
+
+  let html = `
+    <table class="watchlist-table">
+      <thead>
+        <tr>
+          <th>MARKET</th>
+          <th>LAST</th>
+          <th>CHANGE</th>
+          <th>OBS</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  stats.forEach(item => {
+    const className = item.change >= 0 ? "watch-positive" : "watch-negative";
+
+    html += `
+      <tr>
+        <td class="watch-symbol">
+          ${item.port.toUpperCase()}
+          <span class="watch-sub">VLSFO / ${item.date}</span>
+        </td>
+        <td>${formatNumber(item.latest, 1)}</td>
+        <td class="${className}">
+          ${signed(item.change, 1)}
+          <span class="watch-sub ${className}">${signed(item.changePct, 2)}%</span>
+        </td>
+        <td>${item.observations.toLocaleString("en-US")}</td>
+      </tr>
+    `;
   });
 
   html += "</tbody></table>";
-  document.getElementById("forecastTable").innerHTML = html;
+  document.getElementById("watchlist").innerHTML = html;
 }
 
-function render() {
-  const rows = filteredData();
-  updateKpis(rows);
-  renderChart(rows);
-  renderForecast();
+function renderHeatmap() {
+  const stats = ["Rotterdam", "Fujairah", "Singapore"]
+    .map(port => getPortStats(port))
+    .filter(Boolean);
+
+  const heatmap = stats.map(item => {
+    const state = item.change > 0 ? "heat-up" : item.change < 0 ? "heat-down" : "heat-neutral";
+    const className = item.change >= 0 ? "positive" : "negative";
+
+    return `
+      <div class="heat-cell ${state}">
+        <div class="heat-cell-name">${item.port.toUpperCase()}</div>
+        <div class="heat-cell-value">${formatNumber(item.latest, 1)}</div>
+        <div class="heat-cell-change ${className}">
+          ${item.change >= 0 ? "▲" : "▼"} ${signed(item.change, 1)} / ${signed(item.changePct, 2)}%
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  document.getElementById("heatmap").innerHTML = heatmap;
+}
+
+function renderNewsAndRisk(rows) {
+  const stats = ["Rotterdam", "Fujairah", "Singapore"]
+    .map(port => getPortStats(port))
+    .filter(Boolean)
+    .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
+
+  const leader = stats[0];
+  const positiveCount = stats.filter(item => item.change > 0).length;
+  const negativeCount = stats.filter(item => item.change < 0).length;
+  const values = rows.map(row => Number(row.PRICE));
+  const vol = standardDeviation(values);
+  const range = values.length ? Math.max(...values) - Math.min(...values) : 0;
+
+  const newsItems = [
+    {
+      time: "LIVE",
+      text: leader
+        ? `<strong>${leader.port.toUpperCase()}</strong> is the largest daily mover at ${signed(leader.changePct, 2)}%.`
+        : "No market movement signal is currently available."
+    },
+    {
+      time: "FLOW",
+      text: `<strong>${positiveCount} ADVANCERS</strong> and <strong>${negativeCount} DECLINERS</strong> across monitored VLSFO hubs.`
+    },
+    {
+      time: "RANGE",
+      text: `Selected market price range is <strong>${formatNumber(range, 1)} USD/MT</strong> across the active period.`
+    }
+  ];
+
+  document.getElementById("newsFeed").innerHTML = newsItems.map(item => `
+    <div class="news-item">
+      <div class="news-time">${item.time}</div>
+      <div class="news-text">${item.text}</div>
+    </div>
+  `).join("");
+
+  const directionScore = stats.length
+    ? positiveCount / stats.length * 100
+    : 0;
+
+  const volScore = Math.min(vol / 2, 100);
+  const rangeScore = Math.min(range / 8, 100);
+
+  document.getElementById("riskPanel").innerHTML = `
+    <div class="risk-row">
+      <div class="risk-label-row">
+        <span>BREADTH / ADVANCERS</span>
+        <strong>${formatNumber(directionScore, 0)}%</strong>
+      </div>
+      <div class="risk-track">
+        <div class="risk-fill" style="width:${directionScore}%;"></div>
+      </div>
+    </div>
+
+    <div class="risk-row">
+      <div class="risk-label-row">
+        <span>PRICE VOLATILITY</span>
+        <strong>${formatNumber(vol, 1)} USD/MT</strong>
+      </div>
+      <div class="risk-track">
+        <div class="risk-fill warning" style="width:${volScore}%;"></div>
+      </div>
+    </div>
+
+    <div class="risk-row">
+      <div class="risk-label-row">
+        <span>PERIOD RANGE EXPOSURE</span>
+        <strong>${formatNumber(range, 1)} USD/MT</strong>
+      </div>
+      <div class="risk-track">
+        <div class="risk-fill alert" style="width:${rangeScore}%;"></div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("footerAlert").textContent =
+    range > 100 ? "ELEVATED RANGE WATCH" : "MONITORING ACTIVE";
 }
 
 function downloadCSV() {
@@ -669,7 +1505,20 @@ function downloadCSV() {
   URL.revokeObjectURL(url);
 }
 
-document.addEventListener("DOMContentLoaded", render);
+function render() {
+  const rows = filteredData();
+
+  updateKpis(rows);
+  renderChart(rows);
+  renderWatchlist();
+  renderHeatmap();
+  renderNewsAndRisk(rows);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  renderTicker();
+  render();
+});
 </script>
 </body>
 </html>
