@@ -879,206 +879,683 @@ STATIC_HTML = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GDP, Inflation &amp; GSCPI Dashboard</title>
+<title>MACRO ECONOMIES | MI Terminal</title>
 
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 
 <style>
 :root {
-    --navy:#12355b;
-    --blue:#1d4ed8;
-    --teal:#0f766e;
-    --red:#b91c1c;
-    --bg:#f3f6fb;
-    --card:#ffffff;
-    --line:#d9e2ec;
-    --text:#1f2937;
-    --muted:#6b7280;
-    --warn-bg:#fff8e1;
-    --warn-text:#7a5a00;
+    --bg-core: #01050a;
+    --bg-base: #030911;
+    --bg-panel: #07111b;
+    --bg-panel-2: #0a1723;
+    --bg-panel-3: #0d1d2b;
+    --line: #163047;
+    --line-strong: #294964;
+
+    --text: #f3f7fb;
+    --text-soft: #b0c1cf;
+    --muted: #71879a;
+    --dim: #40596c;
+
+    --amber: #f6a623;
+    --amber-soft: #ffbf58;
+    --blue: #43a7f5;
+    --cyan: #38c6df;
+    --green: #37ca82;
+    --red: #ff6666;
+    --purple: #aa8cf6;
+
+    --shadow:
+        0 5px 22px rgba(0, 0, 0, .60),
+        0 0 18px rgba(37, 124, 181, .08);
 }
-* { box-sizing:border-box; }
+
+* {
+    box-sizing: border-box;
+}
+
+html,
 body {
-    font-family:"Segoe UI", Arial, sans-serif;
-    margin:0;
-    background:var(--bg);
-    color:var(--text);
+    min-height: 100%;
+    background: var(--bg-core);
 }
-.wrap {
-    max-width:1520px;
-    margin:0 auto;
-    padding:24px;
+
+body {
+    margin: 0;
+    min-width: 320px;
+    color: var(--text);
+    background:
+        radial-gradient(
+            circle at 50% -20%,
+            rgba(41, 122, 177, .15),
+            transparent 42%
+        ),
+        linear-gradient(
+            180deg,
+            rgba(246, 166, 35, .025),
+            transparent 260px
+        ),
+        var(--bg-core);
+    font-family:
+        "IBM Plex Mono",
+        "Roboto Mono",
+        "SFMono-Regular",
+        Consolas,
+        "Liberation Mono",
+        monospace;
+    font-size: 11px;
+    line-height: 1.35;
+    -webkit-font-smoothing: antialiased;
 }
-.hero {
-    background:linear-gradient(135deg,var(--navy),var(--teal));
-    color:#ffffff;
-    padding:28px;
-    border-radius:18px;
-    margin-bottom:20px;
-}
-.hero h1 {
-    margin:0 0 10px 0;
-    font-size:30px;
-}
-.meta {
-    font-size:13px;
-    opacity:.96;
-    line-height:1.7;
-}
-.source-link {
-    color:inherit;
-    text-decoration:underline;
-}
-.tabs {
-    display:flex;
-    gap:10px;
-    margin-bottom:18px;
-}
-.tab {
-    display:inline-block;
-    padding:11px 18px;
-    border-radius:12px;
-    text-decoration:none;
-    background:#dbe4f0;
-    color:#16324f;
-    font-weight:700;
-    cursor:pointer;
-}
-.tab.active {
-    background:var(--navy);
-    color:#ffffff;
-}
-.panel {
-    background:var(--card);
-    border:1px solid var(--line);
-    border-radius:16px;
-    padding:18px;
-    box-shadow:0 4px 14px rgba(18,53,91,.06);
-    margin-bottom:18px;
-    width:100%;
-}
-.section-title {
-    margin:0 0 14px 0;
-    font-size:18px;
-    color:var(--navy);
-}
-.grid {
-    display:grid;
-    grid-template-columns:repeat(4,1fr);
-    gap:16px;
-}
-.row2 {
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:18px;
-}
-.kpi {
-    background:linear-gradient(180deg,#ffffff,#f8fbff);
-    border:1px solid var(--line);
-    border-left:6px solid var(--blue);
-    padding:16px;
-    border-radius:14px;
-}
-.kpi .label {
-    color:var(--muted);
-    font-size:12px;
-    text-transform:uppercase;
-    letter-spacing:.4px;
-}
-.kpi .value {
-    margin-top:8px;
-    font-size:23px;
-    font-weight:800;
-    color:var(--navy);
-    word-break:break-word;
-}
-label {
-    display:block;
-    font-size:13px;
-    color:var(--muted);
-    margin-bottom:6px;
-    font-weight:600;
-}
+
+button,
 select {
-    width:100%;
-    padding:11px;
-    border:1px solid var(--line);
-    border-radius:10px;
-    background:#ffffff;
+    font: inherit;
 }
-button {
-    padding:10px 14px;
-    border:none;
-    background:var(--navy);
-    color:#ffffff;
-    border-radius:10px;
-    cursor:pointer;
-    font-weight:600;
+
+/* =========================================================
+   TERMINAL SHELL
+   ========================================================= */
+.wrap {
+    width: min(1920px, calc(100% - 16px));
+    max-width: 1920px;
+    margin: 8px auto 14px;
+    padding: 0;
 }
-button:hover { opacity:.9; }
-.select-tools,
-.btn-row {
-    display:flex;
-    gap:7px;
-    margin:0 0 8px 0;
-    flex-wrap:wrap;
+
+.hero {
+    min-height: 54px;
+    display: flex;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 0 0 6px;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--line-strong);
+    border-radius: 0;
+    background:
+        linear-gradient(
+            180deg,
+            rgba(13, 32, 49, .98),
+            rgba(3, 9, 15, .98)
+        );
+    box-shadow: var(--shadow);
 }
-.select-tools button {
-    padding:6px 10px;
-    font-size:12px;
-    background:#475569;
+
+.hero::before {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 52px;
+    padding: 0 10px;
+    color: #02060b;
+    content: "MI";
+    background: var(--amber);
+    font-size: 13px;
+    font-weight: 900;
+    letter-spacing: .08em;
+    box-shadow: 0 0 14px rgba(246, 166, 35, .35);
 }
-.select-tools button:first-child { background:var(--teal); }
-.icon-csv {
-    background:#2563eb;
-    font-size:12px;
+
+.hero h1 {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    margin: 0;
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: .10em;
+    text-transform: uppercase;
+    white-space: nowrap;
 }
+
+.meta {
+    min-width: min(58%, 760px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    padding: 6px 14px;
+    color: var(--muted);
+    border-left: 1px solid var(--line);
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    line-height: 1.45;
+    text-align: right;
+    text-transform: uppercase;
+}
+
+.meta b {
+    color: var(--text-soft);
+    font-weight: 800;
+}
+
+.source-link {
+    color: var(--blue);
+    text-decoration: none;
+}
+
+.source-link:hover {
+    color: var(--amber-soft);
+    text-decoration: underline;
+}
+
+.tabs {
+    display: flex;
+    gap: 0;
+    margin: 0 0 6px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    background: #02070d;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, .35);
+}
+
+.tab {
+    min-width: 180px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    color: var(--muted);
+    border-right: 1px solid var(--line);
+    background: transparent;
+    cursor: pointer;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-decoration: none;
+    text-transform: uppercase;
+    transition: .15s ease;
+}
+
+.tab:hover {
+    color: var(--text);
+    background: rgba(67, 167, 245, .06);
+}
+
+.tab.active {
+    color: #071018;
+    background: var(--amber);
+    box-shadow: 0 0 14px rgba(246, 166, 35, .2);
+}
+
 .warning {
-    background:var(--warn-bg);
-    color:var(--warn-text);
-    border:1px solid #f5d76e;
-    padding:14px;
-    border-radius:12px;
-    margin-bottom:16px;
-    display:none;
+    margin: 0 0 6px;
+    padding: 9px 12px;
+    color: var(--amber-soft);
+    border: 1px solid rgba(246, 166, 35, .55);
+    border-left: 3px solid var(--amber);
+    border-radius: 0;
+    background: rgba(246, 166, 35, .08);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
 }
+
 .loading,
 .empty {
-    padding:50px;
-    text-align:center;
-    font-weight:700;
-    color:var(--muted);
+    padding: 44px 20px;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-align: center;
+    text-transform: uppercase;
 }
-.chart {
-    width:100%;
-    min-height:430px;
-}
-ul.exec {
-    margin:0;
-    padding-left:18px;
-}
-ul.exec li {
-    margin:10px 0;
-    line-height:1.6;
-}
-.subnote {
-    margin-top:8px;
-    color:var(--muted);
-    font-size:12px;
-    line-height:1.6;
-}
-.hidden { display:none; }
 
-@media (max-width:1050px) {
-    .grid { grid-template-columns:repeat(2,1fr); }
-    .row2 { grid-template-columns:1fr; }
+/* =========================================================
+   STRICT 12-COLUMN GRID
+   ========================================================= */
+#macroSection,
+#gscpiSection {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 6px;
 }
-@media (max-width:650px) {
-    .wrap { padding:14px; }
-    .hero { padding:20px; }
-    .hero h1 { font-size:24px; }
-    .grid { grid-template-columns:1fr; }
-    .tabs { flex-wrap:wrap; }
+
+#macroSection.hidden,
+#gscpiSection.hidden,
+.hidden {
+    display: none !important;
+}
+
+#macroSection > .panel:first-child,
+#gscpiSection > .panel:first-child {
+    grid-column: span 12;
+}
+
+#macroSection > .grid,
+#gscpiSection > .grid {
+    grid-column: span 12;
+}
+
+#macroSection > .row2,
+#gscpiSection > .row2 {
+    grid-column: span 12;
+}
+
+#macroSection > .panel,
+#gscpiSection > .panel {
+    grid-column: span 12;
+    margin: 0;
+}
+
+.panel {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 0;
+    background:
+        linear-gradient(
+            145deg,
+            rgba(14, 33, 49, .72),
+            rgba(4, 11, 18, .98)
+        );
+    box-shadow: var(--shadow);
+}
+
+.panel::before {
+    display: block;
+    height: 2px;
+    content: "";
+    background: linear-gradient(
+        90deg,
+        var(--amber),
+        rgba(246, 166, 35, .18) 42%,
+        transparent 78%
+    );
+}
+
+.section-title {
+    min-height: 30px;
+    display: flex;
+    align-items: center;
+    margin: 0;
+    padding: 0 10px;
+    color: var(--amber);
+    border-bottom: 1px solid var(--line);
+    background:
+        linear-gradient(
+            180deg,
+            rgba(13, 31, 47, .92),
+            rgba(7, 17, 27, .90)
+        );
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+}
+
+/* =========================================================
+   FILTERS / CONTROL PANEL
+   ========================================================= */
+.panel .grid:first-of-type {
+    padding: 10px;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+}
+
+label {
+    display: block;
+    margin: 0 0 5px;
+    color: var(--muted);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+select {
+    width: 100%;
+    min-height: 28px;
+    padding: 5px 8px;
+    color: var(--text-soft);
+    border: 1px solid #21415a;
+    border-radius: 0;
+    outline: none;
+    background: #020911;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+select:focus {
+    color: var(--amber-soft);
+    border-color: var(--amber);
+    box-shadow: 0 0 0 1px rgba(246, 166, 35, .15);
+}
+
+select[multiple] {
+    min-height: 145px;
+    padding: 4px;
+}
+
+select option {
+    padding: 4px;
+    color: var(--text-soft);
+    background: #07111b;
+}
+
+button {
+    min-height: 26px;
+    padding: 6px 10px;
+    color: var(--text);
+    border: 1px solid #28506e;
+    border-radius: 0;
+    outline: none;
+    background: #0a1a28;
+    cursor: pointer;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    transition: .15s ease;
+}
+
+button:hover {
+    color: #071018;
+    border-color: var(--amber);
+    background: var(--amber);
+}
+
+.select-tools,
+.btn-row {
+    display: flex;
+    gap: 4px;
+    margin: 0 0 7px;
+    flex-wrap: wrap;
+}
+
+.select-tools button {
+    min-height: 24px;
+    padding: 4px 8px;
+    color: var(--text-soft);
+    border-color: #21415a;
+    background: #0a1723;
+    font-size: 8px;
+}
+
+.select-tools button:first-child,
+.icon-csv {
+    color: #071018;
+    border-color: var(--amber);
+    background: var(--amber);
+}
+
+.icon-csv:hover,
+.select-tools button:first-child:hover {
+    color: #ffffff;
+    background: #c97d0a;
+}
+
+.subnote {
+    margin: 0;
+    padding: 8px 10px;
+    color: var(--muted);
+    border-top: 1px solid #102638;
+    background: rgba(2, 8, 14, .58);
+    font-size: 8px;
+    line-height: 1.65;
+    letter-spacing: .02em;
+}
+
+/* =========================================================
+   KPI ROW
+   ========================================================= */
+#macroSection > .grid:nth-of-type(2),
+#gscpiSection > .grid:nth-of-type(2) {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.kpi {
+    min-height: 86px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-top: 2px solid #2b638b;
+    border-left: 1px solid var(--line);
+    border-radius: 0;
+    background:
+        linear-gradient(
+            135deg,
+            rgba(34, 100, 143, .18),
+            transparent 62%
+        ),
+        var(--bg-panel);
+    box-shadow: var(--shadow);
+}
+
+.kpi:nth-child(2) {
+    border-top-color: var(--blue);
+}
+
+.kpi:nth-child(3) {
+    border-top-color: var(--green);
+}
+
+.kpi:nth-child(4) {
+    border-top-color: var(--purple);
+}
+
+.kpi .label {
+    color: var(--muted);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.kpi .value {
+    margin: 7px 0 0;
+    overflow: hidden;
+    color: #ffffff;
+    font-size: clamp(16px, 1.5vw, 24px);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.06em;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* =========================================================
+   MAIN CHART / WATCHLIST STRUCTURE
+   ========================================================= */
+.row2 {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.row2 > .panel {
+    min-width: 0;
+    margin: 0;
+}
+
+.row2 > .panel:first-child {
+    grid-column: span 8;
+}
+
+.row2 > .panel:last-child {
+    grid-column: span 4;
+}
+
+.chart {
+    width: 100%;
+    min-height: 390px;
+    padding: 2px;
+}
+
+.js-plotly-plot .plotly .modebar {
+    background: rgba(3, 9, 15, .88) !important;
+    border: 1px solid var(--line) !important;
+}
+
+.js-plotly-plot .plotly .modebar-btn path {
+    fill: var(--muted) !important;
+}
+
+.js-plotly-plot .plotly .modebar-btn:hover path {
+    fill: var(--amber) !important;
+}
+
+/* =========================================================
+   INSIGHT / NEWS / RISK PANELS
+   ========================================================= */
+#macroSection > .row2:last-child > .panel:first-child,
+#gscpiSection > .panel:last-child {
+    border-left: 3px solid var(--blue);
+}
+
+#macroSection > .row2:last-child > .panel:last-child {
+    border-left: 3px solid var(--red);
+}
+
+ul.exec {
+    min-height: 205px;
+    margin: 0;
+    padding: 7px 12px 12px 28px;
+    color: var(--text-soft);
+    background:
+        linear-gradient(
+            180deg,
+            rgba(4, 12, 20, .38),
+            rgba(2, 7, 12, .15)
+        );
+}
+
+ul.exec li {
+    margin: 0;
+    padding: 7px 2px;
+    border-bottom: 1px solid #102536;
+    font-size: 9px;
+    line-height: 1.5;
+}
+
+ul.exec li::marker {
+    color: var(--amber);
+}
+
+ul.exec li:last-child {
+    border-bottom: 0;
+}
+
+/* =========================================================
+   STATUS BAR
+   ========================================================= */
+.wrap::after {
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 6px;
+    padding: 0 10px;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--green);
+    content:
+        "SYSTEM STATUS: NORMAL  |  MARKET HEALTH: MONITORED  |  SENTIMENT: DATA-DRIVEN  |  ALERTS: NO CRITICAL EXCEPTIONS";
+    background: #02070d;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+@media (max-width: 1180px) {
+    .hero {
+        min-height: auto;
+        flex-wrap: wrap;
+    }
+
+    .hero h1 {
+        min-height: 44px;
+    }
+
+    .meta {
+        width: 100%;
+        min-width: 100%;
+        padding: 8px 12px;
+        border-top: 1px solid var(--line);
+        border-left: 0;
+        text-align: left;
+    }
+
+    .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #macroSection > .grid:nth-of-type(2),
+    #gscpiSection > .grid:nth-of-type(2) {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .row2 > .panel:first-child,
+    .row2 > .panel:last-child {
+        grid-column: span 12;
+    }
+}
+
+@media (max-width: 720px) {
+    .wrap {
+        width: calc(100% - 10px);
+        margin-top: 5px;
+    }
+
+    .hero::before {
+        min-width: 42px;
+    }
+
+    .hero h1 {
+        padding: 0 8px;
+        font-size: 11px;
+        letter-spacing: .06em;
+    }
+
+    .tabs {
+        overflow-x: auto;
+    }
+
+    .tab {
+        min-width: 160px;
+    }
+
+    .grid,
+    #macroSection > .grid:nth-of-type(2),
+    #gscpiSection > .grid:nth-of-type(2) {
+        grid-template-columns: 1fr;
+    }
+
+    .panel .grid:first-of-type {
+        padding: 8px;
+    }
+
+    .kpi {
+        min-height: 72px;
+    }
+
+    .chart {
+        min-height: 320px;
+    }
+
+    .meta {
+        font-size: 7px;
+    }
 }
 </style>
 </head>
@@ -1087,29 +1564,30 @@ ul.exec li {
 <div class="wrap">
 
     <div class="hero">
-        <h1>GDP, Inflation &amp; GSCPI</h1>
+        <h1>MACRO ECONOMIES | GDP · INFLATION · GSCPI</h1>
+
         <div class="meta">
             <div>
-                <b>출처</b> |
-                GDP / Inflation:
+                <b>DATA SOURCES</b> |
+                GDP / INFLATION:
                 <a class="source-link"
                    href="https://data.worldbank.org/"
                    target="_blank"
                    rel="noopener noreferrer">
-                    World Bank Open Data
+                    WORLD BANK OPEN DATA
                 </a>
-                /
+                |
                 GSCPI:
                 <a class="source-link"
                    href="https://www.newyorkfed.org/research/policy/gscpi"
                    target="_blank"
                    rel="noopener noreferrer">
-                    Federal Reserve Bank of New York
+                    FEDERAL RESERVE BANK OF NEW YORK
                 </a>
             </div>
             <div>
-                <b>GitHub Actions 갱신 시각</b> |
-                <span id="generatedAt">데이터 로딩 중</span>
+                <b>LAST REFRESH</b> |
+                <span id="generatedAt">LOADING DATA...</span>
             </div>
         </div>
     </div>
@@ -1118,46 +1596,47 @@ ul.exec li {
 
     <div class="tabs">
         <a id="macroTab" class="tab active" onclick="showTab('macro')">
-            GDP + Inflation
+            MACRO ECONOMIES
         </a>
+
         <a id="gscpiTab" class="tab" onclick="showTab('gscpi')">
-            GSCPI
+            GLOBAL SUPPLY CHAIN PRESSURE INDEX
         </a>
     </div>
 
     <div id="loading" class="loading">
-        GitHub Pages 데이터 파일을 불러오는 중입니다.
+        INITIALIZING MARKET DATA FEED...
     </div>
 
     <div id="macroSection" class="hidden">
 
         <div class="panel">
-            <h3 class="section-title">공통 필터</h3>
+            <h3 class="section-title">01. DATA UNIVERSE &amp; TIME HORIZON</h3>
 
             <div class="grid">
                 <div>
-                    <label for="regionSelect">지역 선택</label>
+                    <label for="regionSelect">REGION FILTER</label>
                     <select id="regionSelect" onchange="onRegionChange()"></select>
                 </div>
 
                 <div>
-                    <label for="yearsSelect">기간 선택</label>
+                    <label for="yearsSelect">OBSERVATION WINDOW</label>
                     <select id="yearsSelect" onchange="renderMacroDashboard()">
-                        <option value="5">최근 5개년</option>
-                        <option value="10" selected>최근 10개년</option>
-                        <option value="20">최근 20개년</option>
+                        <option value="5">LAST 5 YEARS</option>
+                        <option value="10" selected>LAST 10 YEARS</option>
+                        <option value="20">LAST 20 YEARS</option>
                     </select>
                 </div>
 
                 <div style="grid-column:span 2;">
-                    <label for="countrySelect">국가 선택</label>
+                    <label for="countrySelect">COUNTRY UNIVERSE</label>
 
                     <div class="select-tools">
                         <button type="button" onclick="setAllCountries(true)">
-                            권역 전체 선택
+                            SELECT REGION UNIVERSE
                         </button>
                         <button type="button" onclick="setAllCountries(false)">
-                            선택 해제
+                            CLEAR SELECTION
                         </button>
                     </div>
 
@@ -1170,83 +1649,105 @@ ul.exec li {
             </div>
 
             <div class="subnote">
-                최초 화면은 G7 및 한국을 기본으로 선택합니다.
-                지역 변경 시 해당 권역의 국가가 전체 선택됩니다.
-                Ctrl 또는 Shift 키를 활용하여 국가를 추가·제외할 수 있습니다.
+                DEFAULT UNIVERSE: G7 ECONOMIES AND REPUBLIC OF KOREA.
+                USE CTRL OR SHIFT TO MODIFY INDIVIDUAL COUNTRY SELECTIONS.
             </div>
         </div>
 
         <div class="grid">
             <div class="kpi">
-                <div class="label">Selected Countries</div>
+                <div class="label">SELECTED COUNTRIES</div>
                 <div class="value" id="selectedCountriesKpi">-</div>
             </div>
+
             <div class="kpi">
-                <div class="label">GDP Latest Year</div>
+                <div class="label">GDP LATEST OBSERVATION</div>
                 <div class="value" id="latestGdpYearKpi">-</div>
             </div>
+
             <div class="kpi">
-                <div class="label">Inflation Latest Year</div>
+                <div class="label">INFLATION LATEST OBSERVATION</div>
                 <div class="value" id="latestInflationYearKpi">-</div>
             </div>
+
             <div class="kpi">
-                <div class="label">Selected Region</div>
+                <div class="label">ACTIVE REGION</div>
                 <div class="value" id="selectedRegionKpi">-</div>
             </div>
         </div>
 
         <div class="row2">
             <div class="panel">
-                <h3 class="section-title">GDP 성장률 추이</h3>
-                <div class="btn-row">
+                <h3 class="section-title">
+                    02. GDP GROWTH TREND | PRIMARY MACRO CHART
+                </h3>
+
+                <div class="btn-row" style="padding:8px 10px 0;">
                     <button class="icon-csv" onclick="downloadMacroData('gdp')">
-                        CSV 다운로드
+                        EXPORT GDP CSV
                     </button>
                 </div>
+
                 <div id="gdpLine" class="chart"></div>
             </div>
 
             <div class="panel">
-                <h3 class="section-title">Inflation 추이</h3>
-                <div class="btn-row">
+                <h3 class="section-title">
+                    03. INFLATION WATCHLIST | CROSS-COUNTRY MONITOR
+                </h3>
+
+                <div class="btn-row" style="padding:8px 10px 0;">
                     <button class="icon-csv" onclick="downloadMacroData('inflation')">
-                        CSV 다운로드
+                        EXPORT INFLATION CSV
                     </button>
                 </div>
+
                 <div id="inflationLine" class="chart"></div>
             </div>
         </div>
 
         <div class="panel">
-            <h3 class="section-title">GDP / Inflation 평균 비교</h3>
-            <div class="btn-row">
+            <h3 class="section-title">
+                04. GDP / INFLATION SPREAD | MACRO REGIME COMPARISON
+            </h3>
+
+            <div class="btn-row" style="padding:8px 10px 0;">
                 <button class="icon-csv" onclick="downloadMacroData('macro_compare')">
-                    CSV 다운로드
+                    EXPORT MACRO COMPARISON CSV
                 </button>
             </div>
+
             <div id="macroCompareChart" class="chart"></div>
         </div>
 
         <div class="row2">
             <div class="panel">
-                <h3 class="section-title">국가별 최신 GDP 성장률 비교</h3>
+                <h3 class="section-title">
+                    05. GDP HEATMAP PROXY | LATEST COUNTRY GROWTH
+                </h3>
                 <div id="gdpBar" class="chart"></div>
             </div>
 
             <div class="panel">
-                <h3 class="section-title">국가별 최신 Inflation 비교</h3>
+                <h3 class="section-title">
+                    06. INFLATION MOVERS | LATEST COUNTRY COMPARISON
+                </h3>
                 <div id="inflationBar" class="chart"></div>
             </div>
         </div>
 
         <div class="row2">
             <div class="panel">
-                <h3 class="section-title">GDP 시사점</h3>
+                <h3 class="section-title">
+                    07. GDP MARKET INTELLIGENCE
+                </h3>
                 <ul class="exec" id="gdpInsights"></ul>
             </div>
 
             <div class="panel">
-                <h3 class="section-title">Inflation 시사점</h3>
+                <h3 class="section-title">
+                    RISK INDICATORS | INFLATION INTELLIGENCE
+                </h3>
                 <ul class="exec" id="inflationInsights"></ul>
             </div>
         </div>
@@ -1255,16 +1756,18 @@ ul.exec li {
     <div id="gscpiSection" class="hidden">
 
         <div class="panel">
-            <h3 class="section-title">GSCPI 필터</h3>
+            <h3 class="section-title">
+                01. GSCPI OBSERVATION PARAMETERS
+            </h3>
 
             <div class="grid">
                 <div>
-                    <label for="gscpiYearsSelect">기간 선택</label>
+                    <label for="gscpiYearsSelect">OBSERVATION WINDOW</label>
                     <select id="gscpiYearsSelect"
                             onchange="renderGscpiDashboard()">
-                        <option value="5">최근 5개년</option>
-                        <option value="10" selected>최근 10개년</option>
-                        <option value="20">최근 20개년</option>
+                        <option value="5">LAST 5 YEARS</option>
+                        <option value="10" selected>LAST 10 YEARS</option>
+                        <option value="20">LAST 20 YEARS</option>
                     </select>
                 </div>
             </div>
@@ -1272,42 +1775,53 @@ ul.exec li {
 
         <div class="grid">
             <div class="kpi">
-                <div class="label">Latest Point</div>
+                <div class="label">LATEST OBSERVATION DATE</div>
                 <div class="value" id="latestGscpiKpi">-</div>
             </div>
+
             <div class="kpi">
-                <div class="label">Average, Last 12M</div>
+                <div class="label">ROLLING 12M AVERAGE</div>
                 <div class="value" id="avgGscpiKpi">-</div>
             </div>
+
             <div class="kpi">
-                <div class="label">Maximum, Last 12M</div>
+                <div class="label">ROLLING 12M HIGH</div>
                 <div class="value" id="maxGscpiKpi">-</div>
             </div>
+
             <div class="kpi">
-                <div class="label">Minimum, Last 12M</div>
+                <div class="label">ROLLING 12M LOW</div>
                 <div class="value" id="minGscpiKpi">-</div>
             </div>
         </div>
 
         <div class="row2">
             <div class="panel">
-                <h3 class="section-title">GSCPI 추이</h3>
-                <div class="btn-row">
+                <h3 class="section-title">
+                    02. GLOBAL SUPPLY CHAIN PRESSURE INDEX | PRIMARY TREND
+                </h3>
+
+                <div class="btn-row" style="padding:8px 10px 0;">
                     <button class="icon-csv" onclick="downloadGscpiData()">
-                        CSV 다운로드
+                        EXPORT GSCPI CSV
                     </button>
                 </div>
+
                 <div id="gscpiLine" class="chart"></div>
             </div>
 
             <div class="panel">
-                <h3 class="section-title">최근 12개월 GSCPI 비교</h3>
+                <h3 class="section-title">
+                    03. GSCPI WATCHLIST | LAST 12 MONTHS
+                </h3>
                 <div id="gscpiBar" class="chart"></div>
             </div>
         </div>
 
         <div class="panel">
-            <h3 class="section-title">GSCPI 시사점</h3>
+            <h3 class="section-title">
+                04. SUPPLY CHAIN RISK INTELLIGENCE
+            </h3>
             <ul class="exec" id="gscpiInsights"></ul>
         </div>
     </div>
@@ -1368,32 +1882,61 @@ function chartLayout(title, yAxisTitle) {
         title: {
             text: title || "",
             font: {
-                size: 15,
-                color: "#12355b"
+                size: 12,
+                color: "#f3f7fb",
+                family: "IBM Plex Mono, Roboto Mono, monospace"
             }
         },
-        template: "plotly_white",
+        paper_bgcolor: "#07111b",
+        plot_bgcolor: "#07111b",
+        font: {
+            color: "#b0c1cf",
+            family: "IBM Plex Mono, Roboto Mono, monospace",
+            size: 10
+        },
         height: 440,
         margin: {
-            l: 55,
-            r: 40,
-            t: title ? 60 : 30,
-            b: 65
+            l: 58,
+            r: 46,
+            t: title ? 56 : 26,
+            b: 58
         },
         xaxis: {
-            gridcolor: "#edf2f7"
+            gridcolor: "#142a3d",
+            linecolor: "#294964",
+            tickfont: {
+                color: "#71879a",
+                size: 9
+            },
+            zerolinecolor: "#294964"
         },
         yaxis: {
-            title: yAxisTitle || "",
-            gridcolor: "#edf2f7",
-            zerolinecolor: "#cbd5e1"
+            title: {
+                text: yAxisTitle || "",
+                font: {
+                    color: "#71879a",
+                    size: 9
+                }
+            },
+            gridcolor: "#142a3d",
+            linecolor: "#294964",
+            tickfont: {
+                color: "#71879a",
+                size: 9
+            },
+            zerolinecolor: "#294964"
         },
         legend: {
             orientation: "h",
             yanchor: "bottom",
             y: 1.03,
             xanchor: "right",
-            x: 1
+            x: 1,
+            font: {
+                color: "#b0c1cf",
+                size: 9
+            },
+            bgcolor: "rgba(0,0,0,0)"
         }
     };
 }
@@ -1705,7 +2248,7 @@ function drawMacroCompareChart(gdp, inflation) {
             type: "scatter",
             name: "GDP 평균",
             line: {
-                color: "#1d4ed8",
+                color: "#43a7f5",
                 width: 3
             },
             marker: {
@@ -1723,7 +2266,7 @@ function drawMacroCompareChart(gdp, inflation) {
             type: "scatter",
             name: "Inflation 평균",
             line: {
-                color: "#b91c1c",
+                color: "#ff6666",
                 width: 3
             },
             marker: {
@@ -1736,10 +2279,20 @@ function drawMacroCompareChart(gdp, inflation) {
     const layout = chartLayout("", "GDP 성장률 (%)");
 
     layout.yaxis2 = {
-        title: "Inflation (%)",
+        title: {
+            text: "Inflation (%)",
+            font: {
+                color: "#71879a",
+                size: 9
+            }
+        },
         overlaying: "y",
         side: "right",
-        gridcolor: "#edf2f7"
+        gridcolor: "#142a3d",
+        tickfont: {
+            color: "#71879a",
+            size: 9
+        }
     };
 
     Plotly.react(
@@ -1893,14 +2446,14 @@ function renderMacroDashboard() {
         : "-";
 
     const colors = [
-        "#1d4ed8",
-        "#0f766e",
-        "#b91c1c",
-        "#7c3aed",
-        "#c2410c",
-        "#0369a1",
-        "#15803d",
-        "#be123c"
+        "#43a7f5",
+        "#37ca82",
+        "#ff6666",
+        "#aa8cf6",
+        "#f6a623",
+        "#38c6df",
+        "#61c98a",
+        "#f28585"
     ];
 
     drawLineChart(
@@ -1926,7 +2479,7 @@ function renderMacroDashboard() {
         latestByCountry(gdp, "gdp_growth"),
         "gdp_growth",
         "GDP 성장률 (%)",
-        "#1d4ed8"
+        "#43a7f5"
     );
 
     drawBarChart(
@@ -1934,7 +2487,7 @@ function renderMacroDashboard() {
         latestByCountry(inflation, "inflation"),
         "inflation",
         "Inflation (%)",
-        "#b91c1c"
+        "#ff6666"
     );
 
     renderInsightList(
@@ -2073,7 +2626,7 @@ function renderGscpiDashboard() {
             mode: "lines+markers",
             name: "GSCPI",
             line: {
-                color: "#0f766e",
+                color: "#37ca82",
                 width: 3
             },
             marker: {
@@ -2096,7 +2649,7 @@ function renderGscpiDashboard() {
             y: latest12.map(item => Number(item.gscpi)),
             type: "bar",
             marker: {
-                color: "#0f766e"
+                color: "#37ca82"
             },
             hovertemplate:
                 "%{x}<br>GSCPI: %{y:.2f}<extra></extra>"
@@ -2313,16 +2866,6 @@ window.addEventListener(
 </html>
 """
 
-def generate_static_html():
-    """
-    GitHub Pages용 index.html 파일을 생성한다.
-    """
-    atomic_write_text(
-        STATIC_HTML_PATH,
-        STATIC_HTML,
-    )
-
-    log(f"[STATIC] 생성 완료: {STATIC_HTML_PATH.name}")
 
 # =========================================================
 # 7. Local Flask Development Mode
