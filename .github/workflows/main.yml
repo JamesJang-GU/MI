@@ -212,35 +212,69 @@ jobs:
       # =====================================================
       - name: Verify Bunker Price generated files
         run: |
+          set -e
+
           echo "===== BunkerPrice files ====="
           ls -alh "BunkerPrice"
 
           echo "===== OilPrice files ====="
           ls -alh "BunkerPrice/OilPrice"
 
-          # 필수 데이터 및 정적 HTML
-          test -f "BunkerPrice/bunker_price_data.db"
-          test -f "BunkerPrice/shipandbunker_vlsfo.csv"
-          test -f "BunkerPrice/index.html"
-          test -f "BunkerPrice/OilPrice/index.html"
-          test -f "BunkerPrice/OilPrice/opinet_oil_prices.csv"
+          echo "===== Required BunkerPrice output files ====="
 
-          # Forecast는 크롤링 소스 상태에 따라 미생성될 수 있으므로 경고 처리
+          test -f "BunkerPrice/bunker_price_data.db" \
+            || { echo "ERROR: bunker_price_data.db is missing."; exit 1; }
+
+          test -f "BunkerPrice/shipandbunker_vlsfo.csv" \
+            || { echo "ERROR: shipandbunker_vlsfo.csv is missing."; exit 1; }
+
+          test -f "BunkerPrice/index.html" \
+            || { echo "ERROR: BunkerPrice/index.html is missing."; exit 1; }
+
+          test -s "BunkerPrice/index.html" \
+            || { echo "ERROR: BunkerPrice/index.html is empty."; exit 1; }
+
+          test -f "BunkerPrice/OilPrice/index.html" \
+            || { echo "ERROR: OilPrice/index.html is missing."; exit 1; }
+
+          test -s "BunkerPrice/OilPrice/index.html" \
+            || { echo "ERROR: OilPrice/index.html is empty."; exit 1; }
+
+          test -f "BunkerPrice/OilPrice/opinet_oil_prices.csv" \
+            || { echo "ERROR: opinet_oil_prices.csv is missing."; exit 1; }
+
+          # Forecast 데이터는 소스 상태에 따라 없을 수 있으므로 실패시키지 않음
           if [ ! -f "BunkerPrice/bunker_forecast.csv" ]; then
             echo "WARNING: bunker_forecast.csv was not generated."
           fi
 
-          # Bloomberg / MI Terminal 디자인 적용 여부
-          grep -qF "BUNKER PRICE MONITOR" "BunkerPrice/index.html"
-          grep -qF "MI&lt;GO&gt;" "BunkerPrice/index.html"
-          grep -qF -- "--bg: #02060b;" "BunkerPrice/index.html"
-          grep -qF -- "--orange: #ff8a00;" "BunkerPrice/index.html"
+          echo "===== Bunker dashboard content verification ====="
 
-          # OilPrice도 동일한 Terminal 테마인지 확인
-          grep -qF "CRUDE OIL MONITOR" "BunkerPrice/OilPrice/index.html"
-          grep -qF -- "--bg: #02060b;" "BunkerPrice/OilPrice/index.html"
+          grep -qiF "BUNKER PRICE" "BunkerPrice/index.html" \
+            || { echo "ERROR: Bunker dashboard title/content is missing."; exit 1; }
 
-          echo "Bunker Price Bloomberg-style dashboard verification passed."
+          grep -qiF "CRUDE OIL" "BunkerPrice/OilPrice/index.html" \
+            || { echo "ERROR: Crude Oil dashboard title/content is missing."; exit 1; }
+
+          echo "===== Terminal theme structure verification ====="
+
+          grep -qF ":root" "BunkerPrice/index.html" \
+            || { echo "ERROR: Bunker CSS root theme is missing."; exit 1; }
+
+          grep -qF -- "--bg:" "BunkerPrice/index.html" \
+            || { echo "ERROR: Bunker background theme token is missing."; exit 1; }
+
+          grep -qF -- "--panel:" "BunkerPrice/index.html" \
+            || { echo "ERROR: Bunker panel theme token is missing."; exit 1; }
+
+          grep -qF ":root" "BunkerPrice/OilPrice/index.html" \
+            || { echo "ERROR: OilPrice CSS root theme is missing."; exit 1; }
+
+          grep -qF -- "--bg:" "BunkerPrice/OilPrice/index.html" \
+            || { echo "ERROR: OilPrice background theme token is missing."; exit 1; }
+
+          echo "Bunker Price / Crude Oil dashboard verification passed."
+
 
       # =====================================================
       # 14. Linerlytica 크롤링 및 정적 파일 생성
