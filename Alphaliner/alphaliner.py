@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Alphaliner TOP 100 Liner Operators Static Dashboard Crawler (GitHub Optimized)
-- Direct ExtJS Store extraction (Top100description)
+- Direct ExtJS Store extraction (Top100description) + Frame Traversal
 - Official Global Figures + TOP 100 Capacity Separation
 - Historical snapshot comparison & Full Time-travel Delta analysis
 - Authentic Alphaliner 2-tier Grouped Table & UTF-8 BOM CSV Export
@@ -29,9 +29,10 @@ from threading import Lock
 import pandas as pd
 from flask import Flask, Response, send_from_directory
 from selenium import webdriver
-from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import WebDriverException, TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
 try:
@@ -321,52 +322,39 @@ th {
 </header>
 
 <main class="container">
-
-  <!-- 1. TOTAL SHIPS -->
   <section class="panel col-kpi">
     <div class="panel-header">GLOBAL FLEET COUNT</div>
     <div class="panel-body">
       <div class="kpi-title">TOTAL SHIPS</div>
       <div class="kpi-value" id="kpiGlobalShips">--</div>
-      <div class="kpi-sub" id="deltaGlobalShips">
-        BASE SNAPSHOT
-      </div>
+      <div class="kpi-sub" id="deltaGlobalShips">BASE SNAPSHOT</div>
     </div>
   </section>
 
-  <!-- 2. TOTAL FLEET TEU -->
   <section class="panel col-kpi">
     <div class="panel-header">GLOBAL CAPACITY</div>
     <div class="panel-body">
       <div class="kpi-title">TOTAL FLEET TEU</div>
       <div class="kpi-value" id="kpiGlobalTeu">--</div>
-      <div class="kpi-sub" id="deltaGlobalTeu">
-        BASE SNAPSHOT
-      </div>
+      <div class="kpi-sub" id="deltaGlobalTeu">BASE SNAPSHOT</div>
     </div>
   </section>
 
-  <!-- 3. CONCENTRATION -->
   <section class="panel col-kpi">
     <div class="panel-header">CONCENTRATION</div>
     <div class="panel-body">
       <div class="kpi-title">TOP 10 MARKET SHARE</div>
       <div class="kpi-value" id="kpiTop10Share">--</div>
-      <div class="kpi-sub" id="deltaTop10Share">
-        BASE SNAPSHOT
-      </div>
+      <div class="kpi-sub" id="deltaTop10Share">BASE SNAPSHOT</div>
     </div>
   </section>
 
-  <!-- 4. ORDERBOOK -->
   <section class="panel col-kpi">
     <div class="panel-header">ORDERBOOK</div>
     <div class="panel-body">
       <div class="kpi-title">PIPELINE CAPACITY</div>
       <div class="kpi-value" id="kpiOrderbookTeu">--</div>
-      <div class="kpi-sub" id="deltaOrderbookTeu">
-        BASE SNAPSHOT
-      </div>
+      <div class="kpi-sub" id="deltaOrderbookTeu">BASE SNAPSHOT</div>
     </div>
   </section>
 
@@ -441,34 +429,19 @@ function fmt(value) {
   if (value === null || value === undefined || isNaN(value)) {
     return "--";
   }
-
   return Number(value).toLocaleString();
 }
 
 function numericValue(value) {
   const parsed = Number(value);
-
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-/*
- * 수량 KPI용 증감 표시:
- * ▲ +10 Ships (+0.14%) vs YYYY-MM-DD
- * ▼ -20,000 TEU (-0.06%) vs YYYY-MM-DD
- */
 function renderQuantityDelta(elementId, currentValue, previousValue, unit, compareDate) {
   const element = document.getElementById(elementId);
+  if (!element) return;
 
-  if (!element) {
-    return;
-  }
-
-  if (
-    previousValue === null ||
-    previousValue === undefined ||
-    compareDate === "none" ||
-    !compareDate
-  ) {
+  if (previousValue === null || previousValue === undefined || compareDate === "none" || !compareDate) {
     element.className = "kpi-sub delta-base";
     element.textContent = "BASE SNAPSHOT";
     return;
@@ -488,50 +461,18 @@ function renderQuantityDelta(elementId, currentValue, previousValue, unit, compa
   const sign = difference > 0 ? "+" : "";
   const colorClass = difference > 0 ? "delta-pos" : "delta-neg";
 
-  const percentChange = previous !== 0
-    ? (difference / previous) * 100
-    : null;
-
-  const percentText = percentChange === null
-    ? "N/A"
-    : sign + percentChange.toFixed(2) + "%";
+  const percentChange = previous !== 0 ? (difference / previous) * 100 : null;
+  const percentText = percentChange === null ? "N/A" : sign + percentChange.toFixed(2) + "%";
 
   element.className = "kpi-sub " + colorClass;
-  element.textContent =
-    direction
-    + " "
-    + sign
-    + fmt(difference)
-    + " "
-    + unit
-    + " ("
-    + percentText
-    + ") vs "
-    + compareDate;
+  element.textContent = direction + " " + sign + fmt(difference) + " " + unit + " (" + percentText + ") vs " + compareDate;
 }
 
-/*
- * 점유율 KPI용 증감 표시:
- * ▲ +0.25%p vs YYYY-MM-DD
- */
-function renderPercentagePointDelta(
-  elementId,
-  currentValue,
-  previousValue,
-  compareDate
-) {
+function renderPercentagePointDelta(elementId, currentValue, previousValue, compareDate) {
   const element = document.getElementById(elementId);
+  if (!element) return;
 
-  if (!element) {
-    return;
-  }
-
-  if (
-    previousValue === null ||
-    previousValue === undefined ||
-    compareDate === "none" ||
-    !compareDate
-  ) {
+  if (previousValue === null || previousValue === undefined || compareDate === "none" || !compareDate) {
     element.className = "kpi-sub delta-base";
     element.textContent = "BASE SNAPSHOT";
     return;
@@ -552,27 +493,15 @@ function renderPercentagePointDelta(
   const colorClass = difference > 0 ? "delta-pos" : "delta-neg";
 
   element.className = "kpi-sub " + colorClass;
-  element.textContent =
-    direction
-    + " "
-    + sign
-    + difference.toFixed(2)
-    + "%p vs "
-    + compareDate;
+  element.textContent = direction + " " + sign + difference.toFixed(2) + "%p vs " + compareDate;
 }
 
 async function initDashboard() {
   const response = await fetch("alphaliner_data.json");
-
-  if (!response.ok) {
-    throw new Error("Failed to load alphaliner_data.json");
-  }
+  if (!response.ok) throw new Error("Failed to load alphaliner_data.json");
 
   DATA_STORE = await response.json();
-
-  if (!DATA_STORE.dates || DATA_STORE.dates.length === 0) {
-    return;
-  }
+  if (!DATA_STORE.dates || DATA_STORE.dates.length === 0) return;
 
   const dateSelect = document.getElementById("dateSelect");
   const compareSelect = document.getElementById("compareSelect");
@@ -608,74 +537,26 @@ function renderAll() {
   const compareDate = document.getElementById("compareSelect").value;
 
   const snapshot = DATA_STORE.snapshots[activeDate];
-  const compareSnapshot = compareDate !== "none"
-    ? DATA_STORE.snapshots[compareDate]
-    : null;
+  const compareSnapshot = compareDate !== "none" ? DATA_STORE.snapshots[compareDate] : null;
 
-  if (!snapshot) {
-    return;
-  }
+  if (!snapshot) return;
 
   const meta = snapshot.meta;
   const previousMeta = compareSnapshot ? compareSnapshot.meta : null;
 
-  /*
-   * 1. TOTAL SHIPS
-   */
-  document.getElementById("kpiGlobalShips").textContent =
-    fmt(meta.global_total_ships) + " Ships";
+  document.getElementById("kpiGlobalShips").textContent = fmt(meta.global_total_ships) + " Ships";
+  renderQuantityDelta("deltaGlobalShips", meta.global_total_ships, previousMeta ? previousMeta.global_total_ships : null, "Ships", compareDate);
 
-  renderQuantityDelta(
-    "deltaGlobalShips",
-    meta.global_total_ships,
-    previousMeta ? previousMeta.global_total_ships : null,
-    "Ships",
-    compareDate
-  );
+  document.getElementById("kpiGlobalTeu").textContent = fmt(meta.global_total_teu) + " TEU";
+  renderQuantityDelta("deltaGlobalTeu", meta.global_total_teu, previousMeta ? previousMeta.global_total_teu : null, "TEU", compareDate);
 
-  /*
-   * 2. TOTAL FLEET TEU
-   */
-  document.getElementById("kpiGlobalTeu").textContent =
-    fmt(meta.global_total_teu) + " TEU";
+  document.getElementById("kpiTop10Share").textContent = numericValue(meta.top10_share).toFixed(1) + "%";
+  renderPercentagePointDelta("deltaTop10Share", meta.top10_share, previousMeta ? previousMeta.top10_share : null, compareDate);
 
-  renderQuantityDelta(
-    "deltaGlobalTeu",
-    meta.global_total_teu,
-    previousMeta ? previousMeta.global_total_teu : null,
-    "TEU",
-    compareDate
-  );
+  document.getElementById("kpiOrderbookTeu").textContent = fmt(meta.orderbook_total_teu) + " TEU";
+  renderQuantityDelta("deltaOrderbookTeu", meta.orderbook_total_teu, previousMeta ? previousMeta.orderbook_total_teu : null, "TEU", compareDate);
 
-  /*
-   * 3. CONCENTRATION
-   */
-  document.getElementById("kpiTop10Share").textContent =
-    numericValue(meta.top10_share).toFixed(1) + "%";
-
-  renderPercentagePointDelta(
-    "deltaTop10Share",
-    meta.top10_share,
-    previousMeta ? previousMeta.top10_share : null,
-    compareDate
-  );
-
-  /*
-   * 4. ORDERBOOK
-   */
-  document.getElementById("kpiOrderbookTeu").textContent =
-    fmt(meta.orderbook_total_teu) + " TEU";
-
-  renderQuantityDelta(
-    "deltaOrderbookTeu",
-    meta.orderbook_total_teu,
-    previousMeta ? previousMeta.orderbook_total_teu : null,
-    "TEU",
-    compareDate
-  );
-
-  document.getElementById("collectedTimestamp").textContent =
-    "DATA COLLECTED: " + (meta.collected_at || activeDate);
+  document.getElementById("collectedTimestamp").textContent = "DATA COLLECTED: " + (meta.collected_at || activeDate);
 
   renderChart(snapshot);
   renderTable(snapshot, compareSnapshot);
@@ -683,10 +564,7 @@ function renderAll() {
 
 function renderChart(snapshot) {
   const top10 = snapshot.operators.slice(0, 10);
-
-  if (currentChart) {
-    currentChart.destroy();
-  }
+  if (currentChart) currentChart.destroy();
 
   currentChart = new Chart(
     document.getElementById("topChart"),
@@ -695,65 +573,24 @@ function renderChart(snapshot) {
       data: {
         labels: top10.map(op => op.rank + ". " + op.operator),
         datasets: [
-          {
-            label: "Owned TEU",
-            data: top10.map(op => op.owned_teu),
-            backgroundColor: "#45a9f5",
-            stack: "active"
-          },
-          {
-            label: "Chartered TEU",
-            data: top10.map(op => op.chartered_teu),
-            backgroundColor: "#f6a623",
-            stack: "active"
-          },
-          {
-            label: "Orderbook TEU",
-            data: top10.map(op => op.orderbook_teu),
-            backgroundColor: "rgba(187,134,252,.45)",
-            borderColor: "#bb86fc",
-            borderWidth: 1,
-            stack: "orderbook"
-          }
+          { label: "Owned TEU", data: top10.map(op => op.owned_teu), backgroundColor: "#45a9f5", stack: "active" },
+          { label: "Chartered TEU", data: top10.map(op => op.chartered_teu), backgroundColor: "#f6a623", stack: "active" },
+          { label: "Orderbook TEU", data: top10.map(op => op.orderbook_teu), backgroundColor: "rgba(187,134,252,.45)", borderColor: "#bb86fc", borderWidth: 1, stack: "orderbook" }
         ]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            labels: {
-              color: "#879caf"
-            }
-          }
-        },
+        plugins: { legend: { labels: { color: "#879caf" } } },
         scales: {
-          x: {
-            stacked: true,
-            ticks: {
-              color: "#879caf"
-            },
-            grid: {
-              color: "rgba(27,48,67,.5)"
-            }
-          },
-          y: {
-            stacked: true,
-            ticks: {
-              color: "#879caf",
-              callback: value => (value / 1000000).toFixed(1) + "M"
-            },
-            grid: {
-              color: "rgba(27,48,67,.5)"
-            }
-          }
+          x: { stacked: true, ticks: { color: "#879caf" }, grid: { color: "rgba(27,48,67,.5)" } },
+          y: { stacked: true, ticks: { color: "#879caf", callback: value => (value / 1000000).toFixed(1) + "M" }, grid: { color: "rgba(27,48,67,.5)" } }
         }
       }
     }
   );
 
-  document.getElementById("chartSubTitle").textContent =
-    "AS OF " + snapshot.meta.snapshot_date;
+  document.getElementById("chartSubTitle").textContent = "AS OF " + snapshot.meta.snapshot_date;
 }
 
 function renderTable(snapshot, compareSnapshot) {
@@ -761,7 +598,6 @@ function renderTable(snapshot, compareSnapshot) {
   body.innerHTML = "";
 
   const compareMap = {};
-
   if (compareSnapshot && compareSnapshot.operators) {
     compareSnapshot.operators.forEach(op => {
       compareMap[op.operator.toLowerCase()] = op;
@@ -771,23 +607,18 @@ function renderTable(snapshot, compareSnapshot) {
   snapshot.operators.forEach(op => {
     const row = document.createElement("tr");
     const previous = compareMap[op.operator.toLowerCase()];
-
     let rankDelta = "";
 
     if (previous && previous.rank !== op.rank) {
       const diff = previous.rank - op.rank;
       const cssClass = diff > 0 ? "delta-pos" : "delta-neg";
       const arrow = diff > 0 ? "▲" : "▼";
-
-      rankDelta =
-        `<span class="${cssClass}"> ${arrow}${Math.abs(diff)}</span>`;
+      rankDelta = `<span class="${cssClass}"> ${arrow}${Math.abs(diff)}</span>`;
     }
 
     row.innerHTML = `
       <td class="align-center">
-        <span class="${op.rank <= 10 ? "rank-top10" : ""}">
-          ${op.rank}
-        </span>
+        <span class="${op.rank <= 10 ? "rank-top10" : ""}">${op.rank}</span>
         ${rankDelta}
       </td>
       <td class="align-left"><strong>${op.operator}</strong></td>
@@ -804,17 +635,12 @@ function renderTable(snapshot, compareSnapshot) {
       <td>${fmt(op.orderbook_ships)}</td>
       <td>${Number(op.orderbook_share || 0).toFixed(1)}%</td>
     `;
-
     body.appendChild(row);
   });
 }
 
 function filterTable() {
-  const query = document
-    .getElementById("filterInput")
-    .value
-    .toLowerCase();
-
+  const query = document.getElementById("filterInput").value.toLowerCase();
   document.querySelectorAll("#tableBody tr").forEach(row => {
     const operator = row.cells[1].innerText.toLowerCase();
     row.style.display = operator.includes(query) ? "" : "none";
@@ -824,20 +650,12 @@ function filterTable() {
 function exportCSV() {
   const activeDate = document.getElementById("dateSelect").value;
   const snapshot = DATA_STORE.snapshots[activeDate];
+  if (!snapshot) return;
 
-  if (!snapshot) {
-    return;
-  }
-
-  let csv =
-    "\uFEFFRank,Operator,Total TEU,Total Ships,Market Share %,Owned TEU,"
-    + "Owned Ships,Owned Share %,Chartered TEU,Chartered Ships,"
-    + "Chartered Share %,Orderbook TEU,Orderbook Ships,"
-    + "Orderbook % of Fleet\n";
+  let csv = "\uFEFFRank,Operator,Total TEU,Total Ships,Market Share %,Owned TEU,Owned Ships,Owned Share %,Chartered TEU,Chartered Ships,Chartered Share %,Orderbook TEU,Orderbook Ships,Orderbook % of Fleet\n";
 
   snapshot.operators.forEach(op => {
     const escapedName = String(op.operator).replace(/"/g, '""');
-
     csv += [
       op.rank,
       `"${escapedName}"`,
@@ -856,17 +674,10 @@ function exportCSV() {
     ].join(",") + "\n";
   });
 
-  const blob = new Blob(
-    [csv],
-    {
-      type: "text/csv;charset=utf-8;"
-    }
-  );
-
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
   link.download = "Alphaliner_TOP100_" + activeDate + ".csv";
-
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -1013,7 +824,7 @@ def generate_static_dashboard():
     logging.info("[HTML] Static Dashboard generated: %s", INDEX_HTML_PATH)
 
 # =========================================================
-# 6. Extraction Engine (Selenium + ExtJS Stores)
+# 6. Extraction Engine (Selenium + ExtJS Stores + Fallback)
 # =========================================================
 def parse_int(val) -> int:
     if val is None:
@@ -1037,7 +848,8 @@ def setup_chrome_driver():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
-    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 
     driver_path = os.getenv("CHROMEDRIVER_PATH")
     if driver_path and os.path.exists(driver_path):
@@ -1047,44 +859,92 @@ def setup_chrome_driver():
     else:
         service = Service()
 
-    return webdriver.Chrome(service=service, options=options)
+    driver = webdriver.Chrome(service=service, options=options)
+    # Mask webdriver automation flag
+    driver.execute_cdp_cmd(
+        "Page.addScriptToEvaluateOnNewDocument",
+        {"source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"}
+    )
+    return driver
+
+def check_and_extract_store(driver):
+    """Attempt to extract ExtJS store data from current active frame."""
+    return driver.execute_script("""
+        if (typeof Ext !== 'undefined' && Ext.StoreMgr) {
+            var store = Ext.StoreMgr.lookup('Top100description');
+            if (!store) {
+                // Search across all registered stores if name changed
+                var stores = Ext.StoreMgr.items;
+                for (var i = 0; i < stores.length; i++) {
+                    if (stores[i].getCount && stores[i].getCount() >= 50) {
+                        store = stores[i];
+                        break;
+                    }
+                }
+            }
+            if (store && store.getCount() > 0) {
+                var records = [];
+                store.each(function(rec) {
+                    records.push(rec.data);
+                });
+                return {
+                    items: records,
+                    bodyText: document.body ? document.body.innerText : ""
+                };
+            }
+        }
+        return null;
+    """)
 
 def fetch_alphaliner_data():
     logging.info("[Crawler] Launching Headless Chrome to scrape %s", SOURCE_URL)
     driver = setup_chrome_driver()
     try:
+        driver.set_page_load_timeout(60)
         driver.get(SOURCE_URL)
 
-        # Wait until ExtJS App and Top100description store are fully initialized
-        WebDriverWait(driver, 30).until(
-            lambda d: d.execute_script("""
-                return typeof Ext !== 'undefined' &&
-                       Ext.StoreMgr &&
-                       Ext.StoreMgr.lookup('Top100description') &&
-                       Ext.StoreMgr.lookup('Top100description').getCount() > 0;
-            """)
-        )
+        # Multi-frame wait loop
+        raw_res = None
+        max_attempts = 20
 
-        time.sleep(2)  # Buffer to allow ExtJS calculation listeners to finish
+        for attempt in range(max_attempts):
+            # 1. Check in root frame
+            driver.switch_to.default_content()
+            raw_res = check_and_extract_store(driver)
+            if raw_res and raw_res.get("items"):
+                logging.info("[Crawler] ExtJS store extracted from root frame.")
+                break
 
-        script = """
-            var result = { meta: {}, items: [] };
+            # 2. Check in all child iframes
+            iframes = driver.find_elements(By.TAG_NAME, "iframe")
+            for idx, frame in enumerate(iframes):
+                try:
+                    driver.switch_to.default_content()
+                    driver.switch_to.frame(frame)
+                    raw_res = check_and_extract_store(driver)
+                    if raw_res and raw_res.get("items"):
+                        logging.info("[Crawler] ExtJS store extracted from iframe index %d.", idx)
+                        break
+                except Exception:
+                    continue
 
-            // 1. Extract raw records from ExtJS Store
-            var store = Ext.StoreMgr.lookup('Top100description');
-            if (store) {
-                store.each(function(rec) {
-                    result.items.push(rec.data);
-                });
-            }
+            if raw_res and raw_res.get("items"):
+                break
 
-            // 2. Extract DOM Headers / Metadata
-            var bodyText = document.body.innerText || "";
-            result.bodyText = bodyText;
+            time.sleep(2)
 
-            return result;
-        """
-        raw_res = driver.execute_script(script)
+        if not raw_res or not raw_res.get("items"):
+            # Fallback to direct AXSMarine URL if iframe embedding blocked extraction
+            direct_url = "https://alphaliner.axsmarine.com/PublicTop100/"
+            logging.warning("[Crawler] Root/iframe store extraction failed. Falling back to direct URL: %s", direct_url)
+            driver.switch_to.default_content()
+            driver.get(direct_url)
+            time.sleep(5)
+            raw_res = check_and_extract_store(driver)
+
+        if not raw_res or not raw_res.get("items"):
+            raise TimeoutException("Unable to locate ExtJS store 'Top100description' or carrier records across frames.")
+
         return raw_res
     finally:
         driver.quit()
@@ -1094,12 +954,11 @@ def process_and_persist(raw_res):
     body_text = raw_res.get("bodyText", "")
 
     if not items:
-        raise ValueError("Extraction failure: ExtJS Store 'Top100description' returned zero records.")
+        raise ValueError("Extraction failure: ExtJS Store returned zero records.")
 
     today_str = datetime.now().strftime("%Y-%m-%d")
     collected_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Regex extraction for official Global figures
     teu_match = re.search(r"TOTAL:\s*([\d,]+)\s*TEU", body_text, re.IGNORECASE)
     ships_match = re.search(r"([\d,]+)\s*Ships", body_text, re.IGNORECASE)
 
@@ -1216,7 +1075,6 @@ def main():
         logging.info("[Pipeline] Run successfully finished.")
         return
 
-    # Default interactive local run: Check DB -> Extract if empty -> Host
     try:
         raw_res = fetch_alphaliner_data()
         process_and_persist(raw_res)
