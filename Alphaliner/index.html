@@ -4,367 +4,172 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Alphaliner TOP 100 Liner Operators | Bloomberg MI Terminal</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
 <style>
 :root {
-  --bg-primary: #02060b;
-  --bg-secondary: #07111c;
-  --bg-tertiary: #0d1d2b;
-  --border-subtle: #1b3043;
-  --border-focus: #29445c;
-  --text-main: #f3f7fb;
-  --text-muted: #879caf;
-  --text-dim: #536c80;
-  --accent-orange: #f6a623;
-  --accent-blue: #45a9f5;
-  --accent-green: #36ca82;
-  --accent-red: #ff6262;
-  --accent-purple: #bb86fc;
-  --font-mono: 'JetBrains Mono', monospace;
-  --font-sans: 'Inter', sans-serif;
+  --bg-primary:#02060b;
+  --bg-secondary:#07111c;
+  --bg-tertiary:#0d1d2b;
+  --border-subtle:#1b3043;
+  --text-main:#f3f7fb;
+  --text-muted:#879caf;
+  --text-dim:#536c80;
+  --accent-orange:#f6a623;
+  --accent-blue:#45a9f5;
+  --accent-green:#36ca82;
+  --accent-red:#ff6262;
+  --accent-purple:#bb86fc;
 }
-
-* { box-sizing: border-box; margin: 0; padding: 0; }
-
+* { box-sizing:border-box; margin:0; padding:0; }
 body {
-  background-color: var(--bg-primary);
-  color: var(--text-main);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.4;
-  overflow-x: hidden;
+  background:var(--bg-primary);
+  color:var(--text-main);
+  font-family:Arial, sans-serif;
+  font-size:13px;
 }
-
 .terminal-header {
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-subtle);
-  padding: 8px 16px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  padding:8px 16px;
+  background:var(--bg-secondary);
+  border-bottom:1px solid var(--border-subtle);
 }
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
 .brand-tag {
-  background: var(--accent-orange);
-  color: #000;
-  font-weight: 700;
-  font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 2px;
-  font-family: var(--font-mono);
+  display:inline-block;
+  padding:2px 6px;
+  margin-right:12px;
+  font-weight:700;
+  font-size:11px;
+  color:#000;
+  background:var(--accent-orange);
 }
-
-.brand-title {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
+.brand-title { font-weight:600; text-transform:uppercase; }
+.terminal-controls { display:flex; align-items:center; gap:10px; }
+select, input, button {
+  padding:5px 8px;
+  color:var(--text-main);
+  background:var(--bg-tertiary);
+  border:1px solid var(--border-subtle);
 }
-
-.terminal-controls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.select-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-select,
-input[type="text"] {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-main);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 2px;
-  outline: none;
-}
-
-select:focus,
-input[type="text"]:focus {
-  border-color: var(--accent-blue);
-}
-
-.btn {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-main);
-  padding: 4px 10px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  cursor: pointer;
-  border-radius: 2px;
-  transition: all 0.15s ease;
-}
-
-.btn:hover {
-  background: var(--border-subtle);
-  border-color: var(--border-focus);
-}
-
-.btn-primary {
-  background: rgba(246, 166, 35, 0.15);
-  border-color: var(--accent-orange);
-  color: var(--accent-orange);
-}
-
-.btn-primary:hover {
-  background: var(--accent-orange);
-  color: #000;
-}
-
+button { cursor:pointer; color:var(--accent-orange); }
 .container {
-  padding: 16px;
-  max-width: 1920px;
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  gap: 12px;
+  display:grid;
+  grid-template-columns:repeat(12, 1fr);
+  gap:12px;
+  max-width:1920px;
+  padding:16px;
+  margin:0 auto;
 }
-
 .panel {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 2px;
-  display: flex;
-  flex-direction: column;
+  background:var(--bg-secondary);
+  border:1px solid var(--border-subtle);
 }
-
-.panel-header {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border-subtle);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.panel-header, .table-toolbar {
+  display:flex;
+  justify-content:space-between;
+  padding:8px 12px;
+  border-bottom:1px solid var(--border-subtle);
+  font-size:11px;
+  font-weight:700;
 }
-
-.panel-body {
-  padding: 12px;
-  flex: 1;
-}
-
-.col-kpi {
-  grid-column: span 3;
-}
-
-.kpi-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.kpi-title {
-  font-size: 11px;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  font-family: var(--font-mono);
-}
-
-.kpi-value {
-  font-size: 22px;
-  font-weight: 700;
-  font-family: var(--font-mono);
-  color: var(--text-main);
-}
-
-.kpi-sub {
-  font-size: 11px;
-  font-family: var(--font-mono);
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.col-chart {
-  grid-column: span 12;
-  height: 280px;
-}
-
-.col-table {
-  grid-column: span 12;
-}
-
-.table-toolbar {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border-subtle);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.table-container {
-  overflow-x: auto;
-  max-height: 600px;
-}
-
+.panel-body { padding:12px; }
+.col-kpi { grid-column:span 3; }
+.col-chart { grid-column:span 12; height:280px; }
+.col-table { grid-column:span 12; }
+.kpi-title { color:var(--text-dim); font-size:11px; }
+.kpi-value { margin:5px 0; font-size:22px; font-weight:700; }
+.kpi-sub { color:var(--text-muted); font-size:11px; }
+.table-container { overflow:auto; max-height:600px; }
 table {
-  width: 100%;
-  border-collapse: collapse;
-  font-family: var(--font-mono);
-  font-size: 12px;
+  width:100%;
+  border-collapse:collapse;
+  font-family:monospace;
+  font-size:12px;
 }
-
 th, td {
-  padding: 6px 10px;
-  text-align: right;
-  border-bottom: 1px solid var(--border-subtle);
-  white-space: nowrap;
+  padding:6px 10px;
+  text-align:right;
+  white-space:nowrap;
+  border-bottom:1px solid var(--border-subtle);
 }
-
 th {
-  background: var(--bg-tertiary);
-  color: var(--text-muted);
-  font-weight: 600;
-  text-transform: uppercase;
-  font-size: 11px;
-  position: sticky;
-  top: 0;
-  z-index: 10;
+  position:sticky;
+  top:0;
+  z-index:2;
+  color:var(--text-muted);
+  background:var(--bg-tertiary);
 }
-
-th.group-header {
-  text-align: center;
-  border-left: 1px solid var(--border-subtle);
-  border-right: 1px solid var(--border-subtle);
-}
-
-.border-left {
-  border-left: 1px solid var(--border-subtle);
-}
-
-tr:hover td {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-td.align-left, th.align-left { text-align: left; }
-td.align-center, th.align-center { text-align: center; }
-
-.rank-badge {
-  display: inline-block;
-  width: 24px;
-  text-align: center;
-  font-weight: 700;
-  color: var(--text-muted);
-}
-
-.rank-top10 {
-  color: var(--accent-orange);
-}
-
-.delta-pos { color: var(--accent-green); }
-.delta-neg { color: var(--accent-red); }
-.delta-inline { font-size: 10px; margin-left: 4px; }
-
+.align-left { text-align:left; }
+.align-center { text-align:center; }
+.border-left { border-left:1px solid var(--border-subtle); }
+.group-header { text-align:center; }
+.delta-pos { color:var(--accent-green); }
+.delta-neg { color:var(--accent-red); }
+.rank-top10 { color:var(--accent-orange); font-weight:700; }
 .footer-status {
-  padding: 12px 16px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-dim);
-  display: flex;
-  justify-content: space-between;
-  border-top: 1px solid var(--border-subtle);
-  background: var(--bg-secondary);
-  margin-top: 20px;
+  display:flex;
+  justify-content:space-between;
+  padding:12px 16px;
+  color:var(--text-dim);
+  background:var(--bg-secondary);
+  border-top:1px solid var(--border-subtle);
+  font-size:11px;
 }
 </style>
 </head>
 <body>
-
 <header class="terminal-header">
-  <div class="brand">
+  <div>
     <span class="brand-tag">ALPHALINER</span>
     <span class="brand-title">TOP 100 Global Liner Operators Terminal</span>
   </div>
-
   <div class="terminal-controls">
-    <div class="select-wrapper">
-      <label for="dateSelect">SNAPSHOT:</label>
-      <select id="dateSelect" onchange="changeSnapshot()"></select>
-    </div>
-
-    <div class="select-wrapper">
-      <label for="compareSelect">COMPARE TO:</label>
-      <select id="compareSelect" onchange="recalculateDeltas()"></select>
-    </div>
-
-    <button class="btn btn-primary" onclick="exportCSV()">EXPORT CSV</button>
+    <label>SNAPSHOT:
+      <select id="dateSelect" onchange="renderAll()"></select>
+    </label>
+    <label>COMPARE TO:
+      <select id="compareSelect" onchange="renderAll()"></select>
+    </label>
+    <button onclick="exportCSV()">EXPORT CSV</button>
   </div>
 </header>
 
 <main class="container">
   <section class="panel col-kpi">
-    <div class="panel-header"><span>GLOBAL CAPACITY</span></div>
-    <div class="panel-body kpi-card">
+    <div class="panel-header">GLOBAL CAPACITY</div>
+    <div class="panel-body">
       <div class="kpi-title">TOTAL FLEET TEU</div>
       <div class="kpi-value" id="kpiGlobalTeu">--</div>
-      <div class="kpi-sub">
-        <span id="kpiGlobalShips">-- Ships</span>
-        <span id="deltaGlobalTeu" class="delta-inline"></span>
-      </div>
+      <div class="kpi-sub" id="kpiGlobalShips">-- Ships</div>
     </div>
   </section>
 
   <section class="panel col-kpi">
-    <div class="panel-header"><span>TOP 100 SHARE</span></div>
-    <div class="panel-body kpi-card">
+    <div class="panel-header">TOP 100 SHARE</div>
+    <div class="panel-body">
       <div class="kpi-title">TOP 100 TOTAL TEU</div>
       <div class="kpi-value" id="kpiTop100Teu">--</div>
-      <div class="kpi-sub">
-        <span id="kpiTop100Ships">-- Ships</span>
-        <span id="deltaTop100Teu" class="delta-inline"></span>
-      </div>
+      <div class="kpi-sub" id="kpiTop100Ships">-- Ships</div>
     </div>
   </section>
 
   <section class="panel col-kpi">
-    <div class="panel-header"><span>CONCENTRATION</span></div>
-    <div class="panel-body kpi-card">
+    <div class="panel-header">CONCENTRATION</div>
+    <div class="panel-body">
       <div class="kpi-title">TOP 10 MARKET SHARE</div>
-      <div class="kpi-value" id="kpiTop10Share" style="color: var(--accent-orange);">--</div>
-      <div class="kpi-sub">
-        <span id="kpiTop10Teu">-- TEU</span>
-        <span id="deltaTop10Share" class="delta-inline"></span>
-      </div>
+      <div class="kpi-value" id="kpiTop10Share">--</div>
+      <div class="kpi-sub" id="kpiTop10Teu">-- TEU</div>
     </div>
   </section>
 
   <section class="panel col-kpi">
-    <div class="panel-header"><span>ORDERBOOK</span></div>
-    <div class="panel-body kpi-card">
+    <div class="panel-header">ORDERBOOK</div>
+    <div class="panel-body">
       <div class="kpi-title">PIPELINE CAPACITY</div>
-      <div class="kpi-value" id="kpiOrderbookTeu" style="color: var(--accent-purple);">--</div>
-      <div class="kpi-sub">
-        <span id="kpiOrderbookRatio">-- % of active</span>
-        <span id="deltaOrderbookTeu" class="delta-inline"></span>
-      </div>
+      <div class="kpi-value" id="kpiOrderbookTeu">--</div>
+      <div class="kpi-sub" id="kpiOrderbookRatio">-- % of active</div>
     </div>
   </section>
 
@@ -373,20 +178,22 @@ td.align-center, th.align-center { text-align: center; }
       <span>TOP 10 OPERATOR CAPACITY PROFILE (TEU)</span>
       <span id="chartSubTitle">--</span>
     </div>
-    <div class="panel-body" style="position: relative;">
+    <div class="panel-body" style="height:240px;">
       <canvas id="topChart"></canvas>
     </div>
   </section>
 
   <section class="panel col-table">
     <div class="table-toolbar">
-      <div style="font-weight: 600; font-family: var(--font-mono); font-size: 11px;">
-        TOP 100 DETAILED FLEET BREAKDOWN
-      </div>
-      <div>
-        <input type="text" id="filterInput" placeholder="Filter operator..." onkeyup="filterTable()">
-      </div>
+      <span>TOP 100 DETAILED FLEET BREAKDOWN</span>
+      <input
+        id="filterInput"
+        type="text"
+        placeholder="Filter operator..."
+        onkeyup="filterTable()"
+      >
     </div>
+
     <div class="table-container">
       <table>
         <thead>
@@ -420,7 +227,11 @@ td.align-center, th.align-center { text-align: center; }
 </main>
 
 <footer class="footer-status">
-  <div>SYSTEM STATUS: <span style="color: var(--accent-green);">ONLINE</span> | SOURCE: ALPHALINER PUBLIC TOP 100</div>
+  <div>
+    SYSTEM STATUS:
+    <span style="color:var(--accent-green);">ONLINE</span>
+    | SOURCE: ALPHALINER PUBLIC TOP 100
+  </div>
   <div id="collectedTimestamp">DATA COLLECTED: --</div>
 </footer>
 
@@ -428,66 +239,50 @@ td.align-center, th.align-center { text-align: center; }
 let DATA_STORE = { dates: [], snapshots: {} };
 let currentChart = null;
 
-function fmt(n) {
-  if (n === null || n === undefined || isNaN(n)) return "--";
-  return Number(n).toLocaleString();
-}
-
-function fmtDelta(val, isPercent = false) {
-  if (val === null || val === undefined || isNaN(val) || val === 0) return "";
-  const sign = val > 0 ? "+" : "";
-  const cls = val > 0 ? "delta-pos" : "delta-neg";
-  const formatted = isPercent ? val.toFixed(1) + "%" : fmt(val);
-  return `<span class="${cls}">(${sign}${formatted})</span>`;
+function fmt(value) {
+  if (value === null || value === undefined || isNaN(value)) return "--";
+  return Number(value).toLocaleString();
 }
 
 async function initDashboard() {
-  try {
-    const res = await fetch("alphaliner_data.json");
-    if (!res.ok) throw new Error("Failed to load JSON dataset");
-    DATA_STORE = await res.json();
+  const response = await fetch("alphaliner_data.json");
 
-    if (!DATA_STORE.dates || DATA_STORE.dates.length === 0) {
-      document.body.innerHTML = "<div style='color:white;padding:40px;font-family:monospace;'>No snapshot data available. Run crawler first.</div>";
-      return;
-    }
-
-    populateDropdowns();
-    renderAll();
-  } catch (err) {
-    console.error("Initialization error:", err);
+  if (!response.ok) {
+    throw new Error("Failed to load alphaliner_data.json");
   }
-}
 
-function populateDropdowns() {
-  const dateSel = document.getElementById("dateSelect");
-  const compSel = document.getElementById("compareSelect");
+  DATA_STORE = await response.json();
 
-  dateSel.innerHTML = "";
-  compSel.innerHTML = '<option value="none">None (Latest Only)</option>';
+  if (!DATA_STORE.dates || DATA_STORE.dates.length === 0) {
+    return;
+  }
 
-  DATA_STORE.dates.forEach((dt, idx) => {
-    const opt = document.createElement("option");
-    opt.value = dt;
-    opt.innerText = dt + (idx === 0 ? " (Latest)" : "");
-    dateSel.appendChild(opt);
+  const dateSelect = document.getElementById("dateSelect");
+  const compareSelect = document.getElementById("compareSelect");
 
-    const compOpt = document.createElement("option");
-    compOpt.value = dt;
-    compOpt.innerText = dt;
-    compSel.appendChild(compOpt);
+  DATA_STORE.dates.forEach((date, index) => {
+    const dateOption = document.createElement("option");
+    dateOption.value = date;
+    dateOption.textContent = date + (index === 0 ? " (Latest)" : "");
+    dateSelect.appendChild(dateOption);
+
+    const compareOption = document.createElement("option");
+    compareOption.value = date;
+    compareOption.textContent = date;
+    compareSelect.appendChild(compareOption);
   });
 
+  const noneOption = document.createElement("option");
+  noneOption.value = "none";
+  noneOption.textContent = "None";
+  compareSelect.insertBefore(noneOption, compareSelect.firstChild);
+
   if (DATA_STORE.dates.length > 1) {
-    compSel.value = DATA_STORE.dates[1];
+    compareSelect.value = DATA_STORE.dates[1];
+  } else {
+    compareSelect.value = "none";
   }
-}
 
-function changeSnapshot() {
-  renderAll();
-}
-
-function recalculateDeltas() {
   renderAll();
 }
 
@@ -495,150 +290,154 @@ function renderAll() {
   const activeDate = document.getElementById("dateSelect").value;
   const compareDate = document.getElementById("compareSelect").value;
 
-  if (!DATA_STORE.snapshots[activeDate]) return;
-
-  const currentSnapshot = DATA_STORE.snapshots[activeDate];
-  const compareSnapshot = (compareDate !== "none" && DATA_STORE.snapshots[compareDate])
+  const snapshot = DATA_STORE.snapshots[activeDate];
+  const compareSnapshot = compareDate !== "none"
     ? DATA_STORE.snapshots[compareDate]
     : null;
 
-  renderKPIs(currentSnapshot, compareSnapshot);
-  renderChart(currentSnapshot);
-  renderTable(currentSnapshot, compareSnapshot);
+  if (!snapshot) return;
 
-  document.getElementById("collectedTimestamp").innerText =
-    `DATA COLLECTED: ${currentSnapshot.meta.collected_at || activeDate}`;
-}
+  const meta = snapshot.meta;
 
-function renderKPIs(currentSnapshot, compareSnapshot) {
-  const currentMeta = currentSnapshot.meta;
-  const previousMeta = compareSnapshot ? compareSnapshot.meta : null;
+  document.getElementById("kpiGlobalTeu").textContent =
+    fmt(meta.global_total_teu) + " TEU";
 
-  document.getElementById("kpiGlobalTeu").innerText = `${fmt(currentMeta.global_total_teu)} TEU`;
-  document.getElementById("kpiGlobalShips").innerText = `${fmt(currentMeta.global_total_ships)} Ships`;
-  document.getElementById("deltaGlobalTeu").innerHTML = previousMeta
-    ? fmtDelta(currentMeta.global_total_teu - previousMeta.global_total_teu) + " TEU"
-    : "";
+  document.getElementById("kpiGlobalShips").textContent =
+    fmt(meta.global_total_ships) + " Ships";
 
-  document.getElementById("kpiTop100Teu").innerText = `${fmt(currentMeta.top100_total_teu)} TEU`;
-  document.getElementById("kpiTop100Ships").innerText = `${fmt(currentMeta.top100_total_ships)} Ships`;
-  document.getElementById("deltaTop100Teu").innerHTML = previousMeta
-    ? fmtDelta(currentMeta.top100_total_teu - previousMeta.top100_total_teu) + " TEU"
-    : "";
+  document.getElementById("kpiTop100Teu").textContent =
+    fmt(meta.top100_total_teu) + " TEU";
 
-  document.getElementById("kpiTop10Share").innerText = `${currentMeta.top10_share ? currentMeta.top10_share.toFixed(1) : "0.0"} %`;
-  document.getElementById("kpiTop10Teu").innerText = `${fmt(currentMeta.top10_total_teu)} TEU`;
-  document.getElementById("deltaTop10Share").innerHTML = previousMeta
-    ? fmtDelta(currentMeta.top10_share - previousMeta.top10_share, true)
-    : "";
+  document.getElementById("kpiTop100Ships").textContent =
+    fmt(meta.top100_total_ships) + " Ships";
 
-  document.getElementById("kpiOrderbookTeu").innerText = `${fmt(currentMeta.orderbook_total_teu)} TEU`;
-  const orderbookRatio = currentMeta.top100_total_teu > 0
-    ? ((currentMeta.orderbook_total_teu / currentMeta.top100_total_teu) * 100).toFixed(1)
+  document.getElementById("kpiTop10Share").textContent =
+    Number(meta.top10_share || 0).toFixed(1) + "%";
+
+  document.getElementById("kpiTop10Teu").textContent =
+    fmt(meta.top10_total_teu) + " TEU";
+
+  document.getElementById("kpiOrderbookTeu").textContent =
+    fmt(meta.orderbook_total_teu) + " TEU";
+
+  const ratio = meta.top100_total_teu > 0
+    ? ((meta.orderbook_total_teu / meta.top100_total_teu) * 100).toFixed(1)
     : "0.0";
-  document.getElementById("kpiOrderbookRatio").innerText = `${orderbookRatio} % of active`;
-  document.getElementById("deltaOrderbookTeu").innerHTML = previousMeta
-    ? fmtDelta(currentMeta.orderbook_total_teu - previousMeta.orderbook_total_teu) + " TEU"
-    : "";
+
+  document.getElementById("kpiOrderbookRatio").textContent =
+    ratio + "% of active";
+
+  document.getElementById("collectedTimestamp").textContent =
+    "DATA COLLECTED: " + (meta.collected_at || activeDate);
+
+  renderChart(snapshot);
+  renderTable(snapshot, compareSnapshot);
 }
 
 function renderChart(snapshot) {
   const top10 = snapshot.operators.slice(0, 10);
-  const labels = top10.map(op => `${op.rank}. ${op.operator}`);
-  const owned = top10.map(op => op.owned_teu);
-  const chartered = top10.map(op => op.chartered_teu);
-  const orderbook = top10.map(op => op.orderbook_teu);
-
-  document.getElementById("chartSubTitle").innerText = `AS OF ${snapshot.meta.snapshot_date}`;
 
   if (currentChart) {
     currentChart.destroy();
   }
 
-  const context = document.getElementById("topChart").getContext("2d");
-  currentChart = new Chart(context, {
-    type: "bar",
-    data: {
-      labels: labels,
-      datasets: [
-        { label: "Owned TEU", data: owned, backgroundColor: "#45a9f5", stack: "active" },
-        { label: "Chartered TEU", data: chartered, backgroundColor: "#f6a623", stack: "active" },
-        {
-          label: "Orderbook TEU",
-          data: orderbook,
-          backgroundColor: "rgba(187, 134, 252, 0.4)",
-          borderColor: "#bb86fc",
-          borderWidth: 1,
-          stack: "orderbook"
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: "top",
-          labels: { color: "#879caf", font: { family: "JetBrains Mono", size: 11 } }
-        }
-      },
-      scales: {
-        x: {
-          stacked: true,
-          ticks: { color: "#879caf", font: { family: "JetBrains Mono", size: 10 } },
-          grid: { color: "rgba(27, 48, 67, 0.5)" }
-        },
-        y: {
-          stacked: true,
-          ticks: {
-            color: "#879caf",
-            font: { family: "JetBrains Mono", size: 10 },
-            callback: v => (v / 1000000).toFixed(1) + "M"
+  currentChart = new Chart(
+    document.getElementById("topChart"),
+    {
+      type: "bar",
+      data: {
+        labels: top10.map(op => op.rank + ". " + op.operator),
+        datasets: [
+          {
+            label: "Owned TEU",
+            data: top10.map(op => op.owned_teu),
+            backgroundColor: "#45a9f5",
+            stack: "active"
           },
-          grid: { color: "rgba(27, 48, 67, 0.5)" }
+          {
+            label: "Chartered TEU",
+            data: top10.map(op => op.chartered_teu),
+            backgroundColor: "#f6a623",
+            stack: "active"
+          },
+          {
+            label: "Orderbook TEU",
+            data: top10.map(op => op.orderbook_teu),
+            backgroundColor: "rgba(187,134,252,.45)",
+            borderColor: "#bb86fc",
+            borderWidth: 1,
+            stack: "orderbook"
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: { color: "#879caf" }
+          }
+        },
+        scales: {
+          x: {
+            stacked: true,
+            ticks: { color: "#879caf" },
+            grid: { color: "rgba(27,48,67,.5)" }
+          },
+          y: {
+            stacked: true,
+            ticks: {
+              color: "#879caf",
+              callback: value => (value / 1000000).toFixed(1) + "M"
+            },
+            grid: { color: "rgba(27,48,67,.5)" }
+          }
         }
       }
     }
-  });
+  );
+
+  document.getElementById("chartSubTitle").textContent =
+    "AS OF " + snapshot.meta.snapshot_date;
 }
 
-function renderTable(currentSnapshot, compareSnapshot) {
-  const tableBody = document.getElementById("tableBody");
-  tableBody.innerHTML = "";
+function renderTable(snapshot, compareSnapshot) {
+  const body = document.getElementById("tableBody");
+  body.innerHTML = "";
 
   const compareMap = {};
+
   if (compareSnapshot && compareSnapshot.operators) {
     compareSnapshot.operators.forEach(op => {
       compareMap[op.operator.toLowerCase()] = op;
     });
   }
 
-  currentSnapshot.operators.forEach(op => {
-    const prev = compareMap[op.operator.toLowerCase()];
+  snapshot.operators.forEach(op => {
     const row = document.createElement("tr");
+    const previous = compareMap[op.operator.toLowerCase()];
 
     let rankDelta = "";
-    let teuDelta = "";
-    let shipsDelta = "";
 
-    if (prev) {
-      const diff = prev.rank - op.rank;
-      if (diff !== 0) {
-        const cls = diff > 0 ? "delta-pos" : "delta-neg";
-        const sym = diff > 0 ? "▲" : "▼";
-        rankDelta = `<span class="${cls} delta-inline">${sym}${Math.abs(diff)}</span>`;
-      }
-      teuDelta = `<div class="delta-inline">${fmtDelta(op.total_teu - prev.total_teu)}</div>`;
-      shipsDelta = `<div class="delta-inline">${fmtDelta(op.total_ships - prev.total_ships)}</div>`;
+    if (previous && previous.rank !== op.rank) {
+      const diff = previous.rank - op.rank;
+      const cssClass = diff > 0 ? "delta-pos" : "delta-neg";
+      const arrow = diff > 0 ? "▲" : "▼";
+
+      rankDelta =
+        `<span class="${cssClass}"> ${arrow}${Math.abs(diff)}</span>`;
     }
 
-    const rankClass = op.rank <= 10 ? "rank-badge rank-top10" : "rank-badge";
-
     row.innerHTML = `
-      <td class="align-center"><span class="${rankClass}">${op.rank}</span>${rankDelta}</td>
-      <td class="align-left" style="font-weight: 600;">${op.operator}</td>
-      <td><strong>${fmt(op.total_teu)}</strong>${teuDelta}</td>
-      <td>${fmt(op.total_ships)}${shipsDelta}</td>
+      <td class="align-center">
+        <span class="${op.rank <= 10 ? "rank-top10" : ""}">
+          ${op.rank}
+        </span>
+        ${rankDelta}
+      </td>
+      <td class="align-left"><strong>${op.operator}</strong></td>
+      <td><strong>${fmt(op.total_teu)}</strong></td>
+      <td>${fmt(op.total_ships)}</td>
       <td>${Number(op.market_share || 0).toFixed(1)}%</td>
       <td class="border-left">${fmt(op.owned_teu)}</td>
       <td>${fmt(op.owned_ships)}</td>
@@ -646,44 +445,79 @@ function renderTable(currentSnapshot, compareSnapshot) {
       <td class="border-left">${fmt(op.chartered_teu)}</td>
       <td>${fmt(op.chartered_ships)}</td>
       <td>${Number(op.chartered_share || 0).toFixed(1)}%</td>
-      <td class="border-left" style="color: var(--accent-purple);">${fmt(op.orderbook_teu)}</td>
-      <td style="color: var(--accent-purple);">${fmt(op.orderbook_ships)}</td>
-      <td style="color: var(--accent-purple);">${Number(op.orderbook_share || 0).toFixed(1)}%</td>
+      <td class="border-left">${fmt(op.orderbook_teu)}</td>
+      <td>${fmt(op.orderbook_ships)}</td>
+      <td>${Number(op.orderbook_share || 0).toFixed(1)}%</td>
     `;
-    tableBody.appendChild(row);
+
+    body.appendChild(row);
   });
 }
 
 function filterTable() {
-  const query = document.getElementById("filterInput").value.toLowerCase();
-  const rows = document.querySelectorAll("#tableBody tr");
-  rows.forEach(row => {
-    const op = row.cells[1].innerText.toLowerCase();
-    row.style.display = op.includes(query) ? "" : "none";
+  const query = document
+    .getElementById("filterInput")
+    .value
+    .toLowerCase();
+
+  document.querySelectorAll("#tableBody tr").forEach(row => {
+    const operator = row.cells[1].innerText.toLowerCase();
+    row.style.display = operator.includes(query) ? "" : "none";
   });
 }
 
 function exportCSV() {
   const activeDate = document.getElementById("dateSelect").value;
-  if (!DATA_STORE || !DATA_STORE.snapshots[activeDate]) return;
-
   const snapshot = DATA_STORE.snapshots[activeDate];
-  let csv = "\uFEFFRank,Operator,Total TEU,Total Ships,Market Share %,Owned TEU,Owned Ships,Owned Share %,Chartered TEU,Chartered Ships,Chartered Share %,Orderbook TEU,Orderbook Ships,Orderbook % of Fleet\n";
+
+  if (!snapshot) return;
+
+  let csv =
+    "\uFEFFRank,Operator,Total TEU,Total Ships,Market Share %,Owned TEU,"
+    + "Owned Ships,Owned Share %,Chartered TEU,Chartered Ships,"
+    + "Chartered Share %,Orderbook TEU,Orderbook Ships,"
+    + "Orderbook % of Fleet\n";
 
   snapshot.operators.forEach(op => {
-    csv += `"${op.rank}","${op.operator.replace(/"/g, '""')}",${op.total_teu},${op.total_ships},${op.market_share},${op.owned_teu},${op.owned_ships},${op.owned_share},${op.chartered_teu},${op.chartered_ships},${op.chartered_share},${op.orderbook_teu},${op.orderbook_ships},${op.orderbook_share}\n`;
+    const escapedName = String(op.operator).replace(/"/g, '""');
+
+    csv += [
+      op.rank,
+      `"${escapedName}"`,
+      op.total_teu,
+      op.total_ships,
+      op.market_share,
+      op.owned_teu,
+      op.owned_ships,
+      op.owned_share,
+      op.chartered_teu,
+      op.chartered_ships,
+      op.chartered_share,
+      op.orderbook_teu,
+      op.orderbook_ships,
+      op.orderbook_share
+    ].join(",") + "\n";
   });
 
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob(
+    [csv],
+    { type: "text/csv;charset=utf-8;" }
+  );
+
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.setAttribute("download", `Alphaliner_TOP100_${activeDate}.csv`);
+  link.download = "Alphaliner_TOP100_" + activeDate + ".csv";
+
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
 }
 
-document.addEventListener("DOMContentLoaded", initDashboard);
+document.addEventListener("DOMContentLoaded", () => {
+  initDashboard().catch(error => {
+    console.error("Dashboard initialization failed:", error);
+  });
+});
 </script>
 </body>
 </html>
