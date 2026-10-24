@@ -1,3 +1,68 @@
+# -*- coding: utf-8 -*-
+"""
+Alphaliner TOP 100 Liner Operators Static Dashboard Crawler (GitHub Optimized)
+- Direct ExtJS Store extraction (Top100description)
+- Official Global Figures + TOP 100 Capacity Separation
+- Historical snapshot comparison & Full Time-travel Delta analysis
+- Authentic Alphaliner 2-tier Grouped Table & UTF-8 BOM CSV Export
+- Bloomberg MI Terminal Look & Feel (Aligned with MI Standards)
+
+Output files:
+- alphaliner_history.db
+- alphaliner_data.json
+- index.html
+"""
+
+import argparse
+import hashlib
+import json
+import logging
+import os
+import re
+import sqlite3
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+from threading import Lock
+
+import pandas as pd
+from flask import Flask, Response, send_from_directory
+from selenium import webdriver
+from selenium.common.exceptions import WebDriverException
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+
+try:
+    from webdriver_manager.chrome import ChromeDriverManager
+    HAS_WEBDRIVER_MANAGER = True
+except Exception:
+    HAS_WEBDRIVER_MANAGER = False
+
+# =========================================================
+# 1. Basic Configuration
+# =========================================================
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / "alphaliner_history.db"
+JSON_PATH = BASE_DIR / "alphaliner_data.json"
+INDEX_HTML_PATH = BASE_DIR / "index.html"
+
+SOURCE_URL = "https://infographics.alphaliner.com/infographics/top-100-liner-operators"
+APP_TITLE = "Alphaliner TOP 100 Liner Operators"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(levelname)s: %(message)s",
+    datefmt="%H:%M:%S"
+)
+
+db_lock = Lock()
+app = Flask(__name__)
+
+# =========================================================
+# 2. Presentation Layer: Terminal HTML & Client Engine
+# =========================================================
 HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -816,3 +881,353 @@ document.addEventListener("DOMContentLoaded", () => {
 </body>
 </html>
 """
+
+# =========================================================
+# 3. Database Layer (SQLite)
+# =========================================================
+def init_db():
+    with db_lock:
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS snapshot_meta (
+                    snapshot_date TEXT PRIMARY KEY,
+                    collected_at TEXT NOT NULL,
+                    global_total_teu INTEGER NOT NULL,
+                    global_total_ships INTEGER NOT NULL,
+                    top100_total_teu INTEGER NOT NULL,
+                    top100_total_ships INTEGER NOT NULL,
+                    top10_share REAL NOT NULL,
+                    orderbook_total_teu INTEGER NOT NULL,
+                    source_url TEXT NOT NULL,
+                    raw_hash TEXT NOT NULL
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS operator_snapshots (
+                    snapshot_date TEXT NOT NULL,
+                    rank INTEGER NOT NULL,
+                    operator TEXT NOT NULL,
+                    total_teu INTEGER NOT NULL,
+                    total_ships INTEGER NOT NULL,
+                    market_share REAL NOT NULL,
+                    owned_teu INTEGER NOT NULL,
+                    owned_ships INTEGER NOT NULL,
+                    owned_share REAL NOT NULL,
+                    chartered_teu INTEGER NOT NULL,
+                    chartered_ships INTEGER NOT NULL,
+                    chartered_share REAL NOT NULL,
+                    orderbook_teu INTEGER NOT NULL,
+                    orderbook_ships INTEGER NOT NULL,
+                    orderbook_share REAL NOT NULL,
+                    PRIMARY KEY (snapshot_date, rank),
+                    FOREIGN KEY (snapshot_date) REFERENCES snapshot_meta(snapshot_date)
+                )
+            """)
+            conn.commit()
+
+def save_snapshot_to_db(meta: dict, operators: list):
+    with db_lock:
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT OR REPLACE INTO snapshot_meta (
+                    snapshot_date, collected_at, global_total_teu, global_total_ships,
+                    top100_total_teu, top100_total_ships, top10_share, orderbook_total_teu,
+                    source_url, raw_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                meta["snapshot_date"], meta["collected_at"], meta["global_total_teu"],
+                meta["global_total_ships"], meta["top100_total_teu"], meta["top100_total_ships"],
+                meta["top10_share"], meta["orderbook_total_teu"], meta["source_url"], meta["raw_hash"]
+            ))
+
+            cur.execute("DELETE FROM operator_snapshots WHERE snapshot_date = ?", (meta["snapshot_date"],))
+
+            rows = [
+                (
+                    meta["snapshot_date"], op["rank"], op["operator"], op["total_teu"],
+                    op["total_ships"], op["market_share"], op["owned_teu"], op["owned_ships"],
+                    op["owned_share"], op["chartered_teu"], op["chartered_ships"], op["chartered_share"],
+                    op["orderbook_teu"], op["orderbook_ships"], op["orderbook_share"]
+                )
+                for op in operators
+            ]
+
+            cur.executemany("""
+                INSERT INTO operator_snapshots (
+                    snapshot_date, rank, operator, total_teu, total_ships, market_share,
+                    owned_teu, owned_ships, owned_share, chartered_teu, chartered_ships,
+                    chartered_share, orderbook_teu, orderbook_ships, orderbook_share
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, rows)
+            conn.commit()
+    logging.info("[DB] Saved snapshot %s (%d operators)", meta["snapshot_date"], len(operators))
+
+# =========================================================
+# 4. JSON Serialization Layer (For Static Terminal Build)
+# =========================================================
+def build_and_save_json():
+    with db_lock:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+
+            cur.execute("SELECT * FROM snapshot_meta ORDER BY snapshot_date DESC")
+            meta_rows = cur.fetchall()
+
+            if not meta_rows:
+                logging.warning("[JSON] No data found in snapshot_meta.")
+                return
+
+            dates = [row["snapshot_date"] for row in meta_rows]
+            snapshots = {}
+
+            for m in meta_rows:
+                s_date = m["snapshot_date"]
+                cur.execute(
+                    "SELECT * FROM operator_snapshots WHERE snapshot_date = ? ORDER BY rank ASC",
+                    (s_date,)
+                )
+                op_rows = cur.fetchall()
+
+                snapshots[s_date] = {
+                    "meta": dict(m),
+                    "operators": [dict(r) for r in op_rows]
+                }
+
+    export_payload = {
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "dates": dates,
+        "snapshots": snapshots
+    }
+
+    JSON_PATH.write_text(json.dumps(export_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    logging.info("[JSON] Serialized %d snapshot(s) -> %s", len(dates), JSON_PATH)
+
+# =========================================================
+# 5. Static HTML File Output
+# =========================================================
+def generate_static_dashboard():
+    INDEX_HTML_PATH.write_text(HTML_TEMPLATE, encoding="utf-8")
+    logging.info("[HTML] Static Dashboard generated: %s", INDEX_HTML_PATH)
+
+# =========================================================
+# 6. Extraction Engine (Selenium + ExtJS Stores)
+# =========================================================
+def parse_int(val) -> int:
+    if val is None:
+        return 0
+    s = re.sub(r"[^\d]", "", str(val))
+    return int(s) if s else 0
+
+def parse_float(val) -> float:
+    if val is None:
+        return 0.0
+    s = str(val).replace("%", "").strip()
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+def setup_chrome_driver():
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+    driver_path = os.getenv("CHROMEDRIVER_PATH")
+    if driver_path and os.path.exists(driver_path):
+        service = Service(executable_path=driver_path)
+    elif HAS_WEBDRIVER_MANAGER:
+        service = Service(ChromeDriverManager().install())
+    else:
+        service = Service()
+
+    return webdriver.Chrome(service=service, options=options)
+
+def fetch_alphaliner_data():
+    logging.info("[Crawler] Launching Headless Chrome to scrape %s", SOURCE_URL)
+    driver = setup_chrome_driver()
+    try:
+        driver.get(SOURCE_URL)
+
+        # Wait until ExtJS App and Top100description store are fully initialized
+        WebDriverWait(driver, 30).until(
+            lambda d: d.execute_script("""
+                return typeof Ext !== 'undefined' &&
+                       Ext.StoreMgr &&
+                       Ext.StoreMgr.lookup('Top100description') &&
+                       Ext.StoreMgr.lookup('Top100description').getCount() > 0;
+            """)
+        )
+
+        time.sleep(2)  # Buffer to allow ExtJS calculation listeners to finish
+
+        script = """
+            var result = { meta: {}, items: [] };
+
+            // 1. Extract raw records from ExtJS Store
+            var store = Ext.StoreMgr.lookup('Top100description');
+            if (store) {
+                store.each(function(rec) {
+                    result.items.push(rec.data);
+                });
+            }
+
+            // 2. Extract DOM Headers / Metadata
+            var bodyText = document.body.innerText || "";
+            result.bodyText = bodyText;
+
+            return result;
+        """
+        raw_res = driver.execute_script(script)
+        return raw_res
+    finally:
+        driver.quit()
+
+def process_and_persist(raw_res):
+    items = raw_res.get("items", [])
+    body_text = raw_res.get("bodyText", "")
+
+    if not items:
+        raise ValueError("Extraction failure: ExtJS Store 'Top100description' returned zero records.")
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    collected_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Regex extraction for official Global figures
+    teu_match = re.search(r"TOTAL:\s*([\d,]+)\s*TEU", body_text, re.IGNORECASE)
+    ships_match = re.search(r"([\d,]+)\s*Ships", body_text, re.IGNORECASE)
+
+    extracted_global_teu = parse_int(teu_match.group(1)) if teu_match else 0
+    extracted_global_ships = parse_int(ships_match.group(1)) if ships_match else 0
+
+    operators = []
+    for row in items:
+        rank = parse_int(row.get("rank") or row.get("id"))
+        if rank <= 0 or rank > 100:
+            continue
+
+        op_name = str(row.get("operator") or row.get("carrier") or f"Operator {rank}").strip()
+        tot_teu = parse_int(row.get("tot_teu") or row.get("teu"))
+        tot_ships = parse_int(row.get("tot_ships") or row.get("ships"))
+        market_share = parse_float(row.get("market_share") or row.get("share"))
+
+        owned_teu = parse_int(row.get("owned_teu"))
+        owned_ships = parse_int(row.get("owned_ships"))
+        owned_share = parse_float(row.get("owned_share"))
+
+        cht_teu = parse_int(row.get("chartered_teu") or row.get("cht_teu"))
+        cht_ships = parse_int(row.get("chartered_ships") or row.get("cht_ships"))
+        cht_share = parse_float(row.get("chartered_share") or row.get("cht_share"))
+
+        order_teu = parse_int(row.get("orderbook_teu") or row.get("ord_teu"))
+        order_ships = parse_int(row.get("orderbook_ships") or row.get("ord_ships"))
+        order_share = parse_float(row.get("orderbook_share") or row.get("ord_share"))
+
+        operators.append({
+            "rank": rank,
+            "operator": op_name,
+            "total_teu": tot_teu,
+            "total_ships": tot_ships,
+            "market_share": market_share,
+            "owned_teu": owned_teu,
+            "owned_ships": owned_ships,
+            "owned_share": owned_share,
+            "chartered_teu": cht_teu,
+            "chartered_ships": cht_ships,
+            "chartered_share": cht_share,
+            "orderbook_teu": order_teu,
+            "orderbook_ships": order_ships,
+            "orderbook_share": order_share
+        })
+
+    operators.sort(key=lambda x: x["rank"])
+
+    top100_teu = sum(o["total_teu"] for o in operators)
+    top100_ships = sum(o["total_ships"] for o in operators)
+    top10_teu = sum(o["total_teu"] for o in operators[:10])
+    orderbook_teu = sum(o["orderbook_teu"] for o in operators)
+
+    global_teu = extracted_global_teu if extracted_global_teu > 0 else top100_teu
+    global_ships = extracted_global_ships if extracted_global_ships > 0 else top100_ships
+
+    top10_share = (top10_teu / global_teu * 100.0) if global_teu > 0 else 0.0
+
+    raw_hash = hashlib.sha256(json.dumps(operators, sort_keys=True).encode("utf-8")).hexdigest()
+
+    meta = {
+        "snapshot_date": today_str,
+        "collected_at": collected_at,
+        "global_total_teu": global_teu,
+        "global_total_ships": global_ships,
+        "top100_total_teu": top100_teu,
+        "top100_total_ships": top100_ships,
+        "top10_share": round(top10_share, 2),
+        "orderbook_total_teu": orderbook_teu,
+        "source_url": SOURCE_URL,
+        "raw_hash": raw_hash
+    }
+
+    save_snapshot_to_db(meta, operators)
+    build_and_save_json()
+    generate_static_dashboard()
+
+# =========================================================
+# 7. Flask Server Application
+# =========================================================
+@app.route("/")
+def index():
+    return Response(HTML_TEMPLATE, mimetype="text/html")
+
+@app.route("/alphaliner_data.json")
+def get_json():
+    if not JSON_PATH.exists():
+        build_and_save_json()
+    return send_from_directory(BASE_DIR, "alphaliner_data.json", mimetype="application/json")
+
+# =========================================================
+# 8. Execution Entrypoint
+# =========================================================
+def main():
+    parser = argparse.ArgumentParser(description="Alphaliner TOP 100 Liner Operators Pipeline")
+    parser.add_argument("--cron", action="store_true", help="Run crawler once and generate static assets")
+    parser.add_argument("--build-only", action="store_true", help="Generate JSON and HTML from existing SQLite DB")
+    parser.add_argument("--host", default="0.0.0.0", help="Flask bind address")
+    parser.add_argument("--port", type=int, default=5000, help="Flask bind port")
+    args = parser.parse_args()
+
+    init_db()
+
+    if args.build_only:
+        logging.info("[Build] Regenerating JSON and HTML from database...")
+        build_and_save_json()
+        generate_static_dashboard()
+        return
+
+    if args.cron:
+        logging.info("[Pipeline] Starting Alphaliner scheduled crawler run...")
+        raw_res = fetch_alphaliner_data()
+        process_and_persist(raw_res)
+        logging.info("[Pipeline] Run successfully finished.")
+        return
+
+    # Default interactive local run: Check DB -> Extract if empty -> Host
+    try:
+        raw_res = fetch_alphaliner_data()
+        process_and_persist(raw_res)
+    except Exception as e:
+        logging.error("[Error] Realtime scrape failed (%s). Checking fallback DB...", e)
+        if DB_PATH.exists():
+            build_and_save_json()
+            generate_static_dashboard()
+
+    logging.info("[Server] Starting Bloomberg MI Terminal on http://%s:%d", args.host, args.port)
+    app.run(host=args.host, port=args.port, debug=False)
+
+if __name__ == "__main__":
+    main()
