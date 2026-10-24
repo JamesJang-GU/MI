@@ -20,13 +20,20 @@
   --accent-red:#ff6262;
   --accent-purple:#bb86fc;
 }
-* { box-sizing:border-box; margin:0; padding:0; }
+
+* {
+  box-sizing:border-box;
+  margin:0;
+  padding:0;
+}
+
 body {
   background:var(--bg-primary);
   color:var(--text-main);
   font-family:Arial, sans-serif;
   font-size:13px;
 }
+
 .terminal-header {
   display:flex;
   justify-content:space-between;
@@ -36,6 +43,7 @@ body {
   background:var(--bg-secondary);
   border-bottom:1px solid var(--border-subtle);
 }
+
 .brand-tag {
   display:inline-block;
   padding:2px 6px;
@@ -45,15 +53,32 @@ body {
   color:#000;
   background:var(--accent-orange);
 }
-.brand-title { font-weight:600; text-transform:uppercase; }
-.terminal-controls { display:flex; align-items:center; gap:10px; }
-select, input, button {
+
+.brand-title {
+  font-weight:600;
+  text-transform:uppercase;
+}
+
+.terminal-controls {
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+
+select,
+input,
+button {
   padding:5px 8px;
   color:var(--text-main);
   background:var(--bg-tertiary);
   border:1px solid var(--border-subtle);
 }
-button { cursor:pointer; color:var(--accent-orange); }
+
+button {
+  cursor:pointer;
+  color:var(--accent-orange);
+}
+
 .container {
   display:grid;
   grid-template-columns:repeat(12, 1fr);
@@ -62,11 +87,14 @@ button { cursor:pointer; color:var(--accent-orange); }
   padding:16px;
   margin:0 auto;
 }
+
 .panel {
   background:var(--bg-secondary);
   border:1px solid var(--border-subtle);
 }
-.panel-header, .table-toolbar {
+
+.panel-header,
+.table-toolbar {
   display:flex;
   justify-content:space-between;
   padding:8px 12px;
@@ -74,26 +102,77 @@ button { cursor:pointer; color:var(--accent-orange); }
   font-size:11px;
   font-weight:700;
 }
-.panel-body { padding:12px; }
-.col-kpi { grid-column:span 3; }
-.col-chart { grid-column:span 12; height:280px; }
-.col-table { grid-column:span 12; }
-.kpi-title { color:var(--text-dim); font-size:11px; }
-.kpi-value { margin:5px 0; font-size:22px; font-weight:700; }
-.kpi-sub { color:var(--text-muted); font-size:11px; }
-.table-container { overflow:auto; max-height:600px; }
+
+.panel-body {
+  padding:12px;
+}
+
+.col-kpi {
+  grid-column:span 3;
+}
+
+.col-chart {
+  grid-column:span 12;
+  height:280px;
+}
+
+.col-table {
+  grid-column:span 12;
+}
+
+.kpi-title {
+  color:var(--text-dim);
+  font-size:11px;
+}
+
+.kpi-value {
+  margin:5px 0;
+  font-size:22px;
+  font-weight:700;
+}
+
+.kpi-sub {
+  min-height:16px;
+  color:var(--text-muted);
+  font-size:11px;
+}
+
+.delta-pos {
+  color:var(--accent-green);
+}
+
+.delta-neg {
+  color:var(--accent-red);
+}
+
+.delta-flat {
+  color:var(--text-muted);
+}
+
+.delta-base {
+  color:var(--text-dim);
+}
+
+.table-container {
+  overflow:auto;
+  max-height:600px;
+}
+
 table {
   width:100%;
   border-collapse:collapse;
   font-family:monospace;
   font-size:12px;
 }
-th, td {
+
+th,
+td {
   padding:6px 10px;
   text-align:right;
   white-space:nowrap;
   border-bottom:1px solid var(--border-subtle);
 }
+
 th {
   position:sticky;
   top:0;
@@ -101,13 +180,28 @@ th {
   color:var(--text-muted);
   background:var(--bg-tertiary);
 }
-.align-left { text-align:left; }
-.align-center { text-align:center; }
-.border-left { border-left:1px solid var(--border-subtle); }
-.group-header { text-align:center; }
-.delta-pos { color:var(--accent-green); }
-.delta-neg { color:var(--accent-red); }
-.rank-top10 { color:var(--accent-orange); font-weight:700; }
+
+.align-left {
+  text-align:left;
+}
+
+.align-center {
+  text-align:center;
+}
+
+.border-left {
+  border-left:1px solid var(--border-subtle);
+}
+
+.group-header {
+  text-align:center;
+}
+
+.rank-top10 {
+  color:var(--accent-orange);
+  font-weight:700;
+}
+
 .footer-status {
   display:flex;
   justify-content:space-between;
@@ -117,41 +211,66 @@ th {
   border-top:1px solid var(--border-subtle);
   font-size:11px;
 }
+
+@media (max-width:1000px) {
+  .col-kpi {
+    grid-column:span 6;
+  }
+}
+
+@media (max-width:640px) {
+  .terminal-header,
+  .terminal-controls,
+  .footer-status {
+    flex-direction:column;
+    align-items:flex-start;
+  }
+
+  .col-kpi {
+    grid-column:span 12;
+  }
+}
 </style>
 </head>
+
 <body>
 <header class="terminal-header">
   <div>
     <span class="brand-tag">ALPHALINER</span>
     <span class="brand-title">TOP 100 Global Liner Operators Terminal</span>
   </div>
+
   <div class="terminal-controls">
-    <label>SNAPSHOT:
+    <label>
+      SNAPSHOT:
       <select id="dateSelect" onchange="renderAll()"></select>
     </label>
-    <label>COMPARE TO:
+
+    <label>
+      COMPARE TO:
       <select id="compareSelect" onchange="renderAll()"></select>
     </label>
+
     <button onclick="exportCSV()">EXPORT CSV</button>
   </div>
 </header>
 
 <main class="container">
   <section class="panel col-kpi">
-    <div class="panel-header">GLOBAL CAPACITY</div>
+    <div class="panel-header">GLOBAL FLEET COUNT</div>
     <div class="panel-body">
-      <div class="kpi-title">TOTAL FLEET TEU</div>
-      <div class="kpi-value" id="kpiGlobalTeu">--</div>
-      <div class="kpi-sub" id="kpiGlobalShips">-- Ships</div>
+      <div class="kpi-title">TOTAL SHIPS</div>
+      <div class="kpi-value" id="kpiGlobalShips">--</div>
+      <div class="kpi-sub" id="deltaGlobalShips">BASE SNAPSHOT</div>
     </div>
   </section>
 
   <section class="panel col-kpi">
-    <div class="panel-header">TOP 100 SHARE</div>
+    <div class="panel-header">GLOBAL CAPACITY</div>
     <div class="panel-body">
-      <div class="kpi-title">TOP 100 TOTAL TEU</div>
-      <div class="kpi-value" id="kpiTop100Teu">--</div>
-      <div class="kpi-sub" id="kpiTop100Ships">-- Ships</div>
+      <div class="kpi-title">TOTAL FLEET TEU</div>
+      <div class="kpi-value" id="kpiGlobalTeu">--</div>
+      <div class="kpi-sub" id="deltaGlobalTeu">BASE SNAPSHOT</div>
     </div>
   </section>
 
@@ -160,7 +279,7 @@ th {
     <div class="panel-body">
       <div class="kpi-title">TOP 10 MARKET SHARE</div>
       <div class="kpi-value" id="kpiTop10Share">--</div>
-      <div class="kpi-sub" id="kpiTop10Teu">-- TEU</div>
+      <div class="kpi-sub" id="deltaTop10Share">BASE SNAPSHOT</div>
     </div>
   </section>
 
@@ -169,7 +288,7 @@ th {
     <div class="panel-body">
       <div class="kpi-title">PIPELINE CAPACITY</div>
       <div class="kpi-value" id="kpiOrderbookTeu">--</div>
-      <div class="kpi-sub" id="kpiOrderbookRatio">-- % of active</div>
+      <div class="kpi-sub" id="deltaOrderbookTeu">BASE SNAPSHOT</div>
     </div>
   </section>
 
@@ -178,6 +297,7 @@ th {
       <span>TOP 10 OPERATOR CAPACITY PROFILE (TEU)</span>
       <span id="chartSubTitle">--</span>
     </div>
+
     <div class="panel-body" style="height:240px;">
       <canvas id="topChart"></canvas>
     </div>
@@ -240,22 +360,82 @@ let DATA_STORE = { dates: [], snapshots: {} };
 let currentChart = null;
 
 function fmt(value) {
-  if (value === null || value === undefined || isNaN(value)) return "--";
+  if (value === null || value === undefined || isNaN(value)) {
+    return "--";
+  }
   return Number(value).toLocaleString();
+}
+
+function numericValue(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function renderQuantityDelta(elementId, currentValue, previousValue, unit, compareDate) {
+  const element = document.getElementById(elementId);
+  if (!element) return;
+
+  if (previousValue === null || previousValue === undefined || compareDate === "none" || !compareDate) {
+    element.className = "kpi-sub delta-base";
+    element.textContent = "BASE SNAPSHOT";
+    return;
+  }
+
+  const current = numericValue(currentValue);
+  const previous = numericValue(previousValue);
+  const difference = current - previous;
+
+  if (difference === 0) {
+    element.className = "kpi-sub delta-flat";
+    element.textContent = "— NO CHANGE vs " + compareDate;
+    return;
+  }
+
+  const direction = difference > 0 ? "▲" : "▼";
+  const sign = difference > 0 ? "+" : "";
+  const colorClass = difference > 0 ? "delta-pos" : "delta-neg";
+
+  const percentChange = previous !== 0 ? (difference / previous) * 100 : null;
+  const percentText = percentChange === null ? "N/A" : sign + percentChange.toFixed(2) + "%";
+
+  element.className = "kpi-sub " + colorClass;
+  element.textContent = direction + " " + sign + fmt(difference) + " " + unit + " (" + percentText + ") vs " + compareDate;
+}
+
+function renderPercentagePointDelta(elementId, currentValue, previousValue, compareDate) {
+  const element = document.getElementById(elementId);
+  if (!element) return;
+
+  if (previousValue === null || previousValue === undefined || compareDate === "none" || !compareDate) {
+    element.className = "kpi-sub delta-base";
+    element.textContent = "BASE SNAPSHOT";
+    return;
+  }
+
+  const current = numericValue(currentValue);
+  const previous = numericValue(previousValue);
+  const difference = current - previous;
+
+  if (difference === 0) {
+    element.className = "kpi-sub delta-flat";
+    element.textContent = "— NO CHANGE vs " + compareDate;
+    return;
+  }
+
+  const direction = difference > 0 ? "▲" : "▼";
+  const sign = difference > 0 ? "+" : "";
+  const colorClass = difference > 0 ? "delta-pos" : "delta-neg";
+
+  element.className = "kpi-sub " + colorClass;
+  element.textContent = direction + " " + sign + difference.toFixed(2) + "%p vs " + compareDate;
 }
 
 async function initDashboard() {
   const response = await fetch("alphaliner_data.json");
-
-  if (!response.ok) {
-    throw new Error("Failed to load alphaliner_data.json");
-  }
+  if (!response.ok) throw new Error("Failed to load alphaliner_data.json");
 
   DATA_STORE = await response.json();
-
-  if (!DATA_STORE.dates || DATA_STORE.dates.length === 0) {
-    return;
-  }
+  if (!DATA_STORE.dates || DATA_STORE.dates.length === 0) return;
 
   const dateSelect = document.getElementById("dateSelect");
   const compareSelect = document.getElementById("compareSelect");
@@ -291,44 +471,26 @@ function renderAll() {
   const compareDate = document.getElementById("compareSelect").value;
 
   const snapshot = DATA_STORE.snapshots[activeDate];
-  const compareSnapshot = compareDate !== "none"
-    ? DATA_STORE.snapshots[compareDate]
-    : null;
+  const compareSnapshot = compareDate !== "none" ? DATA_STORE.snapshots[compareDate] : null;
 
   if (!snapshot) return;
 
   const meta = snapshot.meta;
+  const previousMeta = compareSnapshot ? compareSnapshot.meta : null;
 
-  document.getElementById("kpiGlobalTeu").textContent =
-    fmt(meta.global_total_teu) + " TEU";
+  document.getElementById("kpiGlobalShips").textContent = fmt(meta.global_total_ships) + " Ships";
+  renderQuantityDelta("deltaGlobalShips", meta.global_total_ships, previousMeta ? previousMeta.global_total_ships : null, "Ships", compareDate);
 
-  document.getElementById("kpiGlobalShips").textContent =
-    fmt(meta.global_total_ships) + " Ships";
+  document.getElementById("kpiGlobalTeu").textContent = fmt(meta.global_total_teu) + " TEU";
+  renderQuantityDelta("deltaGlobalTeu", meta.global_total_teu, previousMeta ? previousMeta.global_total_teu : null, "TEU", compareDate);
 
-  document.getElementById("kpiTop100Teu").textContent =
-    fmt(meta.top100_total_teu) + " TEU";
+  document.getElementById("kpiTop10Share").textContent = numericValue(meta.top10_share).toFixed(1) + "%";
+  renderPercentagePointDelta("deltaTop10Share", meta.top10_share, previousMeta ? previousMeta.top10_share : null, compareDate);
 
-  document.getElementById("kpiTop100Ships").textContent =
-    fmt(meta.top100_total_ships) + " Ships";
+  document.getElementById("kpiOrderbookTeu").textContent = fmt(meta.orderbook_total_teu) + " TEU";
+  renderQuantityDelta("deltaOrderbookTeu", meta.orderbook_total_teu, previousMeta ? previousMeta.orderbook_total_teu : null, "TEU", compareDate);
 
-  document.getElementById("kpiTop10Share").textContent =
-    Number(meta.top10_share || 0).toFixed(1) + "%";
-
-  document.getElementById("kpiTop10Teu").textContent =
-    fmt(meta.top10_total_teu) + " TEU";
-
-  document.getElementById("kpiOrderbookTeu").textContent =
-    fmt(meta.orderbook_total_teu) + " TEU";
-
-  const ratio = meta.top100_total_teu > 0
-    ? ((meta.orderbook_total_teu / meta.top100_total_teu) * 100).toFixed(1)
-    : "0.0";
-
-  document.getElementById("kpiOrderbookRatio").textContent =
-    ratio + "% of active";
-
-  document.getElementById("collectedTimestamp").textContent =
-    "DATA COLLECTED: " + (meta.collected_at || activeDate);
+  document.getElementById("collectedTimestamp").textContent = "DATA COLLECTED: " + (meta.collected_at || activeDate);
 
   renderChart(snapshot);
   renderTable(snapshot, compareSnapshot);
@@ -336,10 +498,7 @@ function renderAll() {
 
 function renderChart(snapshot) {
   const top10 = snapshot.operators.slice(0, 10);
-
-  if (currentChart) {
-    currentChart.destroy();
-  }
+  if (currentChart) currentChart.destroy();
 
   currentChart = new Chart(
     document.getElementById("topChart"),
@@ -348,57 +507,24 @@ function renderChart(snapshot) {
       data: {
         labels: top10.map(op => op.rank + ". " + op.operator),
         datasets: [
-          {
-            label: "Owned TEU",
-            data: top10.map(op => op.owned_teu),
-            backgroundColor: "#45a9f5",
-            stack: "active"
-          },
-          {
-            label: "Chartered TEU",
-            data: top10.map(op => op.chartered_teu),
-            backgroundColor: "#f6a623",
-            stack: "active"
-          },
-          {
-            label: "Orderbook TEU",
-            data: top10.map(op => op.orderbook_teu),
-            backgroundColor: "rgba(187,134,252,.45)",
-            borderColor: "#bb86fc",
-            borderWidth: 1,
-            stack: "orderbook"
-          }
+          { label: "Owned TEU", data: top10.map(op => op.owned_teu), backgroundColor: "#45a9f5", stack: "active" },
+          { label: "Chartered TEU", data: top10.map(op => op.chartered_teu), backgroundColor: "#f6a623", stack: "active" },
+          { label: "Orderbook TEU", data: top10.map(op => op.orderbook_teu), backgroundColor: "rgba(187,134,252,.45)", borderColor: "#bb86fc", borderWidth: 1, stack: "orderbook" }
         ]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            labels: { color: "#879caf" }
-          }
-        },
+        plugins: { legend: { labels: { color: "#879caf" } } },
         scales: {
-          x: {
-            stacked: true,
-            ticks: { color: "#879caf" },
-            grid: { color: "rgba(27,48,67,.5)" }
-          },
-          y: {
-            stacked: true,
-            ticks: {
-              color: "#879caf",
-              callback: value => (value / 1000000).toFixed(1) + "M"
-            },
-            grid: { color: "rgba(27,48,67,.5)" }
-          }
+          x: { stacked: true, ticks: { color: "#879caf" }, grid: { color: "rgba(27,48,67,.5)" } },
+          y: { stacked: true, ticks: { color: "#879caf", callback: value => (value / 1000000).toFixed(1) + "M" }, grid: { color: "rgba(27,48,67,.5)" } }
         }
       }
     }
   );
 
-  document.getElementById("chartSubTitle").textContent =
-    "AS OF " + snapshot.meta.snapshot_date;
+  document.getElementById("chartSubTitle").textContent = "AS OF " + snapshot.meta.snapshot_date;
 }
 
 function renderTable(snapshot, compareSnapshot) {
@@ -406,7 +532,6 @@ function renderTable(snapshot, compareSnapshot) {
   body.innerHTML = "";
 
   const compareMap = {};
-
   if (compareSnapshot && compareSnapshot.operators) {
     compareSnapshot.operators.forEach(op => {
       compareMap[op.operator.toLowerCase()] = op;
@@ -416,23 +541,18 @@ function renderTable(snapshot, compareSnapshot) {
   snapshot.operators.forEach(op => {
     const row = document.createElement("tr");
     const previous = compareMap[op.operator.toLowerCase()];
-
     let rankDelta = "";
 
     if (previous && previous.rank !== op.rank) {
       const diff = previous.rank - op.rank;
       const cssClass = diff > 0 ? "delta-pos" : "delta-neg";
       const arrow = diff > 0 ? "▲" : "▼";
-
-      rankDelta =
-        `<span class="${cssClass}"> ${arrow}${Math.abs(diff)}</span>`;
+      rankDelta = `<span class="${cssClass}"> ${arrow}${Math.abs(diff)}</span>`;
     }
 
     row.innerHTML = `
       <td class="align-center">
-        <span class="${op.rank <= 10 ? "rank-top10" : ""}">
-          ${op.rank}
-        </span>
+        <span class="${op.rank <= 10 ? "rank-top10" : ""}">${op.rank}</span>
         ${rankDelta}
       </td>
       <td class="align-left"><strong>${op.operator}</strong></td>
@@ -449,17 +569,12 @@ function renderTable(snapshot, compareSnapshot) {
       <td>${fmt(op.orderbook_ships)}</td>
       <td>${Number(op.orderbook_share || 0).toFixed(1)}%</td>
     `;
-
     body.appendChild(row);
   });
 }
 
 function filterTable() {
-  const query = document
-    .getElementById("filterInput")
-    .value
-    .toLowerCase();
-
+  const query = document.getElementById("filterInput").value.toLowerCase();
   document.querySelectorAll("#tableBody tr").forEach(row => {
     const operator = row.cells[1].innerText.toLowerCase();
     row.style.display = operator.includes(query) ? "" : "none";
@@ -469,18 +584,12 @@ function filterTable() {
 function exportCSV() {
   const activeDate = document.getElementById("dateSelect").value;
   const snapshot = DATA_STORE.snapshots[activeDate];
-
   if (!snapshot) return;
 
-  let csv =
-    "\uFEFFRank,Operator,Total TEU,Total Ships,Market Share %,Owned TEU,"
-    + "Owned Ships,Owned Share %,Chartered TEU,Chartered Ships,"
-    + "Chartered Share %,Orderbook TEU,Orderbook Ships,"
-    + "Orderbook % of Fleet\n";
+  let csv = "\uFEFFRank,Operator,Total TEU,Total Ships,Market Share %,Owned TEU,Owned Ships,Owned Share %,Chartered TEU,Chartered Ships,Chartered Share %,Orderbook TEU,Orderbook Ships,Orderbook % of Fleet\n";
 
   snapshot.operators.forEach(op => {
     const escapedName = String(op.operator).replace(/"/g, '""');
-
     csv += [
       op.rank,
       `"${escapedName}"`,
@@ -499,15 +608,10 @@ function exportCSV() {
     ].join(",") + "\n";
   });
 
-  const blob = new Blob(
-    [csv],
-    { type: "text/csv;charset=utf-8;" }
-  );
-
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
   link.download = "Alphaliner_TOP100_" + activeDate + ".csv";
-
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
