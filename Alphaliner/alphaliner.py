@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Alphaliner TOP 100 Liner Operators Static Dashboard Crawler (GitHub Optimized)
-- Direct ExtJS Store extraction (Top100description)
-- Official Global Figures + TOP 100 Capacity Separation
-- Historical snapshot comparison & Full Time-travel Delta analysis
-- Authentic Alphaliner 2-tier Grouped Table & UTF-8 BOM CSV Export
-- Bloomberg MI Terminal Look & Feel
+Alphaliner TOP 100 Liner Operators Static Dashboard Crawler
+- Direct ExtJS Store extraction
+- Historical snapshot storage
+- Static JSON / HTML dashboard generation
+- Chartered fleet field mapping and derived-value fallback enabled
 
 Output files:
 - alphaliner_history.db
@@ -14,20 +13,18 @@ Output files:
 """
 
 import argparse
-import hashlib
+import html
 import json
 import logging
 import os
 import re
 import sqlite3
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
 
-import pandas as pd
-from flask import Flask, Response, jsonify, send_from_directory
+from flask import Flask, jsonify, send_from_directory
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.chrome.options import Options
@@ -38,9 +35,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 # 1. Basic Configuration & Paths
 # =========================================================
 BASE_DIR = Path(__file__).resolve().parent
+
 DB_PATH = BASE_DIR / "alphaliner_history.db"
 JSON_PATH = BASE_DIR / "alphaliner_data.json"
 HTML_PATH = BASE_DIR / "index.html"
+
 TARGET_URL = "https://alphaliner.axsmarine.com/PublicTop100/"
 
 MIN_EXPECTED_OPERATOR_COUNT = 50
@@ -50,7 +49,7 @@ EXTJS_POLL_INTERVAL_SECONDS = 1.0
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("AlphalinerCrawler")
 
@@ -102,10 +101,10 @@ def init_db():
             )
         """)
 
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_op_snap_date "
-            "ON operator_snapshots(snapshot_date)"
-        )
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_op_snap_date
+            ON operator_snapshots(snapshot_date)
+        """)
 
         conn.commit()
         conn.close()
@@ -127,21 +126,27 @@ def has_existing_data_in_db():
 
             conn.close()
 
-        return snapshot_count > 0 and operator_count >= MIN_EXPECTED_OPERATOR_COUNT
+        return (
+            snapshot_count > 0
+            and operator_count >= MIN_EXPECTED_OPERATOR_COUNT
+        )
 
     except sqlite3.Error as exc:
-        logger.warning("Unable to check existing database fallback status: %s", exc)
+        logger.warning(
+            "Unable to check existing database fallback status: %s",
+            exc,
+        )
         return False
 
 def save_snapshot_to_db(meta, operators):
     with db_lock:
         conn = sqlite3.connect(DB_PATH)
         cur = conn.cursor()
-        snap_date = meta["snapshot_date"]
+
+        snapshot_date = meta["snapshot_date"]
 
         cur.execute("""
-            INSERT OR REPLACE INTO snapshot_meta
-            (
+            INSERT OR REPLACE INTO snapshot_meta (
                 snapshot_date,
                 global_total_teu,
                 global_total_ships,
@@ -154,7 +159,7 @@ def save_snapshot_to_db(meta, operators):
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            snap_date,
+            snapshot_date,
             meta.get("global_total_teu", 0),
             meta.get("global_total_ships", 0),
             meta.get("top100_total_teu", 0),
@@ -162,18 +167,18 @@ def save_snapshot_to_db(meta, operators):
             meta.get("top10_total_teu", 0),
             meta.get("top10_share", 0.0),
             meta.get("orderbook_total_teu", 0),
-            meta.get("collected_at", datetime.now().isoformat())
+            meta.get("collected_at", datetime.now().isoformat()),
         ))
 
+        # 동일 일자 재실행 시 기존 행을 제거하여 정정된 값을 저장
         cur.execute(
             "DELETE FROM operator_snapshots WHERE snapshot_date = ?",
-            (snap_date,)
+            (snapshot_date,),
         )
 
         for op in operators:
             cur.execute("""
-                INSERT INTO operator_snapshots
-                (
+                INSERT INTO operator_snapshots (
                     snapshot_date,
                     rank,
                     operator,
@@ -192,7 +197,7 @@ def save_snapshot_to_db(meta, operators):
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                snap_date,
+                snapshot_date,
                 op["rank"],
                 op["operator"],
                 op["total_teu"],
@@ -206,16 +211,16 @@ def save_snapshot_to_db(meta, operators):
                 op["chartered_share"],
                 op["orderbook_teu"],
                 op["orderbook_ships"],
-                op["orderbook_share"]
+                op["orderbook_share"],
             ))
 
         conn.commit()
         conn.close()
 
-        logger.info(
-            "Database successfully updated for snapshot date: %s",
-            snap_date
-        )
+    logger.info(
+        "Database successfully updated for snapshot date: %s",
+        snapshot_date,
+    )
 
 def get_all_snapshots_data():
     with db_lock:
@@ -232,12 +237,11 @@ def get_all_snapshots_data():
 
         result = {
             "dates": [],
-            "snapshots": {}
+            "snapshots": {},
         }
 
         for meta_row in meta_rows:
             snapshot_date = meta_row["snapshot_date"]
-            result["dates"].append(snapshot_date)
 
             cur.execute("""
                 SELECT *
@@ -245,16 +249,17 @@ def get_all_snapshots_data():
                 WHERE snapshot_date = ?
                 ORDER BY rank ASC
             """, (snapshot_date,))
-
             operator_rows = cur.fetchall()
 
+            result["dates"].append(snapshot_date)
             result["snapshots"][snapshot_date] = {
                 "meta": dict(meta_row),
-                "operators": [dict(row) for row in operator_rows]
+                "operators": [dict(row) for row in operator_rows],
             }
 
         conn.close()
-        return result
+
+    return result
 
 # =========================================================
 # 3. Selenium Web Extraction
@@ -286,7 +291,7 @@ def get_chrome_driver(headless=True):
 
     options.add_experimental_option(
         "excludeSwitches",
-        ["enable-automation", "enable-logging"]
+        ["enable-automation", "enable-logging"],
     )
     options.add_experimental_option("useAutomationExtension", False)
 
@@ -297,11 +302,15 @@ def get_chrome_driver(headless=True):
 
     if chrome_binary:
         chrome_binary_path = Path(chrome_binary)
+
         if chrome_binary_path.exists():
             options.binary_location = str(chrome_binary_path)
             logger.info("Using Chrome binary: %s", chrome_binary_path)
         else:
-            logger.warning("Configured Chrome binary was not found: %s", chrome_binary)
+            logger.warning(
+                "Configured Chrome binary was not found: %s",
+                chrome_binary,
+            )
 
     chromedriver_path = (
         os.getenv("CHROMEDRIVER", "").strip()
@@ -311,16 +320,21 @@ def get_chrome_driver(headless=True):
     try:
         if chromedriver_path:
             chromedriver_file = Path(chromedriver_path)
+
             if chromedriver_file.exists():
-                logger.info("Using ChromeDriver from environment: %s", chromedriver_file)
+                logger.info(
+                    "Using ChromeDriver from environment: %s",
+                    chromedriver_file,
+                )
                 driver = webdriver.Chrome(
                     service=Service(str(chromedriver_file)),
-                    options=options
+                    options=options,
                 )
             else:
                 logger.warning(
-                    "Configured ChromeDriver was not found: %s. Falling back to default.",
-                    chromedriver_path
+                    "Configured ChromeDriver was not found: %s. "
+                    "Falling back to Selenium default.",
+                    chromedriver_path,
                 )
                 driver = webdriver.Chrome(options=options)
         else:
@@ -330,36 +344,61 @@ def get_chrome_driver(headless=True):
             "Page.addScriptToEvaluateOnNewDocument",
             {
                 "source": """
-                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-                    Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-                    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-                """
-            }
+                    Object.defineProperty(
+                        navigator,
+                        'webdriver',
+                        { get: () => undefined }
+                    );
+
+                    Object.defineProperty(
+                        navigator,
+                        'languages',
+                        { get: () => ['en-US', 'en'] }
+                    );
+
+                    Object.defineProperty(
+                        navigator,
+                        'plugins',
+                        { get: () => [1, 2, 3, 4, 5] }
+                    );
+                """,
+            },
         )
 
         driver.set_page_load_timeout(60)
         driver.implicitly_wait(2)
+
         return driver
 
     except WebDriverException as exc:
         logger.exception("Failed to initialize Selenium Driver.")
+
         raise RuntimeError(
             "Chrome/ChromeDriver initialization failed. "
-            "Verify Chrome, ChromeDriver, and GitHub Actions environment configuration."
+            "Verify Chrome and ChromeDriver configuration."
         ) from exc
 
 def wait_for_extjs_store(driver):
     readiness_script = f"""
         try {{
             if (typeof Ext === 'undefined' || !Ext.isReady) {{
-                return {{ ready: false, count: 0, source: 'Ext not ready' }};
+                return {{
+                    ready: false,
+                    count: 0,
+                    source: 'Ext not ready'
+                }};
             }}
 
             var store = null;
             var source = '';
 
-            if (Ext.data && Ext.data.StoreManager && Ext.data.StoreManager.lookup) {{
+            if (
+                Ext.data &&
+                Ext.data.StoreManager &&
+                Ext.data.StoreManager.lookup
+            ) {{
                 store = Ext.data.StoreManager.lookup('Top100description');
+
                 if (store) {{
                     source = 'Top100description';
                 }}
@@ -367,10 +406,16 @@ def wait_for_extjs_store(driver):
 
             if (!store && Ext.ComponentQuery) {{
                 var grids = Ext.ComponentQuery.query('gridpanel');
+
                 for (var i = 0; i < grids.length; i++) {{
                     if (grids[i] && grids[i].getStore) {{
                         var candidate = grids[i].getStore();
-                        if (candidate && candidate.getCount() > 0) {{
+
+                        if (
+                            candidate &&
+                            candidate.getCount &&
+                            candidate.getCount() > 0
+                        ) {{
                             store = candidate;
                             source = 'gridpanel[' + i + ']';
                             break;
@@ -379,35 +424,49 @@ def wait_for_extjs_store(driver):
                 }}
             }}
 
-            var count = store && store.getCount ? store.getCount() : 0;
+            var count = store && store.getCount
+                ? store.getCount()
+                : 0;
 
             return {{
-                ready: Boolean(store && count >= {MIN_EXPECTED_OPERATOR_COUNT}),
+                ready: Boolean(
+                    store && count >= {MIN_EXPECTED_OPERATOR_COUNT}
+                ),
                 count: count,
                 source: source || 'No store found'
             }};
         }} catch (e) {{
-            return {{ ready: false, count: 0, source: 'Error: ' + e.toString() }};
+            return {{
+                ready: false,
+                count: 0,
+                source: 'Error: ' + e.toString()
+            }};
         }}
     """
 
-    last_status = {"ready": False, "count": 0, "source": "Not checked"}
+    last_status = {
+        "ready": False,
+        "count": 0,
+        "source": "Not checked",
+    }
 
     def store_is_ready(browser):
         nonlocal last_status
+
         last_status = browser.execute_script(readiness_script)
+
         if last_status.get("ready"):
             logger.info(
                 "ExtJS data store is ready: source=%s, records=%s",
                 last_status.get("source"),
-                last_status.get("count")
+                last_status.get("count"),
             )
             return True
 
         logger.info(
             "Waiting for ExtJS store: source=%s, records=%s",
             last_status.get("source"),
-            last_status.get("count")
+            last_status.get("count"),
         )
         return False
 
@@ -415,7 +474,7 @@ def wait_for_extjs_store(driver):
         WebDriverWait(
             driver,
             EXTJS_WAIT_TIMEOUT_SECONDS,
-            poll_frequency=EXTJS_POLL_INTERVAL_SECONDS
+            poll_frequency=EXTJS_POLL_INTERVAL_SECONDS,
         ).until(store_is_ready)
 
     except TimeoutException as exc:
@@ -426,15 +485,40 @@ def wait_for_extjs_store(driver):
             f"expected>={MIN_EXPECTED_OPERATOR_COUNT}."
         ) from exc
 
+def normalize_key(value):
+    return re.sub(r"[^a-z0-9]", "", str(value).lower())
+
 def parse_numeric_value(value):
     if value is None:
         return 0
+
+    if isinstance(value, bool):
+        return int(value)
+
     if isinstance(value, (int, float)):
         return value
-    numeric_text = re.sub(r"[^\d.]", "", str(value))
-    if not numeric_text:
+
+    numeric_text = re.sub(r"[^\d.\-]", "", str(value))
+
+    if not numeric_text or numeric_text in {"-", ".", "-."}:
         return 0
-    return float(numeric_text) if "." in numeric_text else int(numeric_text)
+
+    try:
+        return float(numeric_text) if "." in numeric_text else int(numeric_text)
+    except ValueError:
+        return 0
+
+def clean_operator_name(value):
+    text = html.unescape(str(value or ""))
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+def safe_percent(numerator, denominator):
+    if not denominator:
+        return 0.0
+
+    return round((float(numerator) / float(denominator)) * 100, 2)
 
 def crawl_alphaliner():
     logger.info("Initializing Selenium Driver for Alphaliner...")
@@ -442,58 +526,80 @@ def crawl_alphaliner():
 
     try:
         driver = get_chrome_driver(headless=True)
+
         logger.info("Loading Alphaliner URL: %s", TARGET_URL)
         driver.get(TARGET_URL)
 
         logger.info(
             "Waiting for ExtJS store to contain at least %s records...",
-            MIN_EXPECTED_OPERATOR_COUNT
+            MIN_EXPECTED_OPERATOR_COUNT,
         )
         wait_for_extjs_store(driver)
 
         js_extractor = """
-        var result = {
-            meta: {},
-            records: [],
-            rawText: '',
-            source: ''
-        };
+            var result = {
+                records: [],
+                rawText: '',
+                source: ''
+            };
 
-        try {
-            var store = null;
-            if (typeof Ext !== 'undefined' && Ext.data && Ext.data.StoreManager && Ext.data.StoreManager.lookup) {
-                store = Ext.data.StoreManager.lookup('Top100description');
-                if (store) {
-                    result.source = 'Top100description';
+            try {
+                var store = null;
+
+                if (
+                    typeof Ext !== 'undefined' &&
+                    Ext.data &&
+                    Ext.data.StoreManager &&
+                    Ext.data.StoreManager.lookup
+                ) {
+                    store = Ext.data.StoreManager.lookup(
+                        'Top100description'
+                    );
+
+                    if (store) {
+                        result.source = 'Top100description';
+                    }
                 }
-            }
 
-            if (!store && typeof Ext !== 'undefined' && Ext.ComponentQuery) {
-                var grids = Ext.ComponentQuery.query('gridpanel');
-                for (var i = 0; i < grids.length; i++) {
-                    if (grids[i] && grids[i].getStore) {
-                        var candidate = grids[i].getStore();
-                        if (candidate && candidate.getCount() > 0) {
-                            store = candidate;
-                            result.source = 'gridpanel[' + i + ']';
-                            break;
+                if (
+                    !store &&
+                    typeof Ext !== 'undefined' &&
+                    Ext.ComponentQuery
+                ) {
+                    var grids = Ext.ComponentQuery.query('gridpanel');
+
+                    for (var i = 0; i < grids.length; i++) {
+                        if (grids[i] && grids[i].getStore) {
+                            var candidate = grids[i].getStore();
+
+                            if (
+                                candidate &&
+                                candidate.getCount &&
+                                candidate.getCount() > 0
+                            ) {
+                                store = candidate;
+                                result.source = 'gridpanel[' + i + ']';
+                                break;
+                            }
                         }
                     }
                 }
+
+                if (store) {
+                    store.each(function(rec) {
+                        result.records.push(rec.data || rec);
+                    });
+                }
+
+                result.rawText = document.body
+                    ? document.body.innerText
+                    : '';
+
+            } catch (e) {
+                result.error = e.toString();
             }
 
-            if (store) {
-                store.each(function(rec) {
-                    result.records.push(rec.data || rec);
-                });
-            }
-
-            result.rawText = document.body ? document.body.innerText : '';
-        } catch (e) {
-            result.error = e.toString();
-        }
-
-        return result;
+            return result;
         """
 
         data = driver.execute_script(js_extractor)
@@ -502,18 +608,27 @@ def crawl_alphaliner():
         logger.info(
             "ExtJS extraction completed: source=%s, raw_records=%s",
             data.get("source", "unknown"),
-            len(records)
+            len(records),
         )
+
+        if data.get("error"):
+            logger.warning(
+                "ExtJS extractor warning: %s",
+                data.get("error"),
+            )
 
         if not records:
             raise RuntimeError(
                 "ExtJS store was ready but data extraction returned zero records."
             )
 
-        if records and isinstance(records[0], dict):
-            logger.info("Sample record keys: %s", list(records[0].keys()))
+        if isinstance(records[0], dict):
+            logger.info(
+                "Sample raw ExtJS keys: %s",
+                list(records[0].keys()),
+            )
 
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        snapshot_date = datetime.now().strftime("%Y-%m-%d")
         operators = []
         orderbook_total_teu = 0
 
@@ -521,47 +636,297 @@ def crawl_alphaliner():
             if not isinstance(record, dict):
                 continue
 
-            # 대소문자 및 언더스코어 구분 없이 검색할 수 있도록 키 정규화
             norm_rec = {
-                re.sub(r"[^a-z0-9]", "", str(k).lower()): v
-                for k, v in record.items()
+                normalize_key(key): value
+                for key, value in record.items()
             }
 
-            def get_field(candidates, default=""):
-                for cand in candidates:
-                    norm_cand = re.sub(r"[^a-z0-9]", "", cand.lower())
-                    if norm_cand in norm_rec and norm_rec[norm_cand] is not None:
-                        return norm_rec[norm_cand]
-                return default
+            def get_field(candidates, default=None):
+                """
+                Returns:
+                    value, matched_normalized_field_name, found
+                """
+                for candidate in candidates:
+                    normalized_candidate = normalize_key(candidate)
 
-            # 순위(Rank): 레코드 필드 매핑 실패 시 인덱스(1~100)로 자동 대체
-            rank_val = parse_numeric_value(
-                get_field(["rank", "ranking", "pos", "position", "id", "idx", "num", "no"], idx)
-            )
-            rank = int(rank_val) if rank_val > 0 else idx
+                    if (
+                        normalized_candidate in norm_rec
+                        and norm_rec[normalized_candidate] is not None
+                        and str(norm_rec[normalized_candidate]).strip() != ""
+                    ):
+                        return (
+                            norm_rec[normalized_candidate],
+                            normalized_candidate,
+                            True,
+                        )
 
-            operator_name = str(
-                get_field(["operator", "liner", "name", "carrier", "company", "label", "title"], f"Operator {rank}")
-            ).strip()
+                return default, None, False
 
-            # HTML 태그 제거 (간혹 링크 태그가 포함되어 있을 경우)
-            operator_name = re.sub(r"<[^>]+>", "", operator_name).strip()
+            rank_raw, rank_key, _ = get_field([
+                "rank",
+                "ranking",
+                "pos",
+                "position",
+                "id",
+                "idx",
+                "num",
+                "no",
+            ], idx)
 
-            total_teu = int(parse_numeric_value(get_field(["totteu", "totalteu", "teu", "capacity"])))
-            total_ships = int(parse_numeric_value(get_field(["totships", "totalships", "ships", "vessels"])))
-            market_share = float(parse_numeric_value(get_field(["share", "marketshare", "market_share"])))
+            rank_value = parse_numeric_value(rank_raw)
+            rank = int(rank_value) if rank_value > 0 else idx
 
-            owned_teu = int(parse_numeric_value(get_field(["ownedteu", "ownteu"])))
-            owned_ships = int(parse_numeric_value(get_field(["ownedships", "ownships"])))
-            owned_share = float(parse_numeric_value(get_field(["ownedshare", "ownshare"])))
+            name_raw, name_key, _ = get_field([
+                "operator",
+                "liner",
+                "operatorname",
+                "linername",
+                "name",
+                "carrier",
+                "company",
+                "label",
+                "title",
+            ], f"Operator {rank}")
 
-            chartered_teu = int(parse_numeric_value(get_field(["charteredteu", "chateu", "charterteu"])))
-            chartered_ships = int(parse_numeric_value(get_field(["charteredships", "chaships", "charterships"])))
-            chartered_share = float(parse_numeric_value(get_field(["charteredshare", "chashare", "chartershare"])))
+            operator_name = clean_operator_name(name_raw) or f"Operator {rank}"
 
-            orderbook_teu = int(parse_numeric_value(get_field(["orderbookteu", "ordteu", "orderteu"])))
-            orderbook_ships = int(parse_numeric_value(get_field(["orderbookships", "ordships", "orderships"])))
-            orderbook_share = float(parse_numeric_value(get_field(["orderbookshare", "ordshare", "ordershare"])))
+            total_teu_raw, total_teu_key, total_teu_found = get_field([
+                "totteu",
+                "totalteu",
+                "totalcapacity",
+                "fleetcapacity",
+                "teu",
+                "capacity",
+            ])
+
+            total_ships_raw, total_ships_key, total_ships_found = get_field([
+                "totships",
+                "totalships",
+                "totalvessels",
+                "fleetships",
+                "ships",
+                "vessels",
+            ])
+
+            market_share_raw, market_share_key, market_share_found = get_field([
+                "share",
+                "marketshare",
+                "market_share",
+                "totalshare",
+                "fleetshare",
+                "totalpercent",
+                "pctfleet",
+                "percentage",
+            ])
+
+            owned_teu_raw, owned_teu_key, owned_teu_found = get_field([
+                "ownedteu",
+                "ownteu",
+                "own_teu",
+                "ownedcapacity",
+                "ownerteu",
+            ])
+
+            owned_ships_raw, owned_ships_key, owned_ships_found = get_field([
+                "ownedships",
+                "ownships",
+                "own_ships",
+                "ownedvessels",
+                "ownervessels",
+            ])
+
+            owned_share_raw, owned_share_key, owned_share_found = get_field([
+                "ownedshare",
+                "ownshare",
+                "own_share",
+                "ownedpercent",
+                "ownedpercentage",
+                "pctowned",
+                "pctown",
+            ])
+
+            # 실제 Alphaliner ExtJS 필드명 변형을 폭넓게 지원
+            chartered_teu_raw, chartered_teu_key, chartered_teu_found = get_field([
+                "charteredteu",
+                "charterteu",
+                "chateu",
+                "chartteu",
+                "chart_teu",
+                "charteu",
+                "chtteu",
+                "leasedteu",
+            ])
+
+            chartered_ships_raw, chartered_ships_key, chartered_ships_found = get_field([
+                "charteredships",
+                "charterships",
+                "chaships",
+                "chartships",
+                "chart_ships",
+                "chartship",
+                "charships",
+                "chtships",
+                "leasedships",
+            ])
+
+            chartered_share_raw, chartered_share_key, chartered_share_found = get_field([
+                "charteredshare",
+                "chartershare",
+                "chashare",
+                "chartshare",
+                "chart_share",
+                "chartpercent",
+                "charteredpercent",
+                "charterpercent",
+                "pctchartered",
+                "pctchart",
+            ])
+
+            orderbook_teu_raw, orderbook_teu_key, orderbook_teu_found = get_field([
+                "orderbookteu",
+                "orderbookcapacity",
+                "ordteu",
+                "orderteu",
+                "obteu",
+            ])
+
+            orderbook_ships_raw, orderbook_ships_key, orderbook_ships_found = get_field([
+                "orderbookships",
+                "orderbookvessels",
+                "ordships",
+                "orderships",
+                "obships",
+            ])
+
+            orderbook_share_raw, orderbook_share_key, orderbook_share_found = get_field([
+                "orderbookshare",
+                "orderbookpercent",
+                "ordshare",
+                "ordershare",
+                "orderpercent",
+                "pctorderbook",
+                "existingfleetpercent",
+            ])
+
+            total_teu = int(parse_numeric_value(total_teu_raw))
+            total_ships = int(parse_numeric_value(total_ships_raw))
+            market_share = float(parse_numeric_value(market_share_raw))
+
+            owned_teu = int(parse_numeric_value(owned_teu_raw))
+            owned_ships = int(parse_numeric_value(owned_ships_raw))
+            owned_share = float(parse_numeric_value(owned_share_raw))
+
+            chartered_teu = int(parse_numeric_value(chartered_teu_raw))
+            chartered_ships = int(parse_numeric_value(chartered_ships_raw))
+            chartered_share = float(parse_numeric_value(chartered_share_raw))
+
+            orderbook_teu = int(parse_numeric_value(orderbook_teu_raw))
+            orderbook_ships = int(parse_numeric_value(orderbook_ships_raw))
+            orderbook_share = float(parse_numeric_value(orderbook_share_raw))
+
+            # -------------------------------------------------
+            # Chartered fallback
+            # 원본 Chartered 필드가 없을 때만 Total - Owned로 계산.
+            # 실제 값 0이 명시되어 있는 경우는 유지.
+            # -------------------------------------------------
+            if (
+                not chartered_teu_found
+                and total_teu > 0
+                and owned_teu_found
+            ):
+                chartered_teu = max(total_teu - owned_teu, 0)
+
+            if (
+                not chartered_ships_found
+                and total_ships > 0
+                and owned_ships_found
+            ):
+                chartered_ships = max(total_ships - owned_ships, 0)
+
+            # 반대로 Owned 필드가 없고 Chartered만 확보된 경우 보정
+            if (
+                not owned_teu_found
+                and total_teu > 0
+                and chartered_teu_found
+            ):
+                owned_teu = max(total_teu - chartered_teu, 0)
+
+            if (
+                not owned_ships_found
+                and total_ships > 0
+                and chartered_ships_found
+            ):
+                owned_ships = max(total_ships - chartered_ships, 0)
+
+            # 비율값은 원본 필드가 없을 경우에만 TEU 기준으로 계산
+            if not owned_share_found and total_teu > 0:
+                owned_share = safe_percent(owned_teu, total_teu)
+
+            if not chartered_share_found and total_teu > 0:
+                chartered_share = safe_percent(chartered_teu, total_teu)
+
+            if not market_share_found and total_teu > 0:
+                market_share = 0.0
+
+            if not orderbook_share_found and total_teu > 0:
+                orderbook_share = safe_percent(orderbook_teu, total_teu)
+
+            # 총 TEU가 없는 레코드는 다른 Grid/비정상 행일 수 있으므로 제외
+            if total_teu <= 0:
+                logger.warning(
+                    "Skipped invalid operator row: index=%s, "
+                    "rank=%s, operator=%s, total_teu=%s",
+                    idx,
+                    rank,
+                    operator_name,
+                    total_teu,
+                )
+                continue
+
+            if idx == 1:
+                logger.info(
+                    "First raw ExtJS record: %s",
+                    json.dumps(record, ensure_ascii=False, default=str),
+                )
+
+                logger.info(
+                    "First record field mapping: %s",
+                    json.dumps({
+                        "rank": rank_key,
+                        "operator": name_key,
+                        "total_teu": total_teu_key,
+                        "total_ships": total_ships_key,
+                        "market_share": market_share_key,
+                        "owned_teu": owned_teu_key,
+                        "owned_ships": owned_ships_key,
+                        "owned_share": owned_share_key,
+                        "chartered_teu": chartered_teu_key,
+                        "chartered_ships": chartered_ships_key,
+                        "chartered_share": chartered_share_key,
+                        "orderbook_teu": orderbook_teu_key,
+                        "orderbook_ships": orderbook_ships_key,
+                        "orderbook_share": orderbook_share_key,
+                    }, ensure_ascii=False),
+                )
+
+                logger.info(
+                    "First record resolved values: %s",
+                    json.dumps({
+                        "rank": rank,
+                        "operator": operator_name,
+                        "total_teu": total_teu,
+                        "total_ships": total_ships,
+                        "owned_teu": owned_teu,
+                        "owned_ships": owned_ships,
+                        "owned_share": owned_share,
+                        "chartered_teu": chartered_teu,
+                        "chartered_ships": chartered_ships,
+                        "chartered_share": chartered_share,
+                        "orderbook_teu": orderbook_teu,
+                        "orderbook_ships": orderbook_ships,
+                        "orderbook_share": orderbook_share,
+                    }, ensure_ascii=False),
+                )
 
             orderbook_total_teu += orderbook_teu
 
@@ -579,7 +944,7 @@ def crawl_alphaliner():
                 "chartered_share": chartered_share,
                 "orderbook_teu": orderbook_teu,
                 "orderbook_ships": orderbook_ships,
-                "orderbook_share": orderbook_share
+                "orderbook_share": orderbook_share,
             })
 
         operators = sorted(operators, key=lambda item: item["rank"])
@@ -591,34 +956,67 @@ def crawl_alphaliner():
                 f"expected >= {MIN_EXPECTED_OPERATOR_COUNT}."
             )
 
-        top100_teu = sum(operator["total_teu"] for operator in operators)
-        top100_ships = sum(operator["total_ships"] for operator in operators)
-        top10_teu = sum(operator["total_teu"] for operator in operators[:10])
+        chartered_operator_count = sum(
+            1 for op in operators
+            if op["chartered_teu"] > 0
+        )
+
+        logger.info(
+            "Chartered fleet validation: %s / %s operators have "
+            "non-zero Chartered TEU.",
+            chartered_operator_count,
+            len(operators),
+        )
+
+        if chartered_operator_count == 0:
+            logger.warning(
+                "All Chartered TEU values are zero. "
+                "Review the 'First raw ExtJS record' and "
+                "'First record field mapping' GitHub Actions logs."
+            )
+
+        top100_teu = sum(op["total_teu"] for op in operators)
+        top100_ships = sum(op["total_ships"] for op in operators)
+        top10_teu = sum(op["total_teu"] for op in operators[:10])
 
         raw_text = data.get("rawText", "")
 
-        global_teu_match = re.search(r"Total:\s*([\d,]+)\s*TEU", raw_text)
-        global_ships_match = re.search(r"Total:\s*[\d,]+\s*TEU\s*\(\s*([\d,]+)\s*Ships\)", raw_text)
+        global_teu_match = re.search(
+            r"Total:\s*([\d,]+)\s*TEU",
+            raw_text,
+            flags=re.IGNORECASE,
+        )
+
+        global_ships_match = re.search(
+            r"Total:\s*[\d,]+\s*TEU\s*\(\s*([\d,]+)\s*Ships\)",
+            raw_text,
+            flags=re.IGNORECASE,
+        )
 
         global_total_teu = (
             int(re.sub(r"[^\d]", "", global_teu_match.group(1)))
             if global_teu_match
-            else int(top100_teu / 0.95) if top100_teu > 0 else 0
+            else int(top100_teu / 0.95)
+            if top100_teu > 0
+            else 0
         )
 
         global_total_ships = (
             int(re.sub(r"[^\d]", "", global_ships_match.group(1)))
             if global_ships_match
-            else int(top100_ships / 0.90) if top100_ships > 0 else 0
+            else int(top100_ships / 0.90)
+            if top100_ships > 0
+            else 0
         )
 
-        top10_share = round(
-            (top10_teu / global_total_teu * 100),
-            2
-        ) if global_total_teu > 0 else 0.0
+        top10_share = (
+            round((top10_teu / global_total_teu) * 100, 2)
+            if global_total_teu > 0
+            else 0.0
+        )
 
         meta = {
-            "snapshot_date": today_str,
+            "snapshot_date": snapshot_date,
             "global_total_teu": global_total_teu,
             "global_total_ships": global_total_ships,
             "top100_total_teu": top100_teu,
@@ -626,19 +1024,24 @@ def crawl_alphaliner():
             "top10_total_teu": top10_teu,
             "top10_share": top10_share,
             "orderbook_total_teu": orderbook_total_teu,
-            "collected_at": datetime.now().isoformat()
+            "collected_at": datetime.now().isoformat(),
         }
 
         save_snapshot_to_db(meta, operators)
 
         logger.info(
             "Crawl completed successfully: %s operators processed.",
-            len(operators)
+            len(operators),
         )
+
         return True
 
     except Exception as exc:
-        logger.error("Alphaliner crawl failed: %s", exc, exc_info=True)
+        logger.error(
+            "Alphaliner crawl failed: %s",
+            exc,
+            exc_info=True,
+        )
         return False
 
     finally:
@@ -649,375 +1052,184 @@ def crawl_alphaliner():
                 pass
 
 # =========================================================
-# 4. Bloomberg MI Terminal HTML Template
+# 4. Dashboard HTML
 # =========================================================
+# 기존에 사용 중인 HTML_TEMPLATE은 그대로 유지하십시오.
+# 아래 템플릿은 별도 변경이 필요 없으며,
+# 기존 Bloomberg MI Terminal HTML_TEMPLATE 전체를 이 위치에 유지하면 됩니다.
+
 HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Alphaliner TOP 100 Liner Operators | Bloomberg MI Terminal</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
 <style>
 :root {
-  --bg-primary: #02060b;
-  --bg-secondary: #07111c;
-  --bg-tertiary: #0d1d2b;
-  --border-subtle: #1b3043;
-  --border-focus: #29445c;
-  --text-main: #f3f7fb;
-  --text-muted: #879caf;
-  --text-dim: #536c80;
-  --accent-orange: #f6a623;
-  --accent-blue: #45a9f5;
-  --accent-green: #36ca82;
-  --accent-red: #ff6262;
-  --accent-purple: #bb86fc;
-  --font-mono: 'JetBrains Mono', monospace;
-  --font-sans: 'Inter', sans-serif;
+  --bg-primary:#02060b;
+  --bg-secondary:#07111c;
+  --bg-tertiary:#0d1d2b;
+  --border-subtle:#1b3043;
+  --text-main:#f3f7fb;
+  --text-muted:#879caf;
+  --text-dim:#536c80;
+  --accent-orange:#f6a623;
+  --accent-blue:#45a9f5;
+  --accent-green:#36ca82;
+  --accent-red:#ff6262;
+  --accent-purple:#bb86fc;
 }
-
-* { box-sizing: border-box; margin: 0; padding: 0; }
-
+* { box-sizing:border-box; margin:0; padding:0; }
 body {
-  background-color: var(--bg-primary);
-  color: var(--text-main);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.4;
-  overflow-x: hidden;
+  background:var(--bg-primary);
+  color:var(--text-main);
+  font-family:Arial, sans-serif;
+  font-size:13px;
 }
-
 .terminal-header {
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-subtle);
-  padding: 8px 16px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  padding:8px 16px;
+  background:var(--bg-secondary);
+  border-bottom:1px solid var(--border-subtle);
 }
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
 .brand-tag {
-  background: var(--accent-orange);
-  color: #000;
-  font-weight: 700;
-  font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 2px;
-  font-family: var(--font-mono);
+  display:inline-block;
+  padding:2px 6px;
+  margin-right:12px;
+  font-weight:700;
+  font-size:11px;
+  color:#000;
+  background:var(--accent-orange);
 }
-
-.brand-title {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
+.brand-title { font-weight:600; text-transform:uppercase; }
+.terminal-controls { display:flex; align-items:center; gap:10px; }
+select, input, button {
+  padding:5px 8px;
+  color:var(--text-main);
+  background:var(--bg-tertiary);
+  border:1px solid var(--border-subtle);
 }
-
-.terminal-controls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.select-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-select,
-input[type="text"] {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-main);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 2px;
-  outline: none;
-}
-
-select:focus,
-input[type="text"]:focus {
-  border-color: var(--accent-blue);
-}
-
-.btn {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-main);
-  padding: 4px 10px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  cursor: pointer;
-  border-radius: 2px;
-  transition: all 0.15s ease;
-}
-
-.btn:hover {
-  background: var(--border-subtle);
-  border-color: var(--border-focus);
-}
-
-.btn-primary {
-  background: rgba(246, 166, 35, 0.15);
-  border-color: var(--accent-orange);
-  color: var(--accent-orange);
-}
-
-.btn-primary:hover {
-  background: var(--accent-orange);
-  color: #000;
-}
-
+button { cursor:pointer; color:var(--accent-orange); }
 .container {
-  padding: 16px;
-  max-width: 1920px;
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  gap: 12px;
+  display:grid;
+  grid-template-columns:repeat(12, 1fr);
+  gap:12px;
+  max-width:1920px;
+  padding:16px;
+  margin:0 auto;
 }
-
 .panel {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 2px;
-  display: flex;
-  flex-direction: column;
+  background:var(--bg-secondary);
+  border:1px solid var(--border-subtle);
 }
-
-.panel-header {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border-subtle);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.panel-header, .table-toolbar {
+  display:flex;
+  justify-content:space-between;
+  padding:8px 12px;
+  border-bottom:1px solid var(--border-subtle);
+  font-size:11px;
+  font-weight:700;
 }
-
-.panel-body {
-  padding: 12px;
-  flex: 1;
-}
-
-.col-kpi {
-  grid-column: span 3;
-}
-
-.kpi-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.kpi-title {
-  font-size: 11px;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  font-family: var(--font-mono);
-}
-
-.kpi-value {
-  font-size: 22px;
-  font-weight: 700;
-  font-family: var(--font-mono);
-  color: var(--text-main);
-}
-
-.kpi-sub {
-  font-size: 11px;
-  font-family: var(--font-mono);
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.col-chart {
-  grid-column: span 12;
-  height: 280px;
-}
-
-.col-table {
-  grid-column: span 12;
-}
-
-.table-toolbar {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border-subtle);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.table-container {
-  overflow-x: auto;
-  max-height: 600px;
-}
-
+.panel-body { padding:12px; }
+.col-kpi { grid-column:span 3; }
+.col-chart { grid-column:span 12; height:280px; }
+.col-table { grid-column:span 12; }
+.kpi-title { color:var(--text-dim); font-size:11px; }
+.kpi-value { margin:5px 0; font-size:22px; font-weight:700; }
+.kpi-sub { color:var(--text-muted); font-size:11px; }
+.table-container { overflow:auto; max-height:600px; }
 table {
-  width: 100%;
-  border-collapse: collapse;
-  font-family: var(--font-mono);
-  font-size: 12px;
+  width:100%;
+  border-collapse:collapse;
+  font-family:monospace;
+  font-size:12px;
 }
-
 th, td {
-  padding: 6px 10px;
-  text-align: right;
-  border-bottom: 1px solid var(--border-subtle);
-  white-space: nowrap;
+  padding:6px 10px;
+  text-align:right;
+  white-space:nowrap;
+  border-bottom:1px solid var(--border-subtle);
 }
-
 th {
-  background: var(--bg-tertiary);
-  color: var(--text-muted);
-  font-weight: 600;
-  text-transform: uppercase;
-  font-size: 11px;
-  position: sticky;
-  top: 0;
-  z-index: 10;
+  position:sticky;
+  top:0;
+  z-index:2;
+  color:var(--text-muted);
+  background:var(--bg-tertiary);
 }
-
-th.group-header {
-  text-align: center;
-  border-left: 1px solid var(--border-subtle);
-  border-right: 1px solid var(--border-subtle);
-}
-
-.border-left {
-  border-left: 1px solid var(--border-subtle);
-}
-
-tr:hover td {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-td.align-left, th.align-left { text-align: left; }
-td.align-center, th.align-center { text-align: center; }
-
-.rank-badge {
-  display: inline-block;
-  width: 24px;
-  text-align: center;
-  font-weight: 700;
-  color: var(--text-muted);
-}
-
-.rank-top10 {
-  color: var(--accent-orange);
-}
-
-.delta-pos { color: var(--accent-green); }
-.delta-neg { color: var(--accent-red); }
-.delta-inline { font-size: 10px; margin-left: 4px; }
-
+.align-left { text-align:left; }
+.align-center { text-align:center; }
+.border-left { border-left:1px solid var(--border-subtle); }
+.group-header { text-align:center; }
+.delta-pos { color:var(--accent-green); }
+.delta-neg { color:var(--accent-red); }
+.rank-top10 { color:var(--accent-orange); font-weight:700; }
 .footer-status {
-  padding: 12px 16px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-dim);
-  display: flex;
-  justify-content: space-between;
-  border-top: 1px solid var(--border-subtle);
-  background: var(--bg-secondary);
-  margin-top: 20px;
+  display:flex;
+  justify-content:space-between;
+  padding:12px 16px;
+  color:var(--text-dim);
+  background:var(--bg-secondary);
+  border-top:1px solid var(--border-subtle);
+  font-size:11px;
 }
 </style>
 </head>
 <body>
-
 <header class="terminal-header">
-  <div class="brand">
+  <div>
     <span class="brand-tag">ALPHALINER</span>
     <span class="brand-title">TOP 100 Global Liner Operators Terminal</span>
   </div>
-
   <div class="terminal-controls">
-    <div class="select-wrapper">
-      <label for="dateSelect">SNAPSHOT:</label>
-      <select id="dateSelect" onchange="changeSnapshot()"></select>
-    </div>
-
-    <div class="select-wrapper">
-      <label for="compareSelect">COMPARE TO:</label>
-      <select id="compareSelect" onchange="recalculateDeltas()"></select>
-    </div>
-
-    <button class="btn btn-primary" onclick="exportCSV()">EXPORT CSV</button>
+    <label>SNAPSHOT:
+      <select id="dateSelect" onchange="renderAll()"></select>
+    </label>
+    <label>COMPARE TO:
+      <select id="compareSelect" onchange="renderAll()"></select>
+    </label>
+    <button onclick="exportCSV()">EXPORT CSV</button>
   </div>
 </header>
 
 <main class="container">
   <section class="panel col-kpi">
-    <div class="panel-header"><span>GLOBAL CAPACITY</span></div>
-    <div class="panel-body kpi-card">
+    <div class="panel-header">GLOBAL CAPACITY</div>
+    <div class="panel-body">
       <div class="kpi-title">TOTAL FLEET TEU</div>
       <div class="kpi-value" id="kpiGlobalTeu">--</div>
-      <div class="kpi-sub">
-        <span id="kpiGlobalShips">-- Ships</span>
-        <span id="deltaGlobalTeu" class="delta-inline"></span>
-      </div>
+      <div class="kpi-sub" id="kpiGlobalShips">-- Ships</div>
     </div>
   </section>
 
   <section class="panel col-kpi">
-    <div class="panel-header"><span>TOP 100 SHARE</span></div>
-    <div class="panel-body kpi-card">
+    <div class="panel-header">TOP 100 SHARE</div>
+    <div class="panel-body">
       <div class="kpi-title">TOP 100 TOTAL TEU</div>
       <div class="kpi-value" id="kpiTop100Teu">--</div>
-      <div class="kpi-sub">
-        <span id="kpiTop100Ships">-- Ships</span>
-        <span id="deltaTop100Teu" class="delta-inline"></span>
-      </div>
+      <div class="kpi-sub" id="kpiTop100Ships">-- Ships</div>
     </div>
   </section>
 
   <section class="panel col-kpi">
-    <div class="panel-header"><span>CONCENTRATION</span></div>
-    <div class="panel-body kpi-card">
+    <div class="panel-header">CONCENTRATION</div>
+    <div class="panel-body">
       <div class="kpi-title">TOP 10 MARKET SHARE</div>
-      <div class="kpi-value" id="kpiTop10Share" style="color: var(--accent-orange);">--</div>
-      <div class="kpi-sub">
-        <span id="kpiTop10Teu">-- TEU</span>
-        <span id="deltaTop10Share" class="delta-inline"></span>
-      </div>
+      <div class="kpi-value" id="kpiTop10Share">--</div>
+      <div class="kpi-sub" id="kpiTop10Teu">-- TEU</div>
     </div>
   </section>
 
   <section class="panel col-kpi">
-    <div class="panel-header"><span>ORDERBOOK</span></div>
-    <div class="panel-body kpi-card">
+    <div class="panel-header">ORDERBOOK</div>
+    <div class="panel-body">
       <div class="kpi-title">PIPELINE CAPACITY</div>
-      <div class="kpi-value" id="kpiOrderbookTeu" style="color: var(--accent-purple);">--</div>
-      <div class="kpi-sub">
-        <span id="kpiOrderbookRatio">-- % of active</span>
-        <span id="deltaOrderbookTeu" class="delta-inline"></span>
-      </div>
+      <div class="kpi-value" id="kpiOrderbookTeu">--</div>
+      <div class="kpi-sub" id="kpiOrderbookRatio">-- % of active</div>
     </div>
   </section>
 
@@ -1026,20 +1238,22 @@ td.align-center, th.align-center { text-align: center; }
       <span>TOP 10 OPERATOR CAPACITY PROFILE (TEU)</span>
       <span id="chartSubTitle">--</span>
     </div>
-    <div class="panel-body" style="position: relative;">
+    <div class="panel-body" style="height:240px;">
       <canvas id="topChart"></canvas>
     </div>
   </section>
 
   <section class="panel col-table">
     <div class="table-toolbar">
-      <div style="font-weight: 600; font-family: var(--font-mono); font-size: 11px;">
-        TOP 100 DETAILED FLEET BREAKDOWN
-      </div>
-      <div>
-        <input type="text" id="filterInput" placeholder="Filter operator..." onkeyup="filterTable()">
-      </div>
+      <span>TOP 100 DETAILED FLEET BREAKDOWN</span>
+      <input
+        id="filterInput"
+        type="text"
+        placeholder="Filter operator..."
+        onkeyup="filterTable()"
+      >
     </div>
+
     <div class="table-container">
       <table>
         <thead>
@@ -1073,7 +1287,11 @@ td.align-center, th.align-center { text-align: center; }
 </main>
 
 <footer class="footer-status">
-  <div>SYSTEM STATUS: <span style="color: var(--accent-green);">ONLINE</span> | SOURCE: ALPHALINER PUBLIC TOP 100</div>
+  <div>
+    SYSTEM STATUS:
+    <span style="color:var(--accent-green);">ONLINE</span>
+    | SOURCE: ALPHALINER PUBLIC TOP 100
+  </div>
   <div id="collectedTimestamp">DATA COLLECTED: --</div>
 </footer>
 
@@ -1081,66 +1299,50 @@ td.align-center, th.align-center { text-align: center; }
 let DATA_STORE = { dates: [], snapshots: {} };
 let currentChart = null;
 
-function fmt(n) {
-  if (n === null || n === undefined || isNaN(n)) return "--";
-  return Number(n).toLocaleString();
-}
-
-function fmtDelta(val, isPercent = false) {
-  if (val === null || val === undefined || isNaN(val) || val === 0) return "";
-  const sign = val > 0 ? "+" : "";
-  const cls = val > 0 ? "delta-pos" : "delta-neg";
-  const formatted = isPercent ? val.toFixed(1) + "%" : fmt(val);
-  return `<span class="${cls}">(${sign}${formatted})</span>`;
+function fmt(value) {
+  if (value === null || value === undefined || isNaN(value)) return "--";
+  return Number(value).toLocaleString();
 }
 
 async function initDashboard() {
-  try {
-    const res = await fetch("alphaliner_data.json");
-    if (!res.ok) throw new Error("Failed to load JSON dataset");
-    DATA_STORE = await res.json();
+  const response = await fetch("alphaliner_data.json");
 
-    if (!DATA_STORE.dates || DATA_STORE.dates.length === 0) {
-      document.body.innerHTML = "<div style='color:white;padding:40px;font-family:monospace;'>No snapshot data available. Run crawler first.</div>";
-      return;
-    }
-
-    populateDropdowns();
-    renderAll();
-  } catch (err) {
-    console.error("Initialization error:", err);
+  if (!response.ok) {
+    throw new Error("Failed to load alphaliner_data.json");
   }
-}
 
-function populateDropdowns() {
-  const dateSel = document.getElementById("dateSelect");
-  const compSel = document.getElementById("compareSelect");
+  DATA_STORE = await response.json();
 
-  dateSel.innerHTML = "";
-  compSel.innerHTML = '<option value="none">None (Latest Only)</option>';
+  if (!DATA_STORE.dates || DATA_STORE.dates.length === 0) {
+    return;
+  }
 
-  DATA_STORE.dates.forEach((dt, idx) => {
-    const opt = document.createElement("option");
-    opt.value = dt;
-    opt.innerText = dt + (idx === 0 ? " (Latest)" : "");
-    dateSel.appendChild(opt);
+  const dateSelect = document.getElementById("dateSelect");
+  const compareSelect = document.getElementById("compareSelect");
 
-    const compOpt = document.createElement("option");
-    compOpt.value = dt;
-    compOpt.innerText = dt;
-    compSel.appendChild(compOpt);
+  DATA_STORE.dates.forEach((date, index) => {
+    const dateOption = document.createElement("option");
+    dateOption.value = date;
+    dateOption.textContent = date + (index === 0 ? " (Latest)" : "");
+    dateSelect.appendChild(dateOption);
+
+    const compareOption = document.createElement("option");
+    compareOption.value = date;
+    compareOption.textContent = date;
+    compareSelect.appendChild(compareOption);
   });
 
+  const noneOption = document.createElement("option");
+  noneOption.value = "none";
+  noneOption.textContent = "None";
+  compareSelect.insertBefore(noneOption, compareSelect.firstChild);
+
   if (DATA_STORE.dates.length > 1) {
-    compSel.value = DATA_STORE.dates[1];
+    compareSelect.value = DATA_STORE.dates[1];
+  } else {
+    compareSelect.value = "none";
   }
-}
 
-function changeSnapshot() {
-  renderAll();
-}
-
-function recalculateDeltas() {
   renderAll();
 }
 
@@ -1148,150 +1350,154 @@ function renderAll() {
   const activeDate = document.getElementById("dateSelect").value;
   const compareDate = document.getElementById("compareSelect").value;
 
-  if (!DATA_STORE.snapshots[activeDate]) return;
-
-  const currentSnapshot = DATA_STORE.snapshots[activeDate];
-  const compareSnapshot = (compareDate !== "none" && DATA_STORE.snapshots[compareDate])
+  const snapshot = DATA_STORE.snapshots[activeDate];
+  const compareSnapshot = compareDate !== "none"
     ? DATA_STORE.snapshots[compareDate]
     : null;
 
-  renderKPIs(currentSnapshot, compareSnapshot);
-  renderChart(currentSnapshot);
-  renderTable(currentSnapshot, compareSnapshot);
+  if (!snapshot) return;
 
-  document.getElementById("collectedTimestamp").innerText =
-    `DATA COLLECTED: ${currentSnapshot.meta.collected_at || activeDate}`;
-}
+  const meta = snapshot.meta;
 
-function renderKPIs(currentSnapshot, compareSnapshot) {
-  const currentMeta = currentSnapshot.meta;
-  const previousMeta = compareSnapshot ? compareSnapshot.meta : null;
+  document.getElementById("kpiGlobalTeu").textContent =
+    fmt(meta.global_total_teu) + " TEU";
 
-  document.getElementById("kpiGlobalTeu").innerText = `${fmt(currentMeta.global_total_teu)} TEU`;
-  document.getElementById("kpiGlobalShips").innerText = `${fmt(currentMeta.global_total_ships)} Ships`;
-  document.getElementById("deltaGlobalTeu").innerHTML = previousMeta
-    ? fmtDelta(currentMeta.global_total_teu - previousMeta.global_total_teu) + " TEU"
-    : "";
+  document.getElementById("kpiGlobalShips").textContent =
+    fmt(meta.global_total_ships) + " Ships";
 
-  document.getElementById("kpiTop100Teu").innerText = `${fmt(currentMeta.top100_total_teu)} TEU`;
-  document.getElementById("kpiTop100Ships").innerText = `${fmt(currentMeta.top100_total_ships)} Ships`;
-  document.getElementById("deltaTop100Teu").innerHTML = previousMeta
-    ? fmtDelta(currentMeta.top100_total_teu - previousMeta.top100_total_teu) + " TEU"
-    : "";
+  document.getElementById("kpiTop100Teu").textContent =
+    fmt(meta.top100_total_teu) + " TEU";
 
-  document.getElementById("kpiTop10Share").innerText = `${currentMeta.top10_share ? currentMeta.top10_share.toFixed(1) : "0.0"} %`;
-  document.getElementById("kpiTop10Teu").innerText = `${fmt(currentMeta.top10_total_teu)} TEU`;
-  document.getElementById("deltaTop10Share").innerHTML = previousMeta
-    ? fmtDelta(currentMeta.top10_share - previousMeta.top10_share, true)
-    : "";
+  document.getElementById("kpiTop100Ships").textContent =
+    fmt(meta.top100_total_ships) + " Ships";
 
-  document.getElementById("kpiOrderbookTeu").innerText = `${fmt(currentMeta.orderbook_total_teu)} TEU`;
-  const orderbookRatio = currentMeta.top100_total_teu > 0
-    ? ((currentMeta.orderbook_total_teu / currentMeta.top100_total_teu) * 100).toFixed(1)
+  document.getElementById("kpiTop10Share").textContent =
+    Number(meta.top10_share || 0).toFixed(1) + "%";
+
+  document.getElementById("kpiTop10Teu").textContent =
+    fmt(meta.top10_total_teu) + " TEU";
+
+  document.getElementById("kpiOrderbookTeu").textContent =
+    fmt(meta.orderbook_total_teu) + " TEU";
+
+  const ratio = meta.top100_total_teu > 0
+    ? ((meta.orderbook_total_teu / meta.top100_total_teu) * 100).toFixed(1)
     : "0.0";
-  document.getElementById("kpiOrderbookRatio").innerText = `${orderbookRatio} % of active`;
-  document.getElementById("deltaOrderbookTeu").innerHTML = previousMeta
-    ? fmtDelta(currentMeta.orderbook_total_teu - previousMeta.orderbook_total_teu) + " TEU"
-    : "";
+
+  document.getElementById("kpiOrderbookRatio").textContent =
+    ratio + "% of active";
+
+  document.getElementById("collectedTimestamp").textContent =
+    "DATA COLLECTED: " + (meta.collected_at || activeDate);
+
+  renderChart(snapshot);
+  renderTable(snapshot, compareSnapshot);
 }
 
 function renderChart(snapshot) {
   const top10 = snapshot.operators.slice(0, 10);
-  const labels = top10.map(op => `${op.rank}. ${op.operator}`);
-  const owned = top10.map(op => op.owned_teu);
-  const chartered = top10.map(op => op.chartered_teu);
-  const orderbook = top10.map(op => op.orderbook_teu);
-
-  document.getElementById("chartSubTitle").innerText = `AS OF ${snapshot.meta.snapshot_date}`;
 
   if (currentChart) {
     currentChart.destroy();
   }
 
-  const context = document.getElementById("topChart").getContext("2d");
-  currentChart = new Chart(context, {
-    type: "bar",
-    data: {
-      labels: labels,
-      datasets: [
-        { label: "Owned TEU", data: owned, backgroundColor: "#45a9f5", stack: "active" },
-        { label: "Chartered TEU", data: chartered, backgroundColor: "#f6a623", stack: "active" },
-        {
-          label: "Orderbook TEU",
-          data: orderbook,
-          backgroundColor: "rgba(187, 134, 252, 0.4)",
-          borderColor: "#bb86fc",
-          borderWidth: 1,
-          stack: "orderbook"
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: "top",
-          labels: { color: "#879caf", font: { family: "JetBrains Mono", size: 11 } }
-        }
-      },
-      scales: {
-        x: {
-          stacked: true,
-          ticks: { color: "#879caf", font: { family: "JetBrains Mono", size: 10 } },
-          grid: { color: "rgba(27, 48, 67, 0.5)" }
-        },
-        y: {
-          stacked: true,
-          ticks: {
-            color: "#879caf",
-            font: { family: "JetBrains Mono", size: 10 },
-            callback: v => (v / 1000000).toFixed(1) + "M"
+  currentChart = new Chart(
+    document.getElementById("topChart"),
+    {
+      type: "bar",
+      data: {
+        labels: top10.map(op => op.rank + ". " + op.operator),
+        datasets: [
+          {
+            label: "Owned TEU",
+            data: top10.map(op => op.owned_teu),
+            backgroundColor: "#45a9f5",
+            stack: "active"
           },
-          grid: { color: "rgba(27, 48, 67, 0.5)" }
+          {
+            label: "Chartered TEU",
+            data: top10.map(op => op.chartered_teu),
+            backgroundColor: "#f6a623",
+            stack: "active"
+          },
+          {
+            label: "Orderbook TEU",
+            data: top10.map(op => op.orderbook_teu),
+            backgroundColor: "rgba(187,134,252,.45)",
+            borderColor: "#bb86fc",
+            borderWidth: 1,
+            stack: "orderbook"
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: { color: "#879caf" }
+          }
+        },
+        scales: {
+          x: {
+            stacked: true,
+            ticks: { color: "#879caf" },
+            grid: { color: "rgba(27,48,67,.5)" }
+          },
+          y: {
+            stacked: true,
+            ticks: {
+              color: "#879caf",
+              callback: value => (value / 1000000).toFixed(1) + "M"
+            },
+            grid: { color: "rgba(27,48,67,.5)" }
+          }
         }
       }
     }
-  });
+  );
+
+  document.getElementById("chartSubTitle").textContent =
+    "AS OF " + snapshot.meta.snapshot_date;
 }
 
-function renderTable(currentSnapshot, compareSnapshot) {
-  const tableBody = document.getElementById("tableBody");
-  tableBody.innerHTML = "";
+function renderTable(snapshot, compareSnapshot) {
+  const body = document.getElementById("tableBody");
+  body.innerHTML = "";
 
   const compareMap = {};
+
   if (compareSnapshot && compareSnapshot.operators) {
     compareSnapshot.operators.forEach(op => {
       compareMap[op.operator.toLowerCase()] = op;
     });
   }
 
-  currentSnapshot.operators.forEach(op => {
-    const prev = compareMap[op.operator.toLowerCase()];
+  snapshot.operators.forEach(op => {
     const row = document.createElement("tr");
+    const previous = compareMap[op.operator.toLowerCase()];
 
     let rankDelta = "";
-    let teuDelta = "";
-    let shipsDelta = "";
 
-    if (prev) {
-      const diff = prev.rank - op.rank;
-      if (diff !== 0) {
-        const cls = diff > 0 ? "delta-pos" : "delta-neg";
-        const sym = diff > 0 ? "▲" : "▼";
-        rankDelta = `<span class="${cls} delta-inline">${sym}${Math.abs(diff)}</span>`;
-      }
-      teuDelta = `<div class="delta-inline">${fmtDelta(op.total_teu - prev.total_teu)}</div>`;
-      shipsDelta = `<div class="delta-inline">${fmtDelta(op.total_ships - prev.total_ships)}</div>`;
+    if (previous && previous.rank !== op.rank) {
+      const diff = previous.rank - op.rank;
+      const cssClass = diff > 0 ? "delta-pos" : "delta-neg";
+      const arrow = diff > 0 ? "▲" : "▼";
+
+      rankDelta =
+        `<span class="${cssClass}"> ${arrow}${Math.abs(diff)}</span>`;
     }
 
-    const rankClass = op.rank <= 10 ? "rank-badge rank-top10" : "rank-badge";
-
     row.innerHTML = `
-      <td class="align-center"><span class="${rankClass}">${op.rank}</span>${rankDelta}</td>
-      <td class="align-left" style="font-weight: 600;">${op.operator}</td>
-      <td><strong>${fmt(op.total_teu)}</strong>${teuDelta}</td>
-      <td>${fmt(op.total_ships)}${shipsDelta}</td>
+      <td class="align-center">
+        <span class="${op.rank <= 10 ? "rank-top10" : ""}">
+          ${op.rank}
+        </span>
+        ${rankDelta}
+      </td>
+      <td class="align-left"><strong>${op.operator}</strong></td>
+      <td><strong>${fmt(op.total_teu)}</strong></td>
+      <td>${fmt(op.total_ships)}</td>
       <td>${Number(op.market_share || 0).toFixed(1)}%</td>
       <td class="border-left">${fmt(op.owned_teu)}</td>
       <td>${fmt(op.owned_ships)}</td>
@@ -1299,44 +1505,79 @@ function renderTable(currentSnapshot, compareSnapshot) {
       <td class="border-left">${fmt(op.chartered_teu)}</td>
       <td>${fmt(op.chartered_ships)}</td>
       <td>${Number(op.chartered_share || 0).toFixed(1)}%</td>
-      <td class="border-left" style="color: var(--accent-purple);">${fmt(op.orderbook_teu)}</td>
-      <td style="color: var(--accent-purple);">${fmt(op.orderbook_ships)}</td>
-      <td style="color: var(--accent-purple);">${Number(op.orderbook_share || 0).toFixed(1)}%</td>
+      <td class="border-left">${fmt(op.orderbook_teu)}</td>
+      <td>${fmt(op.orderbook_ships)}</td>
+      <td>${Number(op.orderbook_share || 0).toFixed(1)}%</td>
     `;
-    tableBody.appendChild(row);
+
+    body.appendChild(row);
   });
 }
 
 function filterTable() {
-  const query = document.getElementById("filterInput").value.toLowerCase();
-  const rows = document.querySelectorAll("#tableBody tr");
-  rows.forEach(row => {
-    const op = row.cells[1].innerText.toLowerCase();
-    row.style.display = op.includes(query) ? "" : "none";
+  const query = document
+    .getElementById("filterInput")
+    .value
+    .toLowerCase();
+
+  document.querySelectorAll("#tableBody tr").forEach(row => {
+    const operator = row.cells[1].innerText.toLowerCase();
+    row.style.display = operator.includes(query) ? "" : "none";
   });
 }
 
 function exportCSV() {
   const activeDate = document.getElementById("dateSelect").value;
-  if (!DATA_STORE || !DATA_STORE.snapshots[activeDate]) return;
-
   const snapshot = DATA_STORE.snapshots[activeDate];
-  let csv = "\uFEFFRank,Operator,Total TEU,Total Ships,Market Share %,Owned TEU,Owned Ships,Owned Share %,Chartered TEU,Chartered Ships,Chartered Share %,Orderbook TEU,Orderbook Ships,Orderbook % of Fleet\n";
+
+  if (!snapshot) return;
+
+  let csv =
+    "\uFEFFRank,Operator,Total TEU,Total Ships,Market Share %,Owned TEU,"
+    + "Owned Ships,Owned Share %,Chartered TEU,Chartered Ships,"
+    + "Chartered Share %,Orderbook TEU,Orderbook Ships,"
+    + "Orderbook % of Fleet\n";
 
   snapshot.operators.forEach(op => {
-    csv += `"${op.rank}","${op.operator.replace(/"/g, '""')}",${op.total_teu},${op.total_ships},${op.market_share},${op.owned_teu},${op.owned_ships},${op.owned_share},${op.chartered_teu},${op.chartered_ships},${op.chartered_share},${op.orderbook_teu},${op.orderbook_ships},${op.orderbook_share}\n`;
+    const escapedName = String(op.operator).replace(/"/g, '""');
+
+    csv += [
+      op.rank,
+      `"${escapedName}"`,
+      op.total_teu,
+      op.total_ships,
+      op.market_share,
+      op.owned_teu,
+      op.owned_ships,
+      op.owned_share,
+      op.chartered_teu,
+      op.chartered_ships,
+      op.chartered_share,
+      op.orderbook_teu,
+      op.orderbook_ships,
+      op.orderbook_share
+    ].join(",") + "\n";
   });
 
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob(
+    [csv],
+    { type: "text/csv;charset=utf-8;" }
+  );
+
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.setAttribute("download", `Alphaliner_TOP100_${activeDate}.csv`);
+  link.download = "Alphaliner_TOP100_" + activeDate + ".csv";
+
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
 }
 
-document.addEventListener("DOMContentLoaded", initDashboard);
+document.addEventListener("DOMContentLoaded", () => {
+  initDashboard().catch(error => {
+    console.error("Dashboard initialization failed:", error);
+  });
+});
 </script>
 </body>
 </html>
@@ -1356,7 +1597,12 @@ def generate_static_files():
         return False
 
     with open(JSON_PATH, "w", encoding="utf-8") as file:
-        json.dump(data, file, ensure_ascii=False, indent=2)
+        json.dump(
+            data,
+            file,
+            ensure_ascii=False,
+            indent=2,
+        )
 
     logger.info("Generated static data JSON: %s", JSON_PATH)
 
@@ -1364,6 +1610,7 @@ def generate_static_files():
         file.write(HTML_TEMPLATE)
 
     logger.info("Generated static HTML dashboard: %s", HTML_PATH)
+
     return True
 
 # =========================================================
@@ -1373,12 +1620,14 @@ def generate_static_files():
 def index():
     if not HTML_PATH.exists():
         generate_static_files()
+
     return send_from_directory(BASE_DIR, "index.html")
 
 @app.route("/alphaliner_data.json")
 def get_json():
     if not JSON_PATH.exists():
         generate_static_files()
+
     return send_from_directory(BASE_DIR, "alphaliner_data.json")
 
 @app.route("/api/snapshots")
@@ -1392,12 +1641,13 @@ def api_crawl():
     if not crawl_success:
         if has_existing_data_in_db():
             generate_static_files()
+
             return jsonify({
                 "status": "fallback",
                 "message": (
                     "Live crawl failed, but static artifacts were rebuilt "
                     "from the existing historical database."
-                )
+                ),
             }), 200
 
         return jsonify({
@@ -1405,13 +1655,14 @@ def api_crawl():
             "message": (
                 "Crawler failed and no usable historical snapshot exists "
                 "for fallback dashboard generation."
-            )
+            ),
         }), 502
 
     generate_static_files()
+
     return jsonify({
         "status": "success",
-        "message": "Crawler executed and static files refreshed."
+        "message": "Crawler executed and static files refreshed.",
     })
 
 # =========================================================
@@ -1425,27 +1676,27 @@ def main():
     parser.add_argument(
         "--no-crawl",
         action="store_true",
-        help="Skip crawling and generate files from DB"
+        help="Skip crawling and generate files from DB",
     )
 
     parser.add_argument(
         "--cron",
         action="store_true",
-        help="Run crawl once, generate static files and exit"
+        help="Run crawl once, generate static files and exit",
     )
 
     parser.add_argument(
         "--port",
         type=int,
         default=8050,
-        help="Port to run Flask server on (default: 8050)"
+        help="Port to run Flask server on (default: 8050)",
     )
 
     parser.add_argument(
         "--host",
         type=str,
         default="0.0.0.0",
-        help="Host IP to bind (default: 0.0.0.0)"
+        help="Host IP to bind (default: 0.0.0.0)",
     )
 
     args = parser.parse_args()
@@ -1461,18 +1712,21 @@ def main():
 
     else:
         logger.info("Executing scheduled crawl routine...")
+
         crawl_success = crawl_alphaliner()
 
         if crawl_success:
             generate_static_files()
+
         else:
             logger.warning(
                 "Live crawler validation failed. "
-                "Attempting static artifact generation from existing database."
+                "Attempting static artifact generation from existing DB."
             )
 
             if has_existing_data_in_db():
                 generate_static_files()
+
                 logger.warning(
                     "Fallback dashboard generation completed using "
                     "the previous valid database snapshot."
@@ -1482,6 +1736,7 @@ def main():
                     "No usable historical database snapshot exists. "
                     "Static files cannot be generated."
                 )
+
                 if args.cron:
                     sys.exit(1)
 
@@ -1490,15 +1745,15 @@ def main():
         return
 
     logger.info(
-        "Starting Bloomberg MI Terminal Server on http://%s:%s",
+        "Starting server on http://%s:%s",
         args.host,
-        args.port
+        args.port,
     )
 
     app.run(
         host=args.host,
         port=args.port,
-        debug=False
+        debug=False,
     )
 
 if __name__ == "__main__":
