@@ -33,7 +33,6 @@ from selenium.common.exceptions import WebDriverException, TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
 
 try:
     from webdriver_manager.chrome import ChromeDriverManager
@@ -694,7 +693,7 @@ document.addEventListener("DOMContentLoaded", () => {
 """
 
 # =========================================================
-# 3. Database Layer (SQLite)
+# 3. Database Layer (SQLite with Auto Migration)
 # =========================================================
 def init_db():
     with db_lock:
@@ -710,10 +709,23 @@ def init_db():
                     top100_total_ships INTEGER NOT NULL,
                     top10_share REAL NOT NULL,
                     orderbook_total_teu INTEGER NOT NULL,
-                    source_url TEXT NOT NULL,
-                    raw_hash TEXT NOT NULL
+                    source_url TEXT,
+                    raw_hash TEXT
                 )
             """)
+
+            # Dynamic migration for existing SQLite files
+            cur.execute("PRAGMA table_info(snapshot_meta)")
+            existing_cols = {row[1] for row in cur.fetchall()}
+
+            if "source_url" not in existing_cols:
+                cur.execute("ALTER TABLE snapshot_meta ADD COLUMN source_url TEXT DEFAULT ''")
+                logging.info("[DB Migration] Added missing column 'source_url' to snapshot_meta")
+
+            if "raw_hash" not in existing_cols:
+                cur.execute("ALTER TABLE snapshot_meta ADD COLUMN raw_hash TEXT DEFAULT ''")
+                logging.info("[DB Migration] Added missing column 'raw_hash' to snapshot_meta")
+
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS operator_snapshots (
                     snapshot_date TEXT NOT NULL,
@@ -750,7 +762,8 @@ def save_snapshot_to_db(meta: dict, operators: list):
             """, (
                 meta["snapshot_date"], meta["collected_at"], meta["global_total_teu"],
                 meta["global_total_ships"], meta["top100_total_teu"], meta["top100_total_ships"],
-                meta["top10_share"], meta["orderbook_total_teu"], meta["source_url"], meta["raw_hash"]
+                meta["top10_share"], meta["orderbook_total_teu"], meta.get("source_url", ""),
+                meta.get("raw_hash", "")
             ))
 
             cur.execute("DELETE FROM operator_snapshots WHERE snapshot_date = ?", (meta["snapshot_date"],))
@@ -860,7 +873,6 @@ def setup_chrome_driver():
         service = Service()
 
     driver = webdriver.Chrome(service=service, options=options)
-    # Mask webdriver automation flag
     driver.execute_cdp_cmd(
         "Page.addScriptToEvaluateOnNewDocument",
         {"source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"}
@@ -873,7 +885,6 @@ def check_and_extract_store(driver):
         if (typeof Ext !== 'undefined' && Ext.StoreMgr) {
             var store = Ext.StoreMgr.lookup('Top100description');
             if (!store) {
-                // Search across all registered stores if name changed
                 var stores = Ext.StoreMgr.items;
                 for (var i = 0; i < stores.length; i++) {
                     if (stores[i].getCount && stores[i].getCount() >= 50) {
@@ -903,9 +914,8 @@ def fetch_alphaliner_data():
         driver.set_page_load_timeout(60)
         driver.get(SOURCE_URL)
 
-        # Multi-frame wait loop
         raw_res = None
-        max_attempts = 20
+        max_attempts = 15
 
         for attempt in range(max_attempts):
             # 1. Check in root frame
@@ -934,7 +944,6 @@ def fetch_alphaliner_data():
             time.sleep(2)
 
         if not raw_res or not raw_res.get("items"):
-            # Fallback to direct AXSMarine URL if iframe embedding blocked extraction
             direct_url = "https://alphaliner.axsmarine.com/PublicTop100/"
             logging.warning("[Crawler] Root/iframe store extraction failed. Falling back to direct URL: %s", direct_url)
             driver.switch_to.default_content()
