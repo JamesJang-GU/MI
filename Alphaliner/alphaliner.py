@@ -652,7 +652,6 @@ function exportCSV() {
   if (!snapshot) return;
 
   let csv = "\uFEFFRank,Operator,Total TEU,Total Ships,Market Share %,Owned TEU,Owned Ships,Owned Share %,Chartered TEU,Chartered Ships,Chartered Share %,Orderbook TEU,Orderbook Ships,Orderbook % of Fleet\n";
-
   snapshot.operators.forEach(op => {
     const escapedName = String(op.operator).replace(/"/g, '""');
     csv += [
@@ -839,16 +838,30 @@ def generate_static_dashboard():
 # =========================================================
 # 6. Extraction Engine (Selenium + ExtJS Stores + Fallback)
 # =========================================================
+def normalize_key(value):
+    if value is None:
+        return ""
+    return str(value).strip().lower().replace(" ", "_").replace("-", "_").replace(".", "_").replace("/", "_")
+
 def pick_first(record, *keys, default=None):
+    if not isinstance(record, dict):
+        return default
+
+    # normalized lookup to tolerate different key names
+    normalized_map = {normalize_key(k): v for k, v in record.items()}
     for key in keys:
-        value = record.get(key)
-        if value is not None and value != "" and value != "null":
-            return value
+        nk = normalize_key(key)
+        if nk in normalized_map:
+            value = normalized_map[nk]
+            if value is not None and value != "" and value != "null":
+                return value
     return default
 
 def parse_int(val) -> int:
     if val is None:
         return 0
+    if isinstance(val, (int, float)):
+        return int(val)
     s = re.sub(r"[^\d]", "", str(val))
     return int(s) if s else 0
 
@@ -927,14 +940,12 @@ def fetch_alphaliner_data():
         max_attempts = 15
 
         for attempt in range(max_attempts):
-            # 1. Check in root frame
             driver.switch_to.default_content()
             raw_res = check_and_extract_store(driver)
             if raw_res and raw_res.get("items"):
                 logging.info("[Crawler] ExtJS store extracted from root frame.")
                 break
 
-            # 2. Check in all child iframes
             iframes = driver.find_elements(By.TAG_NAME, "iframe")
             for idx, frame in enumerate(iframes):
                 try:
@@ -967,6 +978,37 @@ def fetch_alphaliner_data():
     finally:
         driver.quit()
 
+def extract_global_totals(body_text):
+    # Try several patterns because the UI text and source format can vary
+    patterns = [
+        r"TOTAL\s*[:\-]?\s*([\d,]+)\s*TEU",
+        r"TOTAL\s*([\d,]+)\s*TEU",
+        r"(\d[\d,]*)\s*TEU\s*TOTAL",
+        r"TOTAL:\s*([\d,]+)\s*TEU",
+    ]
+    teu_match = None
+    for p in patterns:
+        teu_match = re.search(p, body_text, re.IGNORECASE)
+        if teu_match:
+            break
+
+    ships_patterns = [
+        r"TOTAL\s*[:\-]?\s*([\d,]+)\s*SHIPS",
+        r"TOTAL\s*([\d,]+)\s*SHIPS",
+        r"(\d[\d,]*)\s*SHIPS\s*TOTAL",
+        r"TOTAL:\s*([\d,]+)\s*Ships",
+    ]
+    ships_match = None
+    for p in ships_patterns:
+        ships_match = re.search(p, body_text, re.IGNORECASE)
+        if ships_match:
+            break
+
+    extracted_global_teu = parse_int(teu_match.group(1)) if teu_match else 0
+    extracted_global_ships = parse_int(ships_match.group(1)) if ships_match else 0
+
+    return extracted_global_teu, extracted_global_ships
+
 def process_and_persist(raw_res):
     items = raw_res.get("items", [])
     body_text = raw_res.get("bodyText", "")
@@ -974,18 +1016,18 @@ def process_and_persist(raw_res):
     if not items:
         raise ValueError("Extraction failure: ExtJS Store returned zero records.")
 
+    # Useful for debugging when the real site key names differ from expected ones
+    sample_keys = list(items[0].keys()) if isinstance(items[0], dict) else []
+    logging.info("[Crawler] Sample record keys: %s", sample_keys[:30])
+
     today_str = datetime.now().strftime("%Y-%m-%d")
     collected_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    teu_match = re.search(r"TOTAL:\s*([\d,]+)\s*TEU", body_text, re.IGNORECASE)
-    ships_match = re.search(r"([\d,]+)\s*Ships", body_text, re.IGNORECASE)
-
-    extracted_global_teu = parse_int(teu_match.group(1)) if teu_match else 0
-    extracted_global_ships = parse_int(ships_match.group(1)) if ships_match else 0
+    extracted_global_teu, extracted_global_ships = extract_global_totals(body_text)
 
     operators = []
     for row in items:
-        rank = parse_int(pick_first(row, "rank", "id"))
+        rank = parse_int(pick_first(row, "rank", "id", "position"))
         if rank <= 0 or rank > 100:
             continue
 
@@ -996,42 +1038,68 @@ def process_and_persist(raw_res):
                 "carrier",
                 "name",
                 "operator_name",
+                "operator_name_en",
+                "carrier_name",
                 default=f"Operator {rank}"
             )
         ).strip()
 
-        total_teu = parse_int(pick_first(row, "tot_teu", "teu", "total_teu", "total"))
-        total_ships = parse_int(pick_first(row, "tot_ships", "ships", "total_ships"))
+        total_teu = parse_int(pick_first(row, "tot_teu", "teu", "total_teu", "total", "capacity_teu", "fleet_teu"))
+        total_ships = parse_int(pick_first(row, "tot_ships", "ships", "total_ships", "num_ships", "ship_count", "fleet_ships"))
 
-        market_share = parse_float(pick_first(row, "market_share", "share", "market", "share_pct"))
-        owned_teu = parse_int(pick_first(row, "owned_teu", "own_teu", "owned"))
-        owned_ships = parse_int(pick_first(row, "owned_ships", "own_ships"))
-        owned_share = parse_float(pick_first(row, "owned_share", "own_share", "owned_pct"))
+        market_share = parse_float(pick_first(
+            row,
+            "market_share",
+            "share",
+            "market",
+            "share_pct",
+            "market_share_pct",
+            "pct_share"
+        ))
+        owned_teu = parse_int(pick_first(row, "owned_teu", "own_teu", "owned", "owned_capacity_teu", "owned_fleet_teu"))
+        owned_ships = parse_int(pick_first(row, "owned_ships", "own_ships", "owned_ship_count", "owned_fleet_ships"))
+        owned_share = parse_float(pick_first(
+            row,
+            "owned_share",
+            "own_share",
+            "owned_pct",
+            "owned_share_pct",
+            "own_share_pct"
+        ))
 
-        chartered_teu = parse_int(pick_first(row, "chartered_teu", "cht_teu", "charter_teu", "chartered"))
-        if chartered_teu == 0 and total_teu > 0 and owned_teu > 0:
-            chartered_teu = max(total_teu - owned_teu, 0)
+        chartered_teu = parse_int(pick_first(row, "chartered_teu", "cht_teu", "charter_teu", "chartered", "leased_teu", "charter_fleet_teu"))
+        chartered_ships = parse_int(pick_first(row, "chartered_ships", "cht_ships", "charter_ships", "chartered_ships", "leased_ships", "charter_fleet_ships"))
+        chartered_share = parse_float(pick_first(
+            row,
+            "chartered_share",
+            "cht_share",
+            "charter_share",
+            "chartered_pct",
+            "charter_pct"
+        ))
 
-        chartered_ships = parse_int(pick_first(row, "chartered_ships", "cht_ships", "charter_ships", "chartered_ships"))
-        if chartered_ships == 0 and total_ships > 0 and owned_ships > 0:
-            chartered_ships = max(total_ships - owned_ships, 0)
+        orderbook_teu = parse_int(pick_first(row, "orderbook_teu", "ord_teu", "order_teu", "orderbook", "newbuild_teu", "order_book_teu"))
+        order_ships = parse_int(pick_first(row, "orderbook_ships", "ord_ships", "order_ships", "newbuild_ships", "order_book_ships"))
+        order_share = parse_float(pick_first(
+            row,
+            "orderbook_share",
+            "ord_share",
+            "order_pct",
+            "orderbook_pct",
+            "newbuild_pct",
+            "order_book_share"
+        ))
 
-        chartered_share = parse_float(pick_first(row, "chartered_share", "cht_share", "charter_share", "chartered_pct"))
-        if chartered_share == 0 and total_teu > 0 and chartered_teu > 0:
-            chartered_share = (chartered_teu / total_teu) * 100
-
-        orderbook_teu = parse_int(pick_first(row, "orderbook_teu", "ord_teu", "order_teu", "orderbook"))
-        order_ships = parse_int(pick_first(row, "orderbook_ships", "ord_ships", "order_ships"))
-        order_share = parse_float(pick_first(row, "orderbook_share", "ord_share", "order_pct"))
-
-        if owned_share == 0 and total_teu > 0 and owned_teu > 0:
-            owned_share = (owned_teu / total_teu) * 100
-
-        if order_share == 0 and total_teu > 0 and orderbook_teu > 0:
-            order_share = (orderbook_teu / total_teu) * 100
-
-        if market_share == 0 and extracted_global_teu > 0:
-            market_share = (total_teu / extracted_global_teu) * 100
+        # Conservative auto-fill if site omits certain percentages
+        if total_teu > 0:
+            if owned_share == 0 and owned_teu > 0:
+                owned_share = (owned_teu / total_teu) * 100
+            if chartered_teu > 0 and chartered_share == 0:
+                chartered_share = (chartered_teu / total_teu) * 100
+            if orderbook_teu > 0 and order_share == 0:
+                order_share = (orderbook_teu / total_teu) * 100
+            if market_share == 0 and extracted_global_teu > 0:
+                market_share = (total_teu / extracted_global_teu) * 100
 
         operators.append({
             "rank": rank,
@@ -1052,6 +1120,12 @@ def process_and_persist(raw_res):
 
     operators.sort(key=lambda x: x["rank"])
 
+    # Eliminate the case where page body doesn't provide a global total and all percentages stay zero
+    if extracted_global_teu == 0:
+        extracted_global_teu = sum(o["total_teu"] for o in operators)
+    if extracted_global_ships == 0:
+        extracted_global_ships = sum(o["total_ships"] for o in operators)
+
     top100_teu = sum(o["total_teu"] for o in operators)
     top100_ships = sum(o["total_ships"] for o in operators)
     top10_teu = sum(o["total_teu"] for o in operators[:10])
@@ -1061,6 +1135,12 @@ def process_and_persist(raw_res):
     global_ships = extracted_global_ships if extracted_global_ships > 0 else top100_ships
 
     top10_share = (top10_teu / global_teu * 100.0) if global_teu > 0 else 0.0
+
+    # Recompute market share for any row that is still zero and this total is known
+    if extracted_global_teu > 0:
+        for op in operators:
+            if op["market_share"] == 0 and op["total_teu"] > 0:
+                op["market_share"] = round((op["total_teu"] / extracted_global_teu) * 100.0, 2)
 
     raw_hash = hashlib.sha256(json.dumps(operators, sort_keys=True).encode("utf-8")).hexdigest()
 
