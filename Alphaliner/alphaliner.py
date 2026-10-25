@@ -1124,7 +1124,6 @@ def fetch_alphaliner_data():
         driver.quit()
 
 def extract_global_totals(body_text):
-    # Try several patterns because the UI text and source format can vary
     patterns = [
         r"TOTAL\s*[:\-]?\s*([\d,]+)\s*TEU",
         r"TOTAL\s*([\d,]+)\s*TEU",
@@ -1271,7 +1270,6 @@ def process_and_persist(raw_res):
             "order_share", "orderbook_percentage"
         ))
 
-        # Conservative auto-fill if site omits certain percentages
         if total_teu > 0:
             if owned_share == 0 and owned_teu > 0:
                 owned_share = (owned_teu / total_teu) * 100
@@ -1301,7 +1299,6 @@ def process_and_persist(raw_res):
 
     operators.sort(key=lambda x: x["rank"])
 
-    # Eliminate the case where page body doesn't provide a global total and all percentages stay zero
     if extracted_global_teu == 0:
         extracted_global_teu = sum(o["total_teu"] for o in operators)
     if extracted_global_ships == 0:
@@ -1317,7 +1314,6 @@ def process_and_persist(raw_res):
 
     top10_share = (top10_teu / global_teu * 100.0) if global_teu > 0 else 0.0
 
-    # Recompute market share for any row that is still zero and this total is known
     if extracted_global_teu > 0:
         for op in operators:
             if op["market_share"] == 0 and op["total_teu"] > 0:
@@ -1337,6 +1333,18 @@ def process_and_persist(raw_res):
         "source_url": SOURCE_URL,
         "raw_hash": raw_hash
     }
+
+    latest_raw_hash = None
+    with db_lock:
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT raw_hash FROM snapshot_meta ORDER BY snapshot_date DESC LIMIT 1"
+            ).fetchone()
+            latest_raw_hash = row[0] if row else None
+
+    if latest_raw_hash and latest_raw_hash == raw_hash:
+        logging.info("[DB] Skipping snapshot save because values are unchanged from the latest crawl.")
+        return
 
     save_snapshot_to_db(meta, operators)
     build_and_save_json()
