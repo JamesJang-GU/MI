@@ -64,25 +64,60 @@ logger = logging.getLogger("AlphalinerCrawler")
 db_lock = Lock()
 
 # =========================================================
-# 2. Database Management & Auto Migration
+# 2. Database Management & Comprehensive Auto Migration
 # =========================================================
 def init_db(db_file: Path = DB_PATH):
-    """Initialize SQLite database schema with automatic schema migration."""
+    """Initialize SQLite database schema with comprehensive legacy schema migration."""
     with db_lock:
         conn = sqlite3.connect(str(db_file))
         cursor = conn.cursor()
 
+        # 1. snapshot_meta 테이블 생성 및 컬럼 검증
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS snapshot_meta (
                 snapshot_date TEXT PRIMARY KEY,
-                extracted_at TEXT NOT NULL,
-                global_teu INTEGER NOT NULL,
-                global_ships INTEGER NOT NULL,
-                top100_teu INTEGER NOT NULL,
-                top100_ships INTEGER NOT NULL
+                extracted_at TEXT,
+                global_teu INTEGER DEFAULT 0,
+                global_ships INTEGER DEFAULT 0,
+                top100_teu INTEGER DEFAULT 0,
+                top100_ships INTEGER DEFAULT 0
             )
         """)
 
+        cursor.execute("PRAGMA table_info(snapshot_meta)")
+        meta_cols = [row[1] for row in cursor.fetchall()]
+
+        if "extracted_at" not in meta_cols:
+            if "created_at" in meta_cols:
+                logger.info("Migrating snapshot_meta: 'created_at' -> 'extracted_at'")
+                try:
+                    cursor.execute("ALTER TABLE snapshot_meta RENAME COLUMN created_at TO extracted_at")
+                except Exception:
+                    cursor.execute("ALTER TABLE snapshot_meta ADD COLUMN extracted_at TEXT DEFAULT ''")
+            elif "collected_at" in meta_cols:
+                logger.info("Migrating snapshot_meta: 'collected_at' -> 'extracted_at'")
+                try:
+                    cursor.execute("ALTER TABLE snapshot_meta RENAME COLUMN collected_at TO extracted_at")
+                except Exception:
+                    cursor.execute("ALTER TABLE snapshot_meta ADD COLUMN extracted_at TEXT DEFAULT ''")
+            else:
+                logger.info("Adding missing column 'extracted_at' to snapshot_meta")
+                cursor.execute("ALTER TABLE snapshot_meta ADD COLUMN extracted_at TEXT DEFAULT ''")
+
+        for col, col_type in [
+            ("global_teu", "INTEGER DEFAULT 0"),
+            ("global_ships", "INTEGER DEFAULT 0"),
+            ("top100_teu", "INTEGER DEFAULT 0"),
+            ("top100_ships", "INTEGER DEFAULT 0"),
+        ]:
+            if col not in meta_cols:
+                logger.info(f"Adding missing column '{col}' to snapshot_meta")
+                try:
+                    cursor.execute(f"ALTER TABLE snapshot_meta ADD COLUMN {col} {col_type}")
+                except Exception:
+                    pass
+
+        # 2. operator_snapshots 테이블 생성 및 컬럼 검증
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS operator_snapshots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,23 +141,22 @@ def init_db(db_file: Path = DB_PATH):
             )
         """)
 
-        # 기존 DB 테이블 구조 확인 및 자동 컬럼 마이그레이션
         cursor.execute("PRAGMA table_info(operator_snapshots)")
-        cols = [row[1] for row in cursor.fetchall()]
+        op_cols = [row[1] for row in cursor.fetchall()]
 
-        if "operator" in cols and "operator_name" not in cols:
-            logger.info("Migrating legacy column 'operator' -> 'operator_name' in operator_snapshots")
+        if "operator" in op_cols and "operator_name" not in op_cols:
+            logger.info("Migrating operator_snapshots: 'operator' -> 'operator_name'")
             try:
                 cursor.execute("ALTER TABLE operator_snapshots RENAME COLUMN operator TO operator_name")
-                cols.append("operator_name")
+                op_cols.append("operator_name")
             except Exception as e:
-                logger.warning(f"Column rename failed or already handled: {e}")
+                logger.warning(f"Column rename failed: {e}")
 
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_op_date ON operator_snapshots(snapshot_date);")
 
-        if "operator_name" in cols:
+        if "operator_name" in op_cols:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_op_name ON operator_snapshots(operator_name);")
-        elif "operator" in cols:
+        elif "operator" in op_cols:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_op_name ON operator_snapshots(operator);")
 
         conn.commit()
@@ -153,7 +187,7 @@ def get_chrome_driver():
         try:
             service = Service(ChromeDriverManager().install())
         except Exception as e:
-            logger.warning(f"ChromeDriverManager failed: {e}. Falling back to default system chromedriver.")
+            logger.warning(f"ChromeDriverManager failed: {e}. Falling back to system chromedriver.")
 
     if service:
         return webdriver.Chrome(service=service, options=chrome_options)
@@ -170,7 +204,7 @@ def fetch_alphaliner_data():
 
         wait = WebDriverWait(driver, 30)
         wait.until(lambda d: d.execute_script("return typeof Ext !== 'undefined' && Ext.isReady;"))
-        time.sleep(3)  # ExtJS Store 메모리 동기화 대기
+        time.sleep(3)
 
         js_extractor = """
         var results = {
@@ -402,25 +436,27 @@ def export_dataset_json(db_file: Path = DB_PATH, out_json: Path = JSON_PATH):
         dates = [row["snapshot_date"] for row in meta_rows]
         snapshots = {}
 
-        for m in meta_rows:
+        for m_row in meta_rows:
+            m = dict(m_row)
             s_date = m["snapshot_date"]
             cursor.execute("SELECT * FROM operator_snapshots WHERE snapshot_date = ? ORDER BY rank ASC", (s_date,))
             raw_ops = [dict(r) for r in cursor.fetchall()]
 
-            # 컬럼 호환성 보장
             op_rows = []
             for r in raw_ops:
                 if "operator" in r and "operator_name" not in r:
                     r["operator_name"] = r["operator"]
                 op_rows.append(r)
 
+            extracted_time = m.get("extracted_at") or m.get("created_at") or m.get("collected_at") or s_date
+
             snapshots[s_date] = {
                 "meta": {
-                    "extracted_at": m["extracted_at"],
-                    "global_teu": m["global_teu"],
-                    "global_ships": m["global_ships"],
-                    "top100_teu": m["top100_teu"],
-                    "top100_ships": m["top100_ships"]
+                    "extracted_at": extracted_time,
+                    "global_teu": m.get("global_teu", 0),
+                    "global_ships": m.get("global_ships", 0),
+                    "top100_teu": m.get("top100_teu", 0),
+                    "top100_ships": m.get("top100_ships", 0)
                 },
                 "operators": op_rows
             }
@@ -729,43 +765,44 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
   <div class="kpi-row">
     <div class="kpi-card accent">
       <div class="kpi-label">Global Active Fleet</div>
-      <div class="kpi-val" id="kpi-global-teu">0 TEU</div>
+      <div class="kpi-val" id="kpi-global-teu">-- TEU</div>
       <div class="kpi-sub">
-        <span id="kpi-global-ships">0 Ships</span>
-        <span id="kpi-global-delta" class="flat">--</span>
+        <span id="kpi-global-ships">-- Ships</span>
+        <span id="kpi-global-delta" class="flat">HISTORICAL BASE</span>
       </div>
     </div>
     <div class="kpi-card blue">
-      <div class="kpi-label">Top 100 Aggregate Fleet</div>
-      <div class="kpi-val" id="kpi-top100-teu">0 TEU</div>
+      <div class="kpi-label">Top 100 Capacity</div>
+      <div class="kpi-val" id="kpi-top100-teu">-- TEU</div>
       <div class="kpi-sub">
-        <span id="kpi-top100-ships">0 Ships</span>
-        <span id="kpi-top100-share">0.0% of Global</span>
+        <span id="kpi-top100-ships">-- Ships</span>
+        <span id="kpi-top100-share" style="color:var(--blue);">--% of Global</span>
       </div>
     </div>
     <div class="kpi-card green">
-      <div class="kpi-label">Top 10 Liner Capacity</div>
-      <div class="kpi-val" id="kpi-top10-teu">0 TEU</div>
+      <div class="kpi-label">Top 10 Concentration</div>
+      <div class="kpi-val" id="kpi-top10-teu">-- TEU</div>
       <div class="kpi-sub">
-        <span id="kpi-top10-share">0.0% Market Share</span>
+        <span>TOP 10 CARRIERS</span>
+        <span id="kpi-top10-share" style="color:var(--green);">--% Market Share</span>
       </div>
     </div>
     <div class="kpi-card purple">
       <div class="kpi-label">Orderbook Pipeline</div>
-      <div class="kpi-val" id="kpi-orderbook-teu">0 TEU</div>
+      <div class="kpi-val" id="kpi-orderbook-teu">-- TEU</div>
       <div class="kpi-sub">
-        <span id="kpi-orderbook-ships">0 Ships</span>
-        <span id="kpi-orderbook-ratio">0.0% of Fleet</span>
+        <span id="kpi-orderbook-ships">-- Ships</span>
+        <span id="kpi-orderbook-ratio" style="color:var(--purple);">--% of Existing</span>
       </div>
     </div>
   </div>
 
-  <!-- CHARTS ROW -->
+  <!-- CHARTS SECTION -->
   <div class="charts-row">
     <div class="panel">
       <div class="panel-header">
-        <span>TOP 15 OPERATORS FLEET COMPOSITION & ORDERBOOK</span>
-        <span style="font-size:10px; color:var(--text-dim);">UNIT: TEU</span>
+        <span>Top 15 Carriers // Fleet Composition (Owned vs Cht vs Orderbook)</span>
+        <span class="mono" style="color:var(--text-dim); font-size:10px;">CAPACITY (TEU)</span>
       </div>
       <div class="chart-box">
         <canvas id="topChart"></canvas>
@@ -773,8 +810,8 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
     </div>
     <div class="panel">
       <div class="panel-header">
-        <span>GLOBAL FLEET SPLIT RATIO</span>
-        <span style="font-size:10px; color:var(--text-dim);">OWNED vs CHARTERED</span>
+        <span>Fleet Capacity Breakdown</span>
+        <span class="mono" style="color:var(--text-dim); font-size:10px;">TOTAL MARKET</span>
       </div>
       <div class="chart-box">
         <canvas id="ratioChart"></canvas>
@@ -782,28 +819,28 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
     </div>
   </div>
 
-  <!-- DATA TABLE PANEL -->
-  <div class="panel" style="margin-bottom:0;">
+  <!-- DATA TABLE -->
+  <div class="panel">
     <div class="panel-header">
-      <span>TOP 100 CAPACITY MATRIX</span>
-      <span id="table-record-count" style="font-size:10px; color:var(--orange);">-- OPERATORS</span>
+      <span>TOP 100 LINER OPERATORS MASTER RANKING</span>
+      <span class="mono" id="table-record-count" style="color:var(--orange);">-- OPERATORS</span>
     </div>
     <div class="table-container">
       <table>
         <thead>
           <tr>
-            <th rowspan="2" style="width:40px;">RK</th>
-            <th rowspan="2">Operator Name</th>
+            <th rowspan="2" style="width: 40px;">RK</th>
+            <th rowspan="2" style="text-align: left;">Operator</th>
             <th colspan="3" class="group-th">Total Fleet</th>
-            <th colspan="2" class="group-th">Owned Fleet</th>
-            <th colspan="2" class="group-th">Chartered Fleet</th>
-            <th colspan="2" class="group-th">Orderbook</th>
-            <th rowspan="2" style="width:80px;">Share</th>
+            <th colspan="2" class="group-th" style="background:#0b2238;">Owned Fleet</th>
+            <th colspan="2" class="group-th" style="background:#1a2818;">Chartered Fleet</th>
+            <th colspan="2" class="group-th" style="background:#241830;">Orderbook Pipeline</th>
+            <th rowspan="2" style="text-align: center;">Share</th>
           </tr>
           <tr>
             <th class="num">TEU</th>
             <th class="num">Ships</th>
-            <th class="num">Share</th>
+            <th class="num">% Share</th>
             <th class="num">TEU</th>
             <th class="num">% Total</th>
             <th class="num">TEU</th>
