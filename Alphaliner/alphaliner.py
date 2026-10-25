@@ -839,6 +839,13 @@ def generate_static_dashboard():
 # =========================================================
 # 6. Extraction Engine (Selenium + ExtJS Stores + Fallback)
 # =========================================================
+def pick_first(record, *keys, default=None):
+    for key in keys:
+        value = record.get(key)
+        if value is not None and value != "" and value != "null":
+            return value
+    return default
+
 def parse_int(val) -> int:
     if val is None:
         return 0
@@ -848,7 +855,9 @@ def parse_int(val) -> int:
 def parse_float(val) -> float:
     if val is None:
         return 0.0
-    s = str(val).replace("%", "").strip()
+    if isinstance(val, (int, float)):
+        return float(val)
+    s = str(val).replace(",", "").replace("%", "").strip()
     try:
         return float(s)
     except ValueError:
@@ -976,42 +985,69 @@ def process_and_persist(raw_res):
 
     operators = []
     for row in items:
-        rank = parse_int(row.get("rank") or row.get("id"))
+        rank = parse_int(pick_first(row, "rank", "id"))
         if rank <= 0 or rank > 100:
             continue
 
-        op_name = str(row.get("operator") or row.get("carrier") or f"Operator {rank}").strip()
-        tot_teu = parse_int(row.get("tot_teu") or row.get("teu"))
-        tot_ships = parse_int(row.get("tot_ships") or row.get("ships"))
-        market_share = parse_float(row.get("market_share") or row.get("share"))
+        op_name = str(
+            pick_first(
+                row,
+                "operator",
+                "carrier",
+                "name",
+                "operator_name",
+                default=f"Operator {rank}"
+            )
+        ).strip()
 
-        owned_teu = parse_int(row.get("owned_teu"))
-        owned_ships = parse_int(row.get("owned_ships"))
-        owned_share = parse_float(row.get("owned_share"))
+        total_teu = parse_int(pick_first(row, "tot_teu", "teu", "total_teu", "total"))
+        total_ships = parse_int(pick_first(row, "tot_ships", "ships", "total_ships"))
 
-        cht_teu = parse_int(row.get("chartered_teu") or row.get("cht_teu"))
-        cht_ships = parse_int(row.get("chartered_ships") or row.get("cht_ships"))
-        cht_share = parse_float(row.get("chartered_share") or row.get("cht_share"))
+        market_share = parse_float(pick_first(row, "market_share", "share", "market", "share_pct"))
+        owned_teu = parse_int(pick_first(row, "owned_teu", "own_teu", "owned"))
+        owned_ships = parse_int(pick_first(row, "owned_ships", "own_ships"))
+        owned_share = parse_float(pick_first(row, "owned_share", "own_share", "owned_pct"))
 
-        order_teu = parse_int(row.get("orderbook_teu") or row.get("ord_teu"))
-        order_ships = parse_int(row.get("orderbook_ships") or row.get("ord_ships"))
-        order_share = parse_float(row.get("orderbook_share") or row.get("ord_share"))
+        chartered_teu = parse_int(pick_first(row, "chartered_teu", "cht_teu", "charter_teu", "chartered"))
+        if chartered_teu == 0 and total_teu > 0 and owned_teu > 0:
+            chartered_teu = max(total_teu - owned_teu, 0)
+
+        chartered_ships = parse_int(pick_first(row, "chartered_ships", "cht_ships", "charter_ships", "chartered_ships"))
+        if chartered_ships == 0 and total_ships > 0 and owned_ships > 0:
+            chartered_ships = max(total_ships - owned_ships, 0)
+
+        chartered_share = parse_float(pick_first(row, "chartered_share", "cht_share", "charter_share", "chartered_pct"))
+        if chartered_share == 0 and total_teu > 0 and chartered_teu > 0:
+            chartered_share = (chartered_teu / total_teu) * 100
+
+        orderbook_teu = parse_int(pick_first(row, "orderbook_teu", "ord_teu", "order_teu", "orderbook"))
+        order_ships = parse_int(pick_first(row, "orderbook_ships", "ord_ships", "order_ships"))
+        order_share = parse_float(pick_first(row, "orderbook_share", "ord_share", "order_pct"))
+
+        if owned_share == 0 and total_teu > 0 and owned_teu > 0:
+            owned_share = (owned_teu / total_teu) * 100
+
+        if order_share == 0 and total_teu > 0 and orderbook_teu > 0:
+            order_share = (orderbook_teu / total_teu) * 100
+
+        if market_share == 0 and extracted_global_teu > 0:
+            market_share = (total_teu / extracted_global_teu) * 100
 
         operators.append({
             "rank": rank,
             "operator": op_name,
-            "total_teu": tot_teu,
-            "total_ships": tot_ships,
-            "market_share": market_share,
+            "total_teu": total_teu,
+            "total_ships": total_ships,
+            "market_share": round(market_share, 2),
             "owned_teu": owned_teu,
             "owned_ships": owned_ships,
-            "owned_share": owned_share,
-            "chartered_teu": cht_teu,
-            "chartered_ships": cht_ships,
-            "chartered_share": cht_share,
-            "orderbook_teu": order_teu,
+            "owned_share": round(owned_share, 2),
+            "chartered_teu": chartered_teu,
+            "chartered_ships": chartered_ships,
+            "chartered_share": round(chartered_share, 2),
+            "orderbook_teu": orderbook_teu,
             "orderbook_ships": order_ships,
-            "orderbook_share": order_share
+            "orderbook_share": round(order_share, 2)
         })
 
     operators.sort(key=lambda x: x["rank"])
