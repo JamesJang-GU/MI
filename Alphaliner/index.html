@@ -1,654 +1,814 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ALPHALINER TOP 100 // MARKET INTELLIGENCE TERMINAL</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <style>
-    :root {
-      --bg: #02060b;
-      --bg-panel: #07111c;
-      --bg-panel-sub: #0a1724;
-      --bg-hover: #0f2236;
-      --line: #1b3043;
-      --line-bright: #29445c;
-      --text: #f3f7fb;
-      --text-muted: #879caf;
-      --text-dim: #536c80;
-      --orange: #f6a623;
-      --amber: #ffb000;
-      --blue: #45a9f5;
-      --cyan: #00d2ff;
-      --green: #36ca82;
-      --red: #ff6262;
-      --purple: #a78bfa;
-      --font-mono: 'JetBrains Mono', monospace;
-      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ALPHALINER TOP 100 // INTELLIGENCE TERMINAL</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg-base: #060a11;
+            --bg-card: rgba(11, 19, 32, 0.85);
+            --bg-card-hover: rgba(16, 28, 48, 0.95);
+            --border-dim: #132238;
+            --border-glow: #1f3a60;
+            --text-primary: #e2e8f0;
+            --text-secondary: #8fa0b5;
+            --text-muted: #52637a;
+            --amber-bloomberg: #f59e0b;
+            --amber-dim: rgba(245, 158, 11, 0.15);
+            --blue-accent: #38bdf8;
+            --blue-dim: rgba(56, 189, 248, 0.15);
+            --green-up: #10b981;
+            --red-down: #ef4444;
+            --font-mono: 'JetBrains Mono', monospace;
+            --font-sans: 'Inter', sans-serif;
+        }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background: radial-gradient(circle at 50% -20%, rgba(34, 106, 154, 0.15), transparent 45%), var(--bg);
-      color: var(--text);
-      font-family: var(--font-sans);
-      font-size: 12px;
-      line-height: 1.4;
-      padding: 12px;
-      -webkit-font-smoothing: antialiased;
-    }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            border-color: var(--border-dim);
+        }
 
-    .mono { font-family: var(--font-mono); }
-    .num { font-family: var(--font-mono); text-align: right; }
+        body {
+            background-color: var(--bg-base);
+            background-image:
+                radial-gradient(circle at 50% 0%, rgba(31, 58, 96, 0.18) 0%, transparent 60%),
+                linear-gradient(rgba(19, 34, 56, 0.25) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(19, 34, 56, 0.25) 1px, transparent 1px);
+            background-size: 100% 100%, 32px 32px, 32px 32px;
+            color: var(--text-primary);
+            font-family: var(--font-sans);
+            font-size: 13px;
+            line-height: 1.4;
+            overflow-x: hidden;
+            padding-bottom: 24px;
+        }
 
-    .ticker-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: var(--bg-panel);
-      border: 1px solid var(--line);
-      border-left: 3px solid var(--orange);
-      padding: 8px 14px;
-      margin-bottom: 10px;
-    }
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 13px;
-      font-weight: 800;
-      letter-spacing: 0.05em;
-    }
-    .tag-live {
-      background: rgba(54, 202, 130, 0.15);
-      color: var(--green);
-      border: 1px solid rgba(54, 202, 130, 0.4);
-      padding: 1px 6px;
-      font-size: 10px;
-      font-weight: 700;
-    }
-    .controls {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    select, button {
-      background: var(--bg-panel-sub);
-      color: var(--text);
-      border: 1px solid var(--line-bright);
-      padding: 4px 10px;
-      font-size: 11px;
-      font-family: var(--font-mono);
-      outline: none;
-      cursor: pointer;
-    }
-    select:focus, button:hover {
-      border-color: var(--orange);
-    }
-    .btn-export {
-      background: rgba(246, 166, 35, 0.15);
-      color: var(--orange);
-      border: 1px solid rgba(246, 166, 35, 0.4);
-      font-weight: 700;
-    }
-    .btn-export:hover {
-      background: var(--orange);
-      color: #000;
-    }
+        .ticker-bar {
+            background: rgba(6, 10, 17, 0.95);
+            border-bottom: 1px solid var(--border-dim);
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 20px;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
 
-    .kpi-row {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
-      margin-bottom: 10px;
-    }
-    .kpi-card {
-      background: var(--bg-panel);
-      border: 1px solid var(--line);
-      border-top: 2px solid var(--line-bright);
-      padding: 10px 12px;
-    }
-    .kpi-card.accent { border-top-color: var(--orange); }
-    .kpi-card.blue { border-top-color: var(--blue); }
-    .kpi-card.green { border-top-color: var(--green); }
-    .kpi-card.purple { border-top-color: var(--purple); }
+        .brand-cluster {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
 
-    .kpi-label {
-      font-size: 10px;
-      font-weight: 700;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 4px;
-    }
-    .kpi-val {
-      font-size: 20px;
-      font-weight: 800;
-      font-family: var(--font-mono);
-      color: var(--text);
-    }
-    .kpi-sub {
-      display: flex;
-      justify-content: space-between;
-      font-size: 10px;
-      color: var(--text-muted);
-      margin-top: 4px;
-      font-family: var(--font-mono);
-    }
+        .brand-code {
+            font-family: var(--font-mono);
+            font-weight: 700;
+            font-size: 13px;
+            letter-spacing: 0.12em;
+            color: var(--amber-bloomberg);
+            border: 1px solid var(--amber-bloomberg);
+            padding: 2px 6px;
+            border-radius: 2px;
+            background: var(--amber-dim);
+        }
 
-    .up { color: var(--green); }
-    .down { color: var(--red); }
-    .flat { color: var(--text-dim); }
+        .brand-title {
+            font-weight: 700;
+            font-size: 14px;
+            letter-spacing: 0.05em;
+            color: #fff;
+        }
 
-    .charts-row {
-      display: grid;
-      grid-template-columns: 2fr 1fr;
-      gap: 10px;
-      margin-bottom: 10px;
-    }
-    .panel {
-      background: var(--bg-panel);
-      border: 1px solid var(--line);
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-    }
-    .panel-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1px solid var(--line);
-      padding-bottom: 6px;
-      margin-bottom: 10px;
-      font-size: 11px;
-      font-weight: 700;
-      color: var(--text-muted);
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-    }
-    .chart-box {
-      position: relative;
-      height: 260px;
-      width: 100%;
-    }
+        .top-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
 
-    .table-container {
-      max-height: 520px;
-      overflow-y: auto;
-      overflow-x: auto;
-      border: 1px solid var(--line);
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 11px;
-      white-space: nowrap;
-    }
-    th {
-      position: sticky;
-      top: 0;
-      background: var(--bg-panel-sub);
-      color: var(--text-muted);
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      padding: 6px 8px;
-      border-bottom: 1px solid var(--line-bright);
-      border-right: 1px solid rgba(27, 48, 67, 0.4);
-      z-index: 10;
-    }
-    th.group-th {
-      text-align: center;
-      background: #0d1e30;
-      border-bottom: 1px solid var(--line);
-    }
-    td {
-      padding: 5px 8px;
-      border-bottom: 1px solid rgba(27, 48, 67, 0.6);
-      border-right: 1px solid rgba(27, 48, 67, 0.4);
-    }
-    tr:hover td {
-      background: var(--bg-hover) !important;
-    }
-    .op-name {
-      font-weight: 600;
-      color: var(--text);
-    }
-    .rank-cell {
-      font-weight: 800;
-      color: var(--orange);
-      text-align: center;
-      background: rgba(246, 166, 35, 0.03);
-    }
-    .share-bar-cell {
-      width: 80px;
-      padding: 2px 6px;
-    }
-    .progress-bar-bg {
-      background: rgba(255, 255, 255, 0.05);
-      height: 6px;
-      width: 100%;
-      border-radius: 2px;
-      overflow: hidden;
-    }
-    .progress-bar-fill {
-      height: 100%;
-      background: var(--orange);
-    }
+        .date-control-group {
+            display: flex;
+            align-items: center;
+            background: #09121f;
+            border: 1px solid var(--border-glow);
+            border-radius: 4px;
+            padding: 2px 8px;
+            gap: 8px;
+        }
 
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: var(--bg); }
-    ::-webkit-scrollbar-thumb { background: var(--line-bright); }
-    ::-webkit-scrollbar-thumb:hover { background: var(--orange); }
+        .date-control-label {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+        }
 
-    .status-bar {
-      margin-top: 10px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 6px 12px;
-      background: var(--bg-panel);
-      border: 1px solid var(--line);
-      font-size: 10px;
-      color: var(--text-dim);
-      font-family: var(--font-mono);
-    }
-  </style>
+        select.terminal-select {
+            background: transparent;
+            border: none;
+            color: var(--blue-accent);
+            font-family: var(--font-mono);
+            font-weight: 600;
+            font-size: 12px;
+            outline: none;
+            cursor: pointer;
+            padding: 2px 4px;
+        }
+
+        select.terminal-select option {
+            background: #0b1320;
+            color: var(--text-primary);
+        }
+
+        .btn-export {
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid var(--blue-accent);
+            color: var(--blue-accent);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .btn-export:hover {
+            background: var(--blue-accent);
+            color: #060a11;
+        }
+
+        .terminal-container {
+            max-width: 1720px;
+            margin: 16px auto;
+            padding: 0 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .grid-kpi {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 12px;
+        }
+
+        .kpi-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-dim);
+            border-radius: 6px;
+            padding: 14px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        .kpi-header {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .kpi-value {
+            font-family: var(--font-mono);
+            font-size: 20px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .kpi-sub {
+            font-size: 11px;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .delta-tag {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 600;
+            padding: 1px 4px;
+            border-radius: 2px;
+        }
+        .delta-up { color: var(--green-up); background: rgba(16, 185, 129, 0.1); }
+        .delta-down { color: var(--red-down); background: rgba(239, 68, 68, 0.1); }
+        .delta-flat { color: var(--text-muted); background: rgba(82, 99, 122, 0.1); }
+
+        .grid-charts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .chart-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-dim);
+            border-radius: 6px;
+            padding: 14px;
+            height: 280px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chart-title {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .chart-wrapper {
+            flex: 1;
+            position: relative;
+        }
+
+        .table-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-dim);
+            border-radius: 6px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .table-toolbar {
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border-dim);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(9, 18, 31, 0.6);
+        }
+
+        .search-box {
+            background: #09121f;
+            border: 1px solid var(--border-dim);
+            color: var(--text-primary);
+            padding: 4px 10px;
+            border-radius: 3px;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            width: 240px;
+            outline: none;
+        }
+        .search-box:focus {
+            border-color: var(--blue-accent);
+        }
+
+        .table-responsive {
+            overflow-x: auto;
+            max-height: 640px;
+        }
+
+        table.terminal-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        table.terminal-table th {
+            position: sticky;
+            top: 0;
+            background: #09121f;
+            color: var(--text-secondary);
+            font-family: var(--font-mono);
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border-glow);
+            border-right: 1px solid rgba(19, 34, 56, 0.4);
+            z-index: 10;
+        }
+
+        table.terminal-table th.th-group {
+            text-align: center;
+            background: #060b13;
+            border-bottom: 1px solid var(--border-dim);
+        }
+
+        table.terminal-table td {
+            padding: 6px 10px;
+            border-bottom: 1px solid rgba(19, 34, 56, 0.3);
+            border-right: 1px solid rgba(19, 34, 56, 0.2);
+        }
+
+        table.terminal-table tr:hover td {
+            background: var(--bg-card-hover);
+        }
+
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .num-font { font-family: var(--font-mono); }
+
+        .rank-badge {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--amber-bloomberg);
+            font-family: var(--font-mono);
+            font-weight: 700;
+            padding: 1px 6px;
+            border-radius: 3px;
+        }
+
+        .carrier-name {
+            font-weight: 600;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .share-bar-container {
+            width: 100%;
+            height: 4px;
+            background: rgba(19, 34, 56, 0.8);
+            border-radius: 2px;
+            margin-top: 3px;
+            overflow: hidden;
+        }
+        .share-bar-fill {
+            height: 100%;
+            background: var(--blue-accent);
+        }
+
+        @media (max-width: 1024px) {
+            .grid-charts {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
 </head>
 <body>
-
-  <!-- TOP TICKER BAR -->
-  <div class="ticker-bar">
-    <div class="brand">
-      <span style="color:var(--orange)">ALPHALINER</span> TOP 100 LINER OPERATORS
-      <span class="tag-live">INTELLIGENCE</span>
-    </div>
-    <div class="controls">
-      <label class="mono" style="color:var(--text-muted); font-size:10px;">SNAPSHOT:</label>
-      <select id="dateSelect" onchange="onDateChange()"></select>
-
-      <label class="mono" style="color:var(--text-muted); font-size:10px; margin-left:8px;">VS DELTA:</label>
-      <select id="compareSelect" onchange="renderAll()"></select>
-
-      <button class="btn-export" onclick="exportCSV()">EXPORT CSV (BOM)</button>
-    </div>
-  </div>
-
-  <!-- KPI SUMMARY ROW -->
-  <div class="kpi-row">
-    <div class="kpi-card accent">
-      <div class="kpi-label">Global Active Fleet</div>
-      <div class="kpi-val" id="kpi-global-teu">-- TEU</div>
-      <div class="kpi-sub">
-        <span id="kpi-global-ships">-- Ships</span>
-        <span id="kpi-global-delta" class="flat">HISTORICAL BASE</span>
-      </div>
-    </div>
-    <div class="kpi-card blue">
-      <div class="kpi-label">Top 100 Capacity</div>
-      <div class="kpi-val" id="kpi-top100-teu">-- TEU</div>
-      <div class="kpi-sub">
-        <span id="kpi-top100-ships">-- Ships</span>
-        <span id="kpi-top100-share" style="color:var(--blue);">--% of Global</span>
-      </div>
-    </div>
-    <div class="kpi-card green">
-      <div class="kpi-label">Top 10 Concentration</div>
-      <div class="kpi-val" id="kpi-top10-teu">-- TEU</div>
-      <div class="kpi-sub">
-        <span>TOP 10 CARRIERS</span>
-        <span id="kpi-top10-share" style="color:var(--green);">--% Market Share</span>
-      </div>
-    </div>
-    <div class="kpi-card purple">
-      <div class="kpi-label">Orderbook Pipeline</div>
-      <div class="kpi-val" id="kpi-orderbook-teu">-- TEU</div>
-      <div class="kpi-sub">
-        <span id="kpi-orderbook-ships">-- Ships</span>
-        <span id="kpi-orderbook-ratio" style="color:var(--purple);">--% of Existing</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- CHARTS SECTION -->
-  <div class="charts-row">
-    <div class="panel">
-      <div class="panel-header">
-        <span>Top 15 Carriers // Fleet Composition (Owned vs Cht vs Orderbook)</span>
-        <span class="mono" style="color:var(--text-dim); font-size:10px;">CAPACITY (TEU)</span>
-      </div>
-      <div class="chart-box">
-        <canvas id="topChart"></canvas>
-      </div>
-    </div>
-    <div class="panel">
-      <div class="panel-header">
-        <span>Fleet Capacity Breakdown</span>
-        <span class="mono" style="color:var(--text-dim); font-size:10px;">TOTAL MARKET</span>
-      </div>
-      <div class="chart-box">
-        <canvas id="ratioChart"></canvas>
-      </div>
-    </div>
-  </div>
-
-  <!-- DATA TABLE -->
-  <div class="panel">
-    <div class="panel-header">
-      <span>TOP 100 LINER OPERATORS MASTER RANKING</span>
-      <span class="mono" id="table-record-count" style="color:var(--orange);">-- OPERATORS</span>
-    </div>
-    <div class="table-container">
-      <table>
-        <thead>
-          <tr>
-            <th rowspan="2" style="width: 40px;">RK</th>
-            <th rowspan="2" style="text-align: left;">Operator</th>
-            <th colspan="3" class="group-th">Total Fleet</th>
-            <th colspan="2" class="group-th" style="background:#0b2238;">Owned Fleet</th>
-            <th colspan="2" class="group-th" style="background:#1a2818;">Chartered Fleet</th>
-            <th colspan="2" class="group-th" style="background:#241830;">Orderbook Pipeline</th>
-            <th rowspan="2" style="text-align: center;">Share</th>
-          </tr>
-          <tr>
-            <th class="num">TEU</th>
-            <th class="num">Ships</th>
-            <th class="num">% Share</th>
-            <th class="num">TEU</th>
-            <th class="num">% Total</th>
-            <th class="num">TEU</th>
-            <th class="num">% Total</th>
-            <th class="num">TEU</th>
-            <th class="num">% Fleet</th>
-          </tr>
-        </thead>
-        <tbody id="operatorTableBody"></tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- STATUS FOOTER BAR -->
-  <div class="status-bar">
-    <div>SYSTEM: <span style="color:var(--green)">ONLINE</span> | PROVIDER: AXS MARINE / ALPHALINER</div>
-    <div id="footer-sync-time">LAST SYNC: --</div>
-  </div>
-
-  <script>
-    const DATASET = {"dates": ["2026-10-23", "2026-10-24", "2026-10-25"], "snapshots": {"2026-10-23": {"meta": {"extracted_at": "2026-10-23T15:16:59.575500", "global_teu": 0, "global_ships": 0, "top100_teu": 0, "top100_ships": 0}, "operators": [{"snapshot_date": "2026-10-23", "rank": 1, "operator_name": "Mediterranean Shg Co", "total_teu": 7464018, "total_ships": 1018, "market_share": 0.0, "owned_teu": 4794529, "owned_ships": 767, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 3379018, "orderbook_ships": 183, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 2, "operator_name": "Maersk", "total_teu": 4717299, "total_ships": 749, "market_share": 0.0, "owned_teu": 2943996, "owned_ships": 359, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 1811602, "orderbook_ships": 138, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 3, "operator_name": "CMA CGM Group", "total_teu": 4489970, "total_ships": 731, "market_share": 0.0, "owned_teu": 2998823, "owned_ships": 386, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 1653855, "orderbook_ships": 157, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 4, "operator_name": "COSCO Group", "total_teu": 3673704, "total_ships": 566, "market_share": 0.0, "owned_teu": 2226498, "owned_ships": 211, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 1884798, "orderbook_ships": 155, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 5, "operator_name": "Hapag-Lloyd", "total_teu": 2410123, "total_ships": 289, "market_share": 0.0, "owned_teu": 1455918, "owned_ships": 134, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 489224, "orderbook_ships": 62, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 6, "operator_name": "ONE (Ocean Network Express)", "total_teu": 2199598, "total_ships": 272, "market_share": 0.0, "owned_teu": 1060020, "owned_ships": 113, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 582932, "orderbook_ships": 50, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 7, "operator_name": "Evergreen Line", "total_teu": 2040707, "total_ships": 243, "market_share": 0.0, "owned_teu": 1496083, "owned_ships": 170, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 851904, "orderbook_ships": 75, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 8, "operator_name": "HMM Co Ltd", "total_teu": 1034348, "total_ships": 97, "market_share": 0.0, "owned_teu": 847404, "owned_ships": 72, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 324642, "orderbook_ships": 44, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 9, "operator_name": "Yang Ming Marine Transport Corp.", "total_teu": 771280, "total_ships": 99, "market_share": 0.0, "owned_teu": 397896, "owned_ships": 64, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 256660, "orderbook_ships": 20, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 10, "operator_name": "Zim", "total_teu": 699460, "total_ships": 114, "market_share": 0.0, "owned_teu": 92934, "owned_ships": 15, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 245216, "orderbook_ships": 32, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 11, "operator_name": "Wan Hai Lines", "total_teu": 633064, "total_ships": 125, "market_share": 0.0, "owned_teu": 633064, "owned_ships": 125, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 495800, "orderbook_ships": 48, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 12, "operator_name": "PIL (Pacific Int. Line)", "total_teu": 470419, "total_ships": 101, "market_share": 0.0, "owned_teu": 346748, "owned_ships": 84, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 305798, "orderbook_ships": 29, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 13, "operator_name": "X-Press Feeders Group", "total_teu": 191458, "total_ships": 104, "market_share": 0.0, "owned_teu": 116716, "owned_ships": 57, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 94800, "orderbook_ships": 23, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 14, "operator_name": "SITC", "total_teu": 187297, "total_ships": 121, "market_share": 0.0, "owned_teu": 163687, "owned_ships": 99, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 66232, "orderbook_ships": 37, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 15, "operator_name": "KMTC", "total_teu": 172576, "total_ships": 67, "market_share": 0.0, "owned_teu": 103421, "owned_ships": 31, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 64656, "orderbook_ships": 10, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 16, "operator_name": "DP World", "total_teu": 149589, "total_ships": 87, "market_share": 0.0, "owned_teu": 31341, "owned_ships": 10, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 84841, "orderbook_ships": 17, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 17, "operator_name": "Global Feeder Shipping LLC", "total_teu": 147560, "total_ships": 57, "market_share": 0.0, "owned_teu": 61553, "owned_ships": 25, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 11152, "orderbook_ships": 3, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 18, "operator_name": "IRISL Group", "total_teu": 140184, "total_ships": 27, "market_share": 0.0, "owned_teu": 140184, "owned_ships": 27, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 19, "operator_name": "Sinokor Merchant Marine", "total_teu": 132526, "total_ships": 69, "market_share": 0.0, "owned_teu": 130741, "owned_ships": 68, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 52000, "orderbook_ships": 4, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 20, "operator_name": "TS Lines", "total_teu": 129100, "total_ships": 46, "market_share": 0.0, "owned_teu": 106059, "owned_ships": 38, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 66428, "orderbook_ships": 14, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 21, "operator_name": "Emirates Shipping Line", "total_teu": 114852, "total_ships": 25, "market_share": 0.0, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 42510, "orderbook_ships": 3, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 22, "operator_name": "China United Lines (CULines)", "total_teu": 109433, "total_ships": 47, "market_share": 0.0, "owned_teu": 18120, "owned_ships": 10, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 91693, "orderbook_ships": 18, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 23, "operator_name": "RCL (Regional Container L.)", "total_teu": 100409, "total_ships": 34, "market_share": 0.0, "owned_teu": 89787, "owned_ships": 28, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 148866, "orderbook_ships": 30, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 24, "operator_name": "Ningbo Ocean Shg Co", "total_teu": 87650, "total_ships": 87, "market_share": 0.0, "owned_teu": 61418, "owned_ships": 49, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 60400, "orderbook_ships": 20, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 25, "operator_name": "Interasia Lines", "total_teu": 85077, "total_ships": 28, "market_share": 0.0, "owned_teu": 64553, "owned_ships": 22, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 65070, "orderbook_ships": 13, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 26, "operator_name": "Tangshan Port Hede Shipping", "total_teu": 76020, "total_ships": 52, "market_share": 0.0, "owned_teu": 1874, "owned_ships": 3, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 2693, "orderbook_ships": 1, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 27, "operator_name": "Grimaldi (Napoli)", "total_teu": 75158, "total_ships": 48, "market_share": 0.0, "owned_teu": 75158, "owned_ships": 48, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 28, "operator_name": "Antong Holdings (QASC)", "total_teu": 72564, "total_ships": 71, "market_share": 0.0, "owned_teu": 53994, "owned_ships": 37, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 29, "operator_name": "Sinolines", "total_teu": 68743, "total_ships": 42, "market_share": 0.0, "owned_teu": 30566, "owned_ships": 19, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 53075, "orderbook_ships": 13, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 30, "operator_name": "Matson", "total_teu": 68420, "total_ships": 28, "market_share": 0.0, "owned_teu": 40355, "owned_ships": 19, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 10860, "orderbook_ships": 3, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 31, "operator_name": "Shanghai Jin Jiang Shipping", "total_teu": 67125, "total_ships": 56, "market_share": 0.0, "owned_teu": 32449, "owned_ships": 27, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 27200, "orderbook_ships": 16, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 32, "operator_name": "SM Line Corp.", "total_teu": 66801, "total_ships": 15, "market_share": 0.0, "owned_teu": 64188, "owned_ships": 13, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 33, "operator_name": "Swire Shipping", "total_teu": 59502, "total_ships": 30, "market_share": 0.0, "owned_teu": 47917, "owned_ships": 23, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 34, "operator_name": "Zhonggu Logistics Corp.", "total_teu": 55725, "total_ships": 60, "market_share": 0.0, "owned_teu": 19957, "owned_ships": 12, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 95800, "orderbook_ships": 20, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 35, "operator_name": "FESCO", "total_teu": 53903, "total_ships": 37, "market_share": 0.0, "owned_teu": 35627, "owned_ships": 22, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 36, "operator_name": "Arkas Line / EMES", "total_teu": 52632, "total_ships": 32, "market_share": 0.0, "owned_teu": 50524, "owned_ships": 30, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 44892, "orderbook_ships": 12, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 37, "operator_name": "Seaboard Marine", "total_teu": 47293, "total_ships": 23, "market_share": 0.0, "owned_teu": 34347, "owned_ships": 14, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 3666, "orderbook_ships": 1, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 38, "operator_name": "Samudera", "total_teu": 44850, "total_ships": 32, "market_share": 0.0, "owned_teu": 13175, "owned_ships": 14, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 39, "operator_name": "Meratus", "total_teu": 44718, "total_ships": 67, "market_share": 0.0, "owned_teu": 44718, "owned_ships": 67, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 5466, "orderbook_ships": 8, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 40, "operator_name": "Akkon Lines", "total_teu": 44496, "total_ships": 31, "market_share": 0.0, "owned_teu": 2894, "owned_ships": 3, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 3630, "orderbook_ships": 1, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 41, "operator_name": "Tailwind Shipping Lines", "total_teu": 43406, "total_ships": 12, "market_share": 0.0, "owned_teu": 6330, "owned_ships": 2, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 42000, "orderbook_ships": 5, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 42, "operator_name": "Namsung Shipping", "total_teu": 43084, "total_ships": 31, "market_share": 0.0, "owned_teu": 37339, "owned_ships": 27, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 12624, "orderbook_ships": 4, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 43, "operator_name": "Tanto Intim Line", "total_teu": 39481, "total_ships": 58, "market_share": 0.0, "owned_teu": 39481, "owned_ships": 58, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 927, "orderbook_ships": 1, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 44, "operator_name": "Shandong Marine Corporation", "total_teu": 31246, "total_ships": 45, "market_share": 0.0, "owned_teu": 11598, "owned_ships": 17, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 6320, "orderbook_ships": 4, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 45, "operator_name": "Salam Pacific Indonesia Lines", "total_teu": 31010, "total_ships": 44, "market_share": 0.0, "owned_teu": 31010, "owned_ships": 44, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 1360, "orderbook_ships": 2, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 46, "operator_name": "Great White Fleet", "total_teu": 29973, "total_ships": 14, "market_share": 0.0, "owned_teu": 17481, "owned_ships": 7, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 15500, "orderbook_ships": 5, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 47, "operator_name": "Linea Messina", "total_teu": 27682, "total_ships": 12, "market_share": 0.0, "owned_teu": 22358, "owned_ships": 5, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 48, "operator_name": "Sea Legend Shipping", "total_teu": 21556, "total_ships": 9, "market_share": 0.0, "owned_teu": 4890, "owned_ships": 1, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 49, "operator_name": "Dole Ocean Liner", "total_teu": 21150, "total_ships": 16, "market_share": 0.0, "owned_teu": 20610, "owned_ships": 14, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 50, "operator_name": "Chun Kyung (CK Line)", "total_teu": 20549, "total_ships": 19, "market_share": 0.0, "owned_teu": 13236, "owned_ships": 9, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 15012, "orderbook_ships": 4, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 51, "operator_name": "Hainan Yangpu Newnew Shipping", "total_teu": 19470, "total_ships": 7, "market_share": 0.0, "owned_teu": 18250, "owned_ships": 6, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 9620, "orderbook_ships": 2, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 52, "operator_name": "Crowley Liner Services", "total_teu": 19142, "total_ships": 16, "market_share": 0.0, "owned_teu": 11094, "owned_ships": 9, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 53, "operator_name": "Kawa Shipping", "total_teu": 18644, "total_ships": 10, "market_share": 0.0, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 24206, "orderbook_ships": 5, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 54, "operator_name": "Asean Seas Line", "total_teu": 18508, "total_ships": 14, "market_share": 0.0, "owned_teu": 1781, "owned_ships": 1, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 10600, "orderbook_ships": 2, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 55, "operator_name": "Tropical Shg / TOTE Maritime", "total_teu": 18203, "total_ships": 24, "market_share": 0.0, "owned_teu": 16535, "owned_ships": 21, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 56, "operator_name": "Shipping Corp. of India", "total_teu": 17834, "total_ships": 3, "market_share": 0.0, "owned_teu": 8800, "owned_ships": 2, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 57, "operator_name": "Temas Line", "total_teu": 17743, "total_ships": 35, "market_share": 0.0, "owned_teu": 17743, "owned_ships": 35, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 3430, "orderbook_ships": 7, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 58, "operator_name": "Bengal Tiger Line", "total_teu": 17635, "total_ships": 10, "market_share": 0.0, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 59, "operator_name": "Taicang Container Lines", "total_teu": 17202, "total_ships": 14, "market_share": 0.0, "owned_teu": 4369, "owned_ships": 4, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 12024, "orderbook_ships": 4, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 60, "operator_name": "MTT Shipping", "total_teu": 16717, "total_ships": 18, "market_share": 0.0, "owned_teu": 14293, "owned_ships": 16, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 12332, "orderbook_ships": 6, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 61, "operator_name": "Transworld Group Singapore", "total_teu": 14922, "total_ships": 12, "market_share": 0.0, "owned_teu": 14922, "owned_ships": 12, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 62, "operator_name": "Boluda Lines", "total_teu": 14629, "total_ships": 18, "market_share": 0.0, "owned_teu": 9326, "owned_ships": 12, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 63, "operator_name": "Cool Carriers", "total_teu": 14217, "total_ships": 40, "market_share": 0.0, "owned_teu": 4022, "owned_ships": 13, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 64, "operator_name": "Turkon Line", "total_teu": 13857, "total_ships": 6, "market_share": 0.0, "owned_teu": 11512, "owned_ships": 5, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 4000, "orderbook_ships": 1, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 65, "operator_name": "Eimskip", "total_teu": 13069, "total_ships": 15, "market_share": 0.0, "owned_teu": 5174, "owned_ships": 7, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 4560, "orderbook_ships": 2, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 66, "operator_name": "Pasha Hawaii Transport Lines", "total_teu": 12903, "total_ships": 6, "market_share": 0.0, "owned_teu": 12903, "owned_ships": 6, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 67, "operator_name": "Independent Container Line", "total_teu": 12398, "total_ships": 4, "market_share": 0.0, "owned_teu": 6182, "owned_ships": 2, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 68, "operator_name": "Caribbean Feeder Services", "total_teu": 12090, "total_ships": 10, "market_share": 0.0, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 69, "operator_name": "Peel Ports (BG Freight)", "total_teu": 12061, "total_ships": 12, "market_share": 0.0, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 70, "operator_name": "HR Lines", "total_teu": 11932, "total_ships": 8, "market_share": 0.0, "owned_teu": 11932, "owned_ships": 8, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 71, "operator_name": "Pan Ocean (Container)", "total_teu": 11399, "total_ships": 10, "market_share": 0.0, "owned_teu": 9186, "owned_ships": 7, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 72, "operator_name": "Silmar Shipping FZCO", "total_teu": 11315, "total_ships": 5, "market_share": 0.0, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 73, "operator_name": "MODUL", "total_teu": 11191, "total_ships": 4, "market_share": 0.0, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 74, "operator_name": "Hai An Transport", "total_teu": 11057, "total_ships": 8, "market_share": 0.0, "owned_teu": 11057, "owned_ships": 8, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 50344, "orderbook_ships": 12, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 75, "operator_name": "Qatar Navigation (Milaha)", "total_teu": 10939, "total_ships": 7, "market_share": 0.0, "owned_teu": 8615, "owned_ships": 5, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 76, "operator_name": "King Ocean", "total_teu": 10853, "total_ships": 15, "market_share": 0.0, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 77, "operator_name": "Greta Shipping", "total_teu": 10516, "total_ships": 6, "market_share": 0.0, "owned_teu": 1118, "owned_ships": 1, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 78, "operator_name": "Philippine Span Asia Carrier Corp.", "total_teu": 10143, "total_ships": 17, "market_share": 0.0, "owned_teu": 8926, "owned_ships": 15, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 400, "orderbook_ships": 1, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 79, "operator_name": "Neptune Pacific Direct Line", "total_teu": 9783, "total_ships": 9, "market_share": 0.0, "owned_teu": 9783, "owned_ships": 9, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 80, "operator_name": "Imoto Lines", "total_teu": 9295, "total_ships": 31, "market_share": 0.0, "owned_teu": 7423, "owned_ships": 24, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 1141, "orderbook_ships": 3, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 81, "operator_name": "Pan Continental Shg", "total_teu": 9288, "total_ships": 8, "market_share": 0.0, "owned_teu": 8660, "owned_ships": 7, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 2200, "orderbook_ships": 2, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 82, "operator_name": "Borchard Lines", "total_teu": 9284, "total_ships": 10, "market_share": 0.0, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 83, "operator_name": "Dalian Trawind Marine Co", "total_teu": 9272, "total_ships": 2, "market_share": 0.0, "owned_teu": 9272, "owned_ships": 2, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 84, "operator_name": "Dalian Jifa Bohai Rim Container L.", "total_teu": 9082, "total_ships": 13, "market_share": 0.0, "owned_teu": 3140, "owned_ships": 4, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 85, "operator_name": "Sea Express Shipping Lines", "total_teu": 8865, "total_ships": 6, "market_share": 0.0, "owned_teu": 1550, "owned_ships": 1, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 8763, "orderbook_ships": 4, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 86, "operator_name": "Q Express Line Sdn Bhd", "total_teu": 8458, "total_ships": 2, "market_share": 0.0, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 87, "operator_name": "GS Lines", "total_teu": 8154, "total_ships": 9, "market_share": 0.0, "owned_teu": 6718, "owned_ships": 7, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 88, "operator_name": "Irish Continental Group", "total_teu": 8041, "total_ships": 9, "market_share": 0.0, "owned_teu": 4699, "owned_ships": 5, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 89, "operator_name": "GT Lines", "total_teu": 8034, "total_ships": 8, "market_share": 0.0, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 90, "operator_name": "EAS Datong", "total_teu": 8017, "total_ships": 6, "market_share": 0.0, "owned_teu": 7415, "owned_ships": 5, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 91, "operator_name": "Oceanic Cargo Lines", "total_teu": 7970, "total_ships": 17, "market_share": 0.0, "owned_teu": 7970, "owned_ships": 17, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 92, "operator_name": "OVP Shipping", "total_teu": 7774, "total_ships": 6, "market_share": 0.0, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 8792, "orderbook_ships": 2, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 93, "operator_name": "Safetrans Shipping", "total_teu": 7772, "total_ships": 3, "market_share": 0.0, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 94, "operator_name": "Harbour-Link Group Bhd", "total_teu": 7687, "total_ships": 10, "market_share": 0.0, "owned_teu": 7687, "owned_ships": 10, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 95, "operator_name": "Del Monte Fresh Produce Co", "total_teu": 7656, "total_ships": 6, "market_share": 0.0, "owned_teu": 7656, "owned_ships": 6, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 96, "operator_name": "Panda Express Line", "total_teu": 7628, "total_ships": 5, "market_share": 0.0, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 1510, "orderbook_ships": 1, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 97, "operator_name": "Kambara Kisen", "total_teu": 7566, "total_ships": 7, "market_share": 0.0, "owned_teu": 7566, "owned_ships": 7, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 98, "operator_name": "Transit LLC", "total_teu": 7420, "total_ships": 6, "market_share": 0.0, "owned_teu": 5910, "owned_ships": 5, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 99, "operator_name": "Tarros", "total_teu": 7323, "total_ships": 5, "market_share": 0.0, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 100, "operator_name": "Folk Maritime", "total_teu": 7184, "total_ships": 5, "market_share": 0.0, "owned_teu": 6449, "owned_ships": 4, "owned_share": 0.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}]}, "2026-10-24": {"meta": {"extracted_at": "2026-10-24 12:10:44", "global_teu": 0, "global_ships": 0, "top100_teu": 0, "top100_ships": 0}, "operators": []}, "2026-10-25": {"meta": {"extracted_at": "2026-10-25T11:30:15.717871", "global_teu": 0, "global_ships": 0, "top100_teu": 0, "top100_ships": 0}, "operators": []}}, "updated_at": "2026-10-25T11:30:15.724087"};
-    let topChartInstance = null;
-    let ratioChartInstance = null;
-
-    function formatNumber(val) {
-      if (val === null || val === undefined) return "0";
-      return Number(val).toLocaleString();
-    }
-
-    function initSelectors() {
-      const dSel = document.getElementById("dateSelect");
-      const cSel = document.getElementById("compareSelect");
-      dSel.innerHTML = "";
-      cSel.innerHTML = "<option value='none'>None (Current Only)</option>";
-
-      const dates = DATASET.dates || [];
-      if (dates.length === 0) return;
-
-      dates.slice().reverse().forEach((d, idx) => {
-        const opt = document.createElement("option");
-        opt.value = d;
-        opt.textContent = d + (idx === 0 ? " (Latest)" : "");
-        dSel.appendChild(opt);
-
-        const optC = document.createElement("option");
-        optC.value = d;
-        optC.textContent = d;
-        cSel.appendChild(optC);
-      });
-
-      if (dates.length > 1) {
-        cSel.selectedIndex = 1;
-      }
-    }
-
-    function onDateChange() {
-      renderAll();
-    }
-
-    function renderAll() {
-      const curDate = document.getElementById("dateSelect").value;
-      const cmpDate = document.getElementById("compareSelect").value;
-
-      if (!curDate || !DATASET.snapshots[curDate]) return;
-
-      const current = DATASET.snapshots[curDate];
-      const compare = (cmpDate !== 'none' && DATASET.snapshots[cmpDate]) ? DATASET.snapshots[cmpDate] : null;
-
-      renderKPIs(current, compare);
-      renderCharts(current);
-      renderTable(current, compare);
-
-      document.getElementById("footer-sync-time").textContent = "LAST SYNC: " + (current.meta.extracted_at || curDate);
-    }
-
-    function renderKPIs(current, compare) {
-      const meta = current.meta;
-      const ops = current.operators || [];
-
-      document.getElementById("kpi-global-teu").textContent = formatNumber(meta.global_teu) + " TEU";
-      document.getElementById("kpi-global-ships").textContent = formatNumber(meta.global_ships) + " Ships";
-
-      document.getElementById("kpi-top100-teu").textContent = formatNumber(meta.top100_teu) + " TEU";
-      document.getElementById("kpi-top100-ships").textContent = formatNumber(meta.top100_ships) + " Ships";
-
-      const top100Share = meta.global_teu > 0 ? ((meta.top100_teu / meta.global_teu) * 100).toFixed(1) : "0.0";
-      document.getElementById("kpi-top100-share").textContent = top100Share + "% of Global";
-
-      const top10Ops = ops.slice(0, 10);
-      const top10Teu = top10Ops.reduce((acc, x) => acc + x.total_teu, 0);
-      const top10Share = meta.global_teu > 0 ? ((top10Teu / meta.global_teu) * 100).toFixed(1) : "0.0";
-
-      document.getElementById("kpi-top10-teu").textContent = formatNumber(top10Teu) + " TEU";
-      document.getElementById("kpi-top10-share").textContent = top10Share + "% Market Share";
-
-      const obTeu = ops.reduce((acc, x) => acc + x.orderbook_teu, 0);
-      const obShips = ops.reduce((acc, x) => acc + x.orderbook_ships, 0);
-      const obRatio = meta.top100_teu > 0 ? ((obTeu / meta.top100_teu) * 100).toFixed(1) : "0.0";
-
-      document.getElementById("kpi-orderbook-teu").textContent = formatNumber(obTeu) + " TEU";
-      document.getElementById("kpi-orderbook-ships").textContent = formatNumber(obShips) + " Ships";
-      document.getElementById("kpi-orderbook-ratio").textContent = obRatio + "% of Existing";
-
-      const deltaEl = document.getElementById("kpi-global-delta");
-      if (compare && compare.meta) {
-        const diff = meta.global_teu - compare.meta.global_teu;
-        const sign = diff > 0 ? "+" : "";
-        deltaEl.className = diff > 0 ? "up" : (diff < 0 ? "down" : "flat");
-        deltaEl.textContent = sign + formatNumber(diff) + " TEU vs " + (compare.meta.snapshot_date || "BASE");
-      } else {
-        deltaEl.className = "flat";
-        deltaEl.textContent = "HISTORICAL BASE";
-      }
-    }
-
-    function renderCharts(current) {
-      const ops = (current.operators || []).slice(0, 15);
-
-      const labels = ops.map(o => o.operator_name.length > 14 ? o.operator_name.substring(0, 13) + '..' : o.operator_name);
-      const ownedTeu = ops.map(o => o.owned_teu);
-      const chtTeu = ops.map(o => o.chartered_teu);
-      const ordTeu = ops.map(o => o.orderbook_teu);
-
-      if (topChartInstance) topChartInstance.destroy();
-      const ctx1 = document.getElementById("topChart").getContext("2d");
-      topChartInstance = new Chart(ctx1, {
-        type: 'bar',
-        data: {
-          labels: labels,
-          datasets: [
-            {
-              label: 'Owned TEU',
-              data: ownedTeu,
-              backgroundColor: '#45a9f5',
-              stack: 'Stack 0'
-            },
-            {
-              label: 'Chartered TEU',
-              data: chtTeu,
-              backgroundColor: '#f6a623',
-              stack: 'Stack 0'
-            },
-            {
-              label: 'Orderbook TEU',
-              data: ordTeu,
-              backgroundColor: 'rgba(167, 139, 250, 0.45)',
-              borderColor: '#a78bfa',
-              borderWidth: 1,
-              stack: 'Stack 1'
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: {
-              position: 'top',
-              labels: { color: '#879caf', font: { size: 10, family: 'JetBrains Mono' } }
-            },
-            tooltip: {
-              mode: 'index',
-              intersect: false
-            }
-          },
-          scales: {
-            x: {
-              ticks: { color: '#879caf', font: { size: 10, family: 'Inter' } },
-              grid: { color: 'rgba(27, 48, 67, 0.4)' }
-            },
-            y: {
-              ticks: {
-                color: '#879caf',
-                font: { size: 10, family: 'JetBrains Mono' },
-                callback: function(v) { return (v / 1000000).toFixed(1) + 'M'; }
-              },
-              grid: { color: 'rgba(27, 48, 67, 0.4)' }
-            }
-          }
-        }
-      });
-
-      const allOps = current.operators || [];
-      const totalOwned = allOps.reduce((acc, x) => acc + x.owned_teu, 0);
-      const totalCht = allOps.reduce((acc, x) => acc + x.chartered_teu, 0);
-      const totalOrder = allOps.reduce((acc, x) => acc + x.orderbook_teu, 0);
-
-      if (ratioChartInstance) ratioChartInstance.destroy();
-      const ctx2 = document.getElementById("ratioChart").getContext("2d");
-      ratioChartInstance = new Chart(ctx2, {
-        type: 'doughnut',
-        data: {
-          labels: ['Owned Capacity', 'Chartered Capacity', 'Orderbook Pipeline'],
-          datasets: [{
-            data: [totalOwned, totalCht, totalOrder],
-            backgroundColor: ['#45a9f5', '#f6a623', '#a78bfa'],
-            borderWidth: 1,
-            borderColor: '#02060b'
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: {
-              position: 'right',
-              labels: { color: '#879caf', font: { size: 11, family: 'Inter' } }
-            }
-          },
-          cutout: '68%'
-        }
-      });
-    }
-
-    function renderTable(current, compare) {
-      const tbody = document.getElementById("operatorTableBody");
-      tbody.innerHTML = "";
-
-      const ops = current.operators || [];
-      document.getElementById("table-record-count").textContent = ops.length + " OPERATORS MONITORED";
-
-      ops.forEach(op => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td class="rank-cell mono">${op.rank}</td>
-          <td class="op-name">${op.operator_name}</td>
-          <td class="num" style="font-weight:700; color:var(--text);">${formatNumber(op.total_teu)}</td>
-          <td class="num">${formatNumber(op.total_ships)}</td>
-          <td class="num" style="color:var(--orange); font-weight:700;">${op.market_share.toFixed(1)}%</td>
-          <td class="num">${formatNumber(op.owned_teu)}</td>
-          <td class="num" style="color:var(--blue);">${op.owned_share.toFixed(1)}%</td>
-          <td class="num">${formatNumber(op.chartered_teu)}</td>
-          <td class="num" style="color:var(--amber);">${op.chartered_share.toFixed(1)}%</td>
-          <td class="num">${formatNumber(op.orderbook_teu)}</td>
-          <td class="num" style="color:var(--purple);">${op.orderbook_share.toFixed(1)}%</td>
-          <td class="share-bar-cell">
-            <div class="progress-bar-bg">
-              <div class="progress-bar-fill" style="width:${Math.min(100, op.market_share * 5)}%;"></div>
+    <div class="ticker-bar">
+        <div class="brand-cluster">
+            <span class="brand-code">ALPH&lt;GO&gt;</span>
+            <span class="brand-title">ALPHALINER TOP 100 FLEET MONITOR</span>
+        </div>
+        <div class="top-controls">
+            <div class="date-control-group">
+                <span class="date-control-label">Snapshot:</span>
+                <select id="select-active-date" class="terminal-select" onchange="onDateChange()"></select>
             </div>
-          </td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
+            <div class="date-control-group">
+                <span class="date-control-label">Compare Base:</span>
+                <select id="select-compare-date" class="terminal-select" onchange="onCompareChange()"></select>
+            </div>
+            <button class="btn-export" onclick="exportActiveTableToCSV()">EXPORT CSV</button>
+        </div>
+    </div>
 
-    function exportCSV() {
-      const curDate = document.getElementById("dateSelect").value;
-      if (!curDate || !DATASET.snapshots[curDate]) return;
+    <div class="terminal-container">
+        <!-- KPI Row -->
+        <div class="grid-kpi">
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <span>Global Fleet (Official)</span>
+                    <span id="kpi-global-ships">-</span>
+                </div>
+                <div class="kpi-value" id="kpi-global-teu">-</div>
+                <div class="kpi-sub">
+                    <span>100% Industry Baseline</span>
+                    <span id="kpi-global-delta" class="delta-tag delta-flat">-</span>
+                </div>
+            </div>
 
-      const ops = DATASET.snapshots[curDate].operators;
-      const headers = [
-        "Ranking", "Operator", "Total TEU", "Total Ships", "Market Share (%)",
-        "Owned TEU", "Owned Ships", "Owned Share (%)",
-        "Chartered TEU", "Chartered Ships", "Chartered Share (%)",
-        "Orderbook TEU", "Orderbook Ships", "Orderbook % Existing"
-      ];
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <span>Top 100 Capacity</span>
+                    <span id="kpi-top100-ships">-</span>
+                </div>
+                <div class="kpi-value" id="kpi-top100-teu">-</div>
+                <div class="kpi-sub">
+                    <span id="kpi-top100-share">-</span>
+                    <span id="kpi-top100-delta" class="delta-tag delta-flat">-</span>
+                </div>
+            </div>
 
-      let csv = "\uFEFF" + headers.join(",") + "\n";
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <span>Top 10 Concentration</span>
+                    <span id="kpi-top10-share">-</span>
+                </div>
+                <div class="kpi-value" id="kpi-top10-teu">-</div>
+                <div class="kpi-sub">
+                    <span>Top 10 Lines TEU</span>
+                    <span id="kpi-top10-delta" class="delta-tag delta-flat">-</span>
+                </div>
+            </div>
 
-      ops.forEach(o => {
-        const row = [
-          o.rank,
-          `"${o.operator_name.replace(/"/g, '""')}"`,
-          o.total_teu,
-          o.total_ships,
-          o.market_share,
-          o.owned_teu,
-          o.owned_ships,
-          o.owned_share,
-          o.chartered_teu,
-          o.chartered_ships,
-          o.chartered_share,
-          o.orderbook_teu,
-          o.orderbook_ships,
-          o.orderbook_share
-        ];
-        csv += row.join(",") + "\n";
-      });
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <span>Orderbook Pipeline</span>
+                    <span id="kpi-orderbook-ratio">-</span>
+                </div>
+                <div class="kpi-value" id="kpi-orderbook-teu" style="color: var(--amber-bloomberg);">-</div>
+                <div class="kpi-sub">
+                    <span>Top 100 On-Order</span>
+                    <span id="kpi-orderbook-delta" class="delta-tag delta-flat">-</span>
+                </div>
+            </div>
+        </div>
 
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.setAttribute("download", `alphaliner_top100_${curDate}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
+        <!-- Charts Row -->
+        <div class="grid-charts">
+            <div class="chart-card">
+                <div class="chart-title">Top 10 Lines // Existing Fleet vs Orderbook Pipeline</div>
+                <div class="chart-wrapper">
+                    <canvas id="chartTop10"></canvas>
+                </div>
+            </div>
+            <div class="chart-card">
+                <div class="chart-title">Top 10 Lines // Fleet Ownership Structure (Owned vs Chartered)</div>
+                <div class="chart-wrapper">
+                    <canvas id="chartOwnership"></canvas>
+                </div>
+            </div>
+        </div>
 
-    window.onload = function() {
-      initSelectors();
-      renderAll();
-    };
-  </script>
+        <!-- Detailed Table -->
+        <div class="table-card">
+            <div class="table-toolbar">
+                <input type="text" id="table-search-input" class="search-box" placeholder="Filter carrier / operator..." onkeyup="filterTable()">
+                <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">
+                    Comparison Delta vs <span id="label-compare-date" style="color: var(--blue-accent);">-</span>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="terminal-table">
+                    <thead>
+                        <tr>
+                            <th rowspan="2" style="width: 50px;">#</th>
+                            <th rowspan="2" style="min-width: 180px;">Operator</th>
+                            <th colspan="3" class="th-group">Total Fleet</th>
+                            <th colspan="3" class="th-group">Owned Fleet</th>
+                            <th colspan="3" class="th-group">Chartered Fleet</th>
+                            <th colspan="3" class="th-group">Orderbook Pipeline</th>
+                            <th rowspan="2" style="min-width: 90px;" class="text-right">TEU Δ</th>
+                        </tr>
+                        <tr>
+                            <th class="text-right">TEU</th>
+                            <th class="text-right">Ships</th>
+                            <th class="text-right">Share</th>
+                            <th class="text-right">TEU</th>
+                            <th class="text-right">Ships</th>
+                            <th class="text-right">%</th>
+                            <th class="text-right">TEU</th>
+                            <th class="text-right">Ships</th>
+                            <th class="text-right">%</th>
+                            <th class="text-right">TEU</th>
+                            <th class="text-right">Ships</th>
+                            <th class="text-right">%</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const RAW_DATASET = {"generated_at": "2026-10-25T11:51:30.831406", "dates": ["2026-10-23", "2026-10-25"], "snapshots": {"2026-10-23": {"meta": {"snapshot_date": "2026-10-23", "created_at": "2026-10-23", "global_teu": 34140930, "global_ships": 6624, "top100_teu": 34140930, "top100_ships": 6624, "notes": ""}, "operators": [{"snapshot_date": "2026-10-23", "rank": 1, "operator_name": "Mediterranean Shg Co", "total_teu": 7464018, "total_ships": 1018, "market_share": 21.86, "owned_teu": 4794529, "owned_ships": 767, "owned_share": 64.24, "chartered_teu": 2669489, "chartered_ships": 251, "chartered_share": 35.76, "orderbook_teu": 3379018, "orderbook_ships": 183, "orderbook_share": 45.27}, {"snapshot_date": "2026-10-23", "rank": 2, "operator_name": "Maersk", "total_teu": 4717299, "total_ships": 749, "market_share": 13.82, "owned_teu": 2943996, "owned_ships": 359, "owned_share": 62.41, "chartered_teu": 1773303, "chartered_ships": 390, "chartered_share": 37.59, "orderbook_teu": 1811602, "orderbook_ships": 138, "orderbook_share": 38.4}, {"snapshot_date": "2026-10-23", "rank": 3, "operator_name": "CMA CGM Group", "total_teu": 4489970, "total_ships": 731, "market_share": 13.15, "owned_teu": 2998823, "owned_ships": 386, "owned_share": 66.79, "chartered_teu": 1491147, "chartered_ships": 345, "chartered_share": 33.21, "orderbook_teu": 1653855, "orderbook_ships": 157, "orderbook_share": 36.83}, {"snapshot_date": "2026-10-23", "rank": 4, "operator_name": "COSCO Group", "total_teu": 3673704, "total_ships": 566, "market_share": 10.76, "owned_teu": 2226498, "owned_ships": 211, "owned_share": 60.61, "chartered_teu": 1447206, "chartered_ships": 355, "chartered_share": 39.39, "orderbook_teu": 1884798, "orderbook_ships": 155, "orderbook_share": 51.31}, {"snapshot_date": "2026-10-23", "rank": 5, "operator_name": "Hapag-Lloyd", "total_teu": 2410123, "total_ships": 289, "market_share": 7.06, "owned_teu": 1455918, "owned_ships": 134, "owned_share": 60.41, "chartered_teu": 954205, "chartered_ships": 155, "chartered_share": 39.59, "orderbook_teu": 489224, "orderbook_ships": 62, "orderbook_share": 20.3}, {"snapshot_date": "2026-10-23", "rank": 6, "operator_name": "ONE (Ocean Network Express)", "total_teu": 2199598, "total_ships": 272, "market_share": 6.44, "owned_teu": 1060020, "owned_ships": 113, "owned_share": 48.19, "chartered_teu": 1139578, "chartered_ships": 159, "chartered_share": 51.81, "orderbook_teu": 582932, "orderbook_ships": 50, "orderbook_share": 26.5}, {"snapshot_date": "2026-10-23", "rank": 7, "operator_name": "Evergreen Line", "total_teu": 2040707, "total_ships": 243, "market_share": 5.98, "owned_teu": 1496083, "owned_ships": 170, "owned_share": 73.31, "chartered_teu": 544624, "chartered_ships": 73, "chartered_share": 26.69, "orderbook_teu": 851904, "orderbook_ships": 75, "orderbook_share": 41.75}, {"snapshot_date": "2026-10-23", "rank": 8, "operator_name": "HMM Co Ltd", "total_teu": 1034348, "total_ships": 97, "market_share": 3.03, "owned_teu": 847404, "owned_ships": 72, "owned_share": 81.93, "chartered_teu": 186944, "chartered_ships": 25, "chartered_share": 18.07, "orderbook_teu": 324642, "orderbook_ships": 44, "orderbook_share": 31.39}, {"snapshot_date": "2026-10-23", "rank": 9, "operator_name": "Yang Ming Marine Transport Corp.", "total_teu": 771280, "total_ships": 99, "market_share": 2.26, "owned_teu": 397896, "owned_ships": 64, "owned_share": 51.59, "chartered_teu": 373384, "chartered_ships": 35, "chartered_share": 48.41, "orderbook_teu": 256660, "orderbook_ships": 20, "orderbook_share": 33.28}, {"snapshot_date": "2026-10-23", "rank": 10, "operator_name": "Zim", "total_teu": 699460, "total_ships": 114, "market_share": 2.05, "owned_teu": 92934, "owned_ships": 15, "owned_share": 13.29, "chartered_teu": 606526, "chartered_ships": 99, "chartered_share": 86.71, "orderbook_teu": 245216, "orderbook_ships": 32, "orderbook_share": 35.06}, {"snapshot_date": "2026-10-23", "rank": 11, "operator_name": "Wan Hai Lines", "total_teu": 633064, "total_ships": 125, "market_share": 1.85, "owned_teu": 633064, "owned_ships": 125, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 495800, "orderbook_ships": 48, "orderbook_share": 78.32}, {"snapshot_date": "2026-10-23", "rank": 12, "operator_name": "PIL (Pacific Int. Line)", "total_teu": 470419, "total_ships": 101, "market_share": 1.38, "owned_teu": 346748, "owned_ships": 84, "owned_share": 73.71, "chartered_teu": 123671, "chartered_ships": 17, "chartered_share": 26.29, "orderbook_teu": 305798, "orderbook_ships": 29, "orderbook_share": 65.01}, {"snapshot_date": "2026-10-23", "rank": 13, "operator_name": "X-Press Feeders Group", "total_teu": 191458, "total_ships": 104, "market_share": 0.56, "owned_teu": 116716, "owned_ships": 57, "owned_share": 60.96, "chartered_teu": 74742, "chartered_ships": 47, "chartered_share": 39.04, "orderbook_teu": 94800, "orderbook_ships": 23, "orderbook_share": 49.51}, {"snapshot_date": "2026-10-23", "rank": 14, "operator_name": "SITC", "total_teu": 187297, "total_ships": 121, "market_share": 0.55, "owned_teu": 163687, "owned_ships": 99, "owned_share": 87.39, "chartered_teu": 23610, "chartered_ships": 22, "chartered_share": 12.61, "orderbook_teu": 66232, "orderbook_ships": 37, "orderbook_share": 35.36}, {"snapshot_date": "2026-10-23", "rank": 15, "operator_name": "KMTC", "total_teu": 172576, "total_ships": 67, "market_share": 0.51, "owned_teu": 103421, "owned_ships": 31, "owned_share": 59.93, "chartered_teu": 69155, "chartered_ships": 36, "chartered_share": 40.07, "orderbook_teu": 64656, "orderbook_ships": 10, "orderbook_share": 37.47}, {"snapshot_date": "2026-10-23", "rank": 16, "operator_name": "DP World", "total_teu": 149589, "total_ships": 87, "market_share": 0.44, "owned_teu": 31341, "owned_ships": 10, "owned_share": 20.95, "chartered_teu": 118248, "chartered_ships": 77, "chartered_share": 79.05, "orderbook_teu": 84841, "orderbook_ships": 17, "orderbook_share": 56.72}, {"snapshot_date": "2026-10-23", "rank": 17, "operator_name": "Global Feeder Shipping LLC", "total_teu": 147560, "total_ships": 57, "market_share": 0.43, "owned_teu": 61553, "owned_ships": 25, "owned_share": 41.71, "chartered_teu": 86007, "chartered_ships": 32, "chartered_share": 58.29, "orderbook_teu": 11152, "orderbook_ships": 3, "orderbook_share": 7.56}, {"snapshot_date": "2026-10-23", "rank": 18, "operator_name": "IRISL Group", "total_teu": 140184, "total_ships": 27, "market_share": 0.41, "owned_teu": 140184, "owned_ships": 27, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 19, "operator_name": "Sinokor Merchant Marine", "total_teu": 132526, "total_ships": 69, "market_share": 0.39, "owned_teu": 130741, "owned_ships": 68, "owned_share": 98.65, "chartered_teu": 1785, "chartered_ships": 1, "chartered_share": 1.35, "orderbook_teu": 52000, "orderbook_ships": 4, "orderbook_share": 39.24}, {"snapshot_date": "2026-10-23", "rank": 20, "operator_name": "TS Lines", "total_teu": 129100, "total_ships": 46, "market_share": 0.38, "owned_teu": 106059, "owned_ships": 38, "owned_share": 82.15, "chartered_teu": 23041, "chartered_ships": 8, "chartered_share": 17.85, "orderbook_teu": 66428, "orderbook_ships": 14, "orderbook_share": 51.45}, {"snapshot_date": "2026-10-23", "rank": 21, "operator_name": "Emirates Shipping Line", "total_teu": 114852, "total_ships": 25, "market_share": 0.34, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 114852, "chartered_ships": 25, "chartered_share": 100.0, "orderbook_teu": 42510, "orderbook_ships": 3, "orderbook_share": 37.01}, {"snapshot_date": "2026-10-23", "rank": 22, "operator_name": "China United Lines (CULines)", "total_teu": 109433, "total_ships": 47, "market_share": 0.32, "owned_teu": 18120, "owned_ships": 10, "owned_share": 16.56, "chartered_teu": 91313, "chartered_ships": 37, "chartered_share": 83.44, "orderbook_teu": 91693, "orderbook_ships": 18, "orderbook_share": 83.79}, {"snapshot_date": "2026-10-23", "rank": 23, "operator_name": "RCL (Regional Container L.)", "total_teu": 100409, "total_ships": 34, "market_share": 0.29, "owned_teu": 89787, "owned_ships": 28, "owned_share": 89.42, "chartered_teu": 10622, "chartered_ships": 6, "chartered_share": 10.58, "orderbook_teu": 148866, "orderbook_ships": 30, "orderbook_share": 148.26}, {"snapshot_date": "2026-10-23", "rank": 24, "operator_name": "Ningbo Ocean Shg Co", "total_teu": 87650, "total_ships": 87, "market_share": 0.26, "owned_teu": 61418, "owned_ships": 49, "owned_share": 70.07, "chartered_teu": 26232, "chartered_ships": 38, "chartered_share": 29.93, "orderbook_teu": 60400, "orderbook_ships": 20, "orderbook_share": 68.91}, {"snapshot_date": "2026-10-23", "rank": 25, "operator_name": "Interasia Lines", "total_teu": 85077, "total_ships": 28, "market_share": 0.25, "owned_teu": 64553, "owned_ships": 22, "owned_share": 75.88, "chartered_teu": 20524, "chartered_ships": 6, "chartered_share": 24.12, "orderbook_teu": 65070, "orderbook_ships": 13, "orderbook_share": 76.48}, {"snapshot_date": "2026-10-23", "rank": 26, "operator_name": "Tangshan Port Hede Shipping", "total_teu": 76020, "total_ships": 52, "market_share": 0.22, "owned_teu": 1874, "owned_ships": 3, "owned_share": 2.47, "chartered_teu": 74146, "chartered_ships": 49, "chartered_share": 97.53, "orderbook_teu": 2693, "orderbook_ships": 1, "orderbook_share": 3.54}, {"snapshot_date": "2026-10-23", "rank": 27, "operator_name": "Grimaldi (Napoli)", "total_teu": 75158, "total_ships": 48, "market_share": 0.22, "owned_teu": 75158, "owned_ships": 48, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 28, "operator_name": "Antong Holdings (QASC)", "total_teu": 72564, "total_ships": 71, "market_share": 0.21, "owned_teu": 53994, "owned_ships": 37, "owned_share": 74.41, "chartered_teu": 18570, "chartered_ships": 34, "chartered_share": 25.59, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 29, "operator_name": "Sinolines", "total_teu": 68743, "total_ships": 42, "market_share": 0.2, "owned_teu": 30566, "owned_ships": 19, "owned_share": 44.46, "chartered_teu": 38177, "chartered_ships": 23, "chartered_share": 55.54, "orderbook_teu": 53075, "orderbook_ships": 13, "orderbook_share": 77.21}, {"snapshot_date": "2026-10-23", "rank": 30, "operator_name": "Matson", "total_teu": 68420, "total_ships": 28, "market_share": 0.2, "owned_teu": 40355, "owned_ships": 19, "owned_share": 58.98, "chartered_teu": 28065, "chartered_ships": 9, "chartered_share": 41.02, "orderbook_teu": 10860, "orderbook_ships": 3, "orderbook_share": 15.87}, {"snapshot_date": "2026-10-23", "rank": 31, "operator_name": "Shanghai Jin Jiang Shipping", "total_teu": 67125, "total_ships": 56, "market_share": 0.2, "owned_teu": 32449, "owned_ships": 27, "owned_share": 48.34, "chartered_teu": 34676, "chartered_ships": 29, "chartered_share": 51.66, "orderbook_teu": 27200, "orderbook_ships": 16, "orderbook_share": 40.52}, {"snapshot_date": "2026-10-23", "rank": 32, "operator_name": "SM Line Corp.", "total_teu": 66801, "total_ships": 15, "market_share": 0.2, "owned_teu": 64188, "owned_ships": 13, "owned_share": 96.09, "chartered_teu": 2613, "chartered_ships": 2, "chartered_share": 3.91, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 33, "operator_name": "Swire Shipping", "total_teu": 59502, "total_ships": 30, "market_share": 0.17, "owned_teu": 47917, "owned_ships": 23, "owned_share": 80.53, "chartered_teu": 11585, "chartered_ships": 7, "chartered_share": 19.47, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 34, "operator_name": "Zhonggu Logistics Corp.", "total_teu": 55725, "total_ships": 60, "market_share": 0.16, "owned_teu": 19957, "owned_ships": 12, "owned_share": 35.81, "chartered_teu": 35768, "chartered_ships": 48, "chartered_share": 64.19, "orderbook_teu": 95800, "orderbook_ships": 20, "orderbook_share": 171.92}, {"snapshot_date": "2026-10-23", "rank": 35, "operator_name": "FESCO", "total_teu": 53903, "total_ships": 37, "market_share": 0.16, "owned_teu": 35627, "owned_ships": 22, "owned_share": 66.09, "chartered_teu": 18276, "chartered_ships": 15, "chartered_share": 33.91, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 36, "operator_name": "Arkas Line / EMES", "total_teu": 52632, "total_ships": 32, "market_share": 0.15, "owned_teu": 50524, "owned_ships": 30, "owned_share": 95.99, "chartered_teu": 2108, "chartered_ships": 2, "chartered_share": 4.01, "orderbook_teu": 44892, "orderbook_ships": 12, "orderbook_share": 85.29}, {"snapshot_date": "2026-10-23", "rank": 37, "operator_name": "Seaboard Marine", "total_teu": 47293, "total_ships": 23, "market_share": 0.14, "owned_teu": 34347, "owned_ships": 14, "owned_share": 72.63, "chartered_teu": 12946, "chartered_ships": 9, "chartered_share": 27.37, "orderbook_teu": 3666, "orderbook_ships": 1, "orderbook_share": 7.75}, {"snapshot_date": "2026-10-23", "rank": 38, "operator_name": "Samudera", "total_teu": 44850, "total_ships": 32, "market_share": 0.13, "owned_teu": 13175, "owned_ships": 14, "owned_share": 29.38, "chartered_teu": 31675, "chartered_ships": 18, "chartered_share": 70.62, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 39, "operator_name": "Meratus", "total_teu": 44718, "total_ships": 67, "market_share": 0.13, "owned_teu": 44718, "owned_ships": 67, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 5466, "orderbook_ships": 8, "orderbook_share": 12.22}, {"snapshot_date": "2026-10-23", "rank": 40, "operator_name": "Akkon Lines", "total_teu": 44496, "total_ships": 31, "market_share": 0.13, "owned_teu": 2894, "owned_ships": 3, "owned_share": 6.5, "chartered_teu": 41602, "chartered_ships": 28, "chartered_share": 93.5, "orderbook_teu": 3630, "orderbook_ships": 1, "orderbook_share": 8.16}, {"snapshot_date": "2026-10-23", "rank": 41, "operator_name": "Tailwind Shipping Lines", "total_teu": 43406, "total_ships": 12, "market_share": 0.13, "owned_teu": 6330, "owned_ships": 2, "owned_share": 14.58, "chartered_teu": 37076, "chartered_ships": 10, "chartered_share": 85.42, "orderbook_teu": 42000, "orderbook_ships": 5, "orderbook_share": 96.76}, {"snapshot_date": "2026-10-23", "rank": 42, "operator_name": "Namsung Shipping", "total_teu": 43084, "total_ships": 31, "market_share": 0.13, "owned_teu": 37339, "owned_ships": 27, "owned_share": 86.67, "chartered_teu": 5745, "chartered_ships": 4, "chartered_share": 13.33, "orderbook_teu": 12624, "orderbook_ships": 4, "orderbook_share": 29.3}, {"snapshot_date": "2026-10-23", "rank": 43, "operator_name": "Tanto Intim Line", "total_teu": 39481, "total_ships": 58, "market_share": 0.12, "owned_teu": 39481, "owned_ships": 58, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 927, "orderbook_ships": 1, "orderbook_share": 2.35}, {"snapshot_date": "2026-10-23", "rank": 44, "operator_name": "Shandong Marine Corporation", "total_teu": 31246, "total_ships": 45, "market_share": 0.09, "owned_teu": 11598, "owned_ships": 17, "owned_share": 37.12, "chartered_teu": 19648, "chartered_ships": 28, "chartered_share": 62.88, "orderbook_teu": 6320, "orderbook_ships": 4, "orderbook_share": 20.23}, {"snapshot_date": "2026-10-23", "rank": 45, "operator_name": "Salam Pacific Indonesia Lines", "total_teu": 31010, "total_ships": 44, "market_share": 0.09, "owned_teu": 31010, "owned_ships": 44, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 1360, "orderbook_ships": 2, "orderbook_share": 4.39}, {"snapshot_date": "2026-10-23", "rank": 46, "operator_name": "Great White Fleet", "total_teu": 29973, "total_ships": 14, "market_share": 0.09, "owned_teu": 17481, "owned_ships": 7, "owned_share": 58.32, "chartered_teu": 12492, "chartered_ships": 7, "chartered_share": 41.68, "orderbook_teu": 15500, "orderbook_ships": 5, "orderbook_share": 51.71}, {"snapshot_date": "2026-10-23", "rank": 47, "operator_name": "Linea Messina", "total_teu": 27682, "total_ships": 12, "market_share": 0.08, "owned_teu": 22358, "owned_ships": 5, "owned_share": 80.77, "chartered_teu": 5324, "chartered_ships": 7, "chartered_share": 19.23, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 48, "operator_name": "Sea Legend Shipping", "total_teu": 21556, "total_ships": 9, "market_share": 0.06, "owned_teu": 4890, "owned_ships": 1, "owned_share": 22.69, "chartered_teu": 16666, "chartered_ships": 8, "chartered_share": 77.31, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 49, "operator_name": "Dole Ocean Liner", "total_teu": 21150, "total_ships": 16, "market_share": 0.06, "owned_teu": 20610, "owned_ships": 14, "owned_share": 97.45, "chartered_teu": 540, "chartered_ships": 2, "chartered_share": 2.55, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 50, "operator_name": "Chun Kyung (CK Line)", "total_teu": 20549, "total_ships": 19, "market_share": 0.06, "owned_teu": 13236, "owned_ships": 9, "owned_share": 64.41, "chartered_teu": 7313, "chartered_ships": 10, "chartered_share": 35.59, "orderbook_teu": 15012, "orderbook_ships": 4, "orderbook_share": 73.05}, {"snapshot_date": "2026-10-23", "rank": 51, "operator_name": "Hainan Yangpu Newnew Shipping", "total_teu": 19470, "total_ships": 7, "market_share": 0.06, "owned_teu": 18250, "owned_ships": 6, "owned_share": 93.73, "chartered_teu": 1220, "chartered_ships": 1, "chartered_share": 6.27, "orderbook_teu": 9620, "orderbook_ships": 2, "orderbook_share": 49.41}, {"snapshot_date": "2026-10-23", "rank": 52, "operator_name": "Crowley Liner Services", "total_teu": 19142, "total_ships": 16, "market_share": 0.06, "owned_teu": 11094, "owned_ships": 9, "owned_share": 57.96, "chartered_teu": 8048, "chartered_ships": 7, "chartered_share": 42.04, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 53, "operator_name": "Kawa Shipping", "total_teu": 18644, "total_ships": 10, "market_share": 0.05, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 18644, "chartered_ships": 10, "chartered_share": 100.0, "orderbook_teu": 24206, "orderbook_ships": 5, "orderbook_share": 129.83}, {"snapshot_date": "2026-10-23", "rank": 54, "operator_name": "Asean Seas Line", "total_teu": 18508, "total_ships": 14, "market_share": 0.05, "owned_teu": 1781, "owned_ships": 1, "owned_share": 9.62, "chartered_teu": 16727, "chartered_ships": 13, "chartered_share": 90.38, "orderbook_teu": 10600, "orderbook_ships": 2, "orderbook_share": 57.27}, {"snapshot_date": "2026-10-23", "rank": 55, "operator_name": "Tropical Shg / TOTE Maritime", "total_teu": 18203, "total_ships": 24, "market_share": 0.05, "owned_teu": 16535, "owned_ships": 21, "owned_share": 90.84, "chartered_teu": 1668, "chartered_ships": 3, "chartered_share": 9.16, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 56, "operator_name": "Shipping Corp. of India", "total_teu": 17834, "total_ships": 3, "market_share": 0.05, "owned_teu": 8800, "owned_ships": 2, "owned_share": 49.34, "chartered_teu": 9034, "chartered_ships": 1, "chartered_share": 50.66, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 57, "operator_name": "Temas Line", "total_teu": 17743, "total_ships": 35, "market_share": 0.05, "owned_teu": 17743, "owned_ships": 35, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 3430, "orderbook_ships": 7, "orderbook_share": 19.33}, {"snapshot_date": "2026-10-23", "rank": 58, "operator_name": "Bengal Tiger Line", "total_teu": 17635, "total_ships": 10, "market_share": 0.05, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 17635, "chartered_ships": 10, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 59, "operator_name": "Taicang Container Lines", "total_teu": 17202, "total_ships": 14, "market_share": 0.05, "owned_teu": 4369, "owned_ships": 4, "owned_share": 25.4, "chartered_teu": 12833, "chartered_ships": 10, "chartered_share": 74.6, "orderbook_teu": 12024, "orderbook_ships": 4, "orderbook_share": 69.9}, {"snapshot_date": "2026-10-23", "rank": 60, "operator_name": "MTT Shipping", "total_teu": 16717, "total_ships": 18, "market_share": 0.05, "owned_teu": 14293, "owned_ships": 16, "owned_share": 85.5, "chartered_teu": 2424, "chartered_ships": 2, "chartered_share": 14.5, "orderbook_teu": 12332, "orderbook_ships": 6, "orderbook_share": 73.77}, {"snapshot_date": "2026-10-23", "rank": 61, "operator_name": "Transworld Group Singapore", "total_teu": 14922, "total_ships": 12, "market_share": 0.04, "owned_teu": 14922, "owned_ships": 12, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 62, "operator_name": "Boluda Lines", "total_teu": 14629, "total_ships": 18, "market_share": 0.04, "owned_teu": 9326, "owned_ships": 12, "owned_share": 63.75, "chartered_teu": 5303, "chartered_ships": 6, "chartered_share": 36.25, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 63, "operator_name": "Cool Carriers", "total_teu": 14217, "total_ships": 40, "market_share": 0.04, "owned_teu": 4022, "owned_ships": 13, "owned_share": 28.29, "chartered_teu": 10195, "chartered_ships": 27, "chartered_share": 71.71, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 64, "operator_name": "Turkon Line", "total_teu": 13857, "total_ships": 6, "market_share": 0.04, "owned_teu": 11512, "owned_ships": 5, "owned_share": 83.08, "chartered_teu": 2345, "chartered_ships": 1, "chartered_share": 16.92, "orderbook_teu": 4000, "orderbook_ships": 1, "orderbook_share": 28.87}, {"snapshot_date": "2026-10-23", "rank": 65, "operator_name": "Eimskip", "total_teu": 13069, "total_ships": 15, "market_share": 0.04, "owned_teu": 5174, "owned_ships": 7, "owned_share": 39.59, "chartered_teu": 7895, "chartered_ships": 8, "chartered_share": 60.41, "orderbook_teu": 4560, "orderbook_ships": 2, "orderbook_share": 34.89}, {"snapshot_date": "2026-10-23", "rank": 66, "operator_name": "Pasha Hawaii Transport Lines", "total_teu": 12903, "total_ships": 6, "market_share": 0.04, "owned_teu": 12903, "owned_ships": 6, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 67, "operator_name": "Independent Container Line", "total_teu": 12398, "total_ships": 4, "market_share": 0.04, "owned_teu": 6182, "owned_ships": 2, "owned_share": 49.86, "chartered_teu": 6216, "chartered_ships": 2, "chartered_share": 50.14, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 68, "operator_name": "Caribbean Feeder Services", "total_teu": 12090, "total_ships": 10, "market_share": 0.04, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 12090, "chartered_ships": 10, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 69, "operator_name": "Peel Ports (BG Freight)", "total_teu": 12061, "total_ships": 12, "market_share": 0.04, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 12061, "chartered_ships": 12, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 70, "operator_name": "HR Lines", "total_teu": 11932, "total_ships": 8, "market_share": 0.03, "owned_teu": 11932, "owned_ships": 8, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 71, "operator_name": "Pan Ocean (Container)", "total_teu": 11399, "total_ships": 10, "market_share": 0.03, "owned_teu": 9186, "owned_ships": 7, "owned_share": 80.59, "chartered_teu": 2213, "chartered_ships": 3, "chartered_share": 19.41, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 72, "operator_name": "Silmar Shipping FZCO", "total_teu": 11315, "total_ships": 5, "market_share": 0.03, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 11315, "chartered_ships": 5, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 73, "operator_name": "MODUL", "total_teu": 11191, "total_ships": 4, "market_share": 0.03, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 11191, "chartered_ships": 4, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 74, "operator_name": "Hai An Transport", "total_teu": 11057, "total_ships": 8, "market_share": 0.03, "owned_teu": 11057, "owned_ships": 8, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 50344, "orderbook_ships": 12, "orderbook_share": 455.31}, {"snapshot_date": "2026-10-23", "rank": 75, "operator_name": "Qatar Navigation (Milaha)", "total_teu": 10939, "total_ships": 7, "market_share": 0.03, "owned_teu": 8615, "owned_ships": 5, "owned_share": 78.75, "chartered_teu": 2324, "chartered_ships": 2, "chartered_share": 21.25, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 76, "operator_name": "King Ocean", "total_teu": 10853, "total_ships": 15, "market_share": 0.03, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 10853, "chartered_ships": 15, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 77, "operator_name": "Greta Shipping", "total_teu": 10516, "total_ships": 6, "market_share": 0.03, "owned_teu": 1118, "owned_ships": 1, "owned_share": 10.63, "chartered_teu": 9398, "chartered_ships": 5, "chartered_share": 89.37, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 78, "operator_name": "Philippine Span Asia Carrier Corp.", "total_teu": 10143, "total_ships": 17, "market_share": 0.03, "owned_teu": 8926, "owned_ships": 15, "owned_share": 88.0, "chartered_teu": 1217, "chartered_ships": 2, "chartered_share": 12.0, "orderbook_teu": 400, "orderbook_ships": 1, "orderbook_share": 3.94}, {"snapshot_date": "2026-10-23", "rank": 79, "operator_name": "Neptune Pacific Direct Line", "total_teu": 9783, "total_ships": 9, "market_share": 0.03, "owned_teu": 9783, "owned_ships": 9, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 80, "operator_name": "Imoto Lines", "total_teu": 9295, "total_ships": 31, "market_share": 0.03, "owned_teu": 7423, "owned_ships": 24, "owned_share": 79.86, "chartered_teu": 1872, "chartered_ships": 7, "chartered_share": 20.14, "orderbook_teu": 1141, "orderbook_ships": 3, "orderbook_share": 12.28}, {"snapshot_date": "2026-10-23", "rank": 81, "operator_name": "Pan Continental Shg", "total_teu": 9288, "total_ships": 8, "market_share": 0.03, "owned_teu": 8660, "owned_ships": 7, "owned_share": 93.24, "chartered_teu": 628, "chartered_ships": 1, "chartered_share": 6.76, "orderbook_teu": 2200, "orderbook_ships": 2, "orderbook_share": 23.69}, {"snapshot_date": "2026-10-23", "rank": 82, "operator_name": "Borchard Lines", "total_teu": 9284, "total_ships": 10, "market_share": 0.03, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 9284, "chartered_ships": 10, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 83, "operator_name": "Dalian Trawind Marine Co", "total_teu": 9272, "total_ships": 2, "market_share": 0.03, "owned_teu": 9272, "owned_ships": 2, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 84, "operator_name": "Dalian Jifa Bohai Rim Container L.", "total_teu": 9082, "total_ships": 13, "market_share": 0.03, "owned_teu": 3140, "owned_ships": 4, "owned_share": 34.57, "chartered_teu": 5942, "chartered_ships": 9, "chartered_share": 65.43, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 85, "operator_name": "Sea Express Shipping Lines", "total_teu": 8865, "total_ships": 6, "market_share": 0.03, "owned_teu": 1550, "owned_ships": 1, "owned_share": 17.48, "chartered_teu": 7315, "chartered_ships": 5, "chartered_share": 82.52, "orderbook_teu": 8763, "orderbook_ships": 4, "orderbook_share": 98.85}, {"snapshot_date": "2026-10-23", "rank": 86, "operator_name": "Q Express Line Sdn Bhd", "total_teu": 8458, "total_ships": 2, "market_share": 0.02, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 8458, "chartered_ships": 2, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 87, "operator_name": "GS Lines", "total_teu": 8154, "total_ships": 9, "market_share": 0.02, "owned_teu": 6718, "owned_ships": 7, "owned_share": 82.39, "chartered_teu": 1436, "chartered_ships": 2, "chartered_share": 17.61, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 88, "operator_name": "Irish Continental Group", "total_teu": 8041, "total_ships": 9, "market_share": 0.02, "owned_teu": 4699, "owned_ships": 5, "owned_share": 58.44, "chartered_teu": 3342, "chartered_ships": 4, "chartered_share": 41.56, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 89, "operator_name": "GT Lines", "total_teu": 8034, "total_ships": 8, "market_share": 0.02, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 8034, "chartered_ships": 8, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 90, "operator_name": "EAS Datong", "total_teu": 8017, "total_ships": 6, "market_share": 0.02, "owned_teu": 7415, "owned_ships": 5, "owned_share": 92.49, "chartered_teu": 602, "chartered_ships": 1, "chartered_share": 7.51, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 91, "operator_name": "Oceanic Cargo Lines", "total_teu": 7970, "total_ships": 17, "market_share": 0.02, "owned_teu": 7970, "owned_ships": 17, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 92, "operator_name": "OVP Shipping", "total_teu": 7774, "total_ships": 6, "market_share": 0.02, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 7774, "chartered_ships": 6, "chartered_share": 100.0, "orderbook_teu": 8792, "orderbook_ships": 2, "orderbook_share": 113.09}, {"snapshot_date": "2026-10-23", "rank": 93, "operator_name": "Safetrans Shipping", "total_teu": 7772, "total_ships": 3, "market_share": 0.02, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 7772, "chartered_ships": 3, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 94, "operator_name": "Harbour-Link Group Bhd", "total_teu": 7687, "total_ships": 10, "market_share": 0.02, "owned_teu": 7687, "owned_ships": 10, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 95, "operator_name": "Del Monte Fresh Produce Co", "total_teu": 7656, "total_ships": 6, "market_share": 0.02, "owned_teu": 7656, "owned_ships": 6, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 96, "operator_name": "Panda Express Line", "total_teu": 7628, "total_ships": 5, "market_share": 0.02, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 7628, "chartered_ships": 5, "chartered_share": 100.0, "orderbook_teu": 1510, "orderbook_ships": 1, "orderbook_share": 19.8}, {"snapshot_date": "2026-10-23", "rank": 97, "operator_name": "Kambara Kisen", "total_teu": 7566, "total_ships": 7, "market_share": 0.02, "owned_teu": 7566, "owned_ships": 7, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 98, "operator_name": "Transit LLC", "total_teu": 7420, "total_ships": 6, "market_share": 0.02, "owned_teu": 5910, "owned_ships": 5, "owned_share": 79.65, "chartered_teu": 1510, "chartered_ships": 1, "chartered_share": 20.35, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 99, "operator_name": "Tarros", "total_teu": 7323, "total_ships": 5, "market_share": 0.02, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 7323, "chartered_ships": 5, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-23", "rank": 100, "operator_name": "Folk Maritime", "total_teu": 7184, "total_ships": 5, "market_share": 0.02, "owned_teu": 6449, "owned_ships": 4, "owned_share": 89.77, "chartered_teu": 735, "chartered_ships": 1, "chartered_share": 10.23, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}]}, "2026-10-25": {"meta": {"snapshot_date": "2026-10-25", "created_at": "2026-10-25T11:51:30.817565", "global_teu": 34140930, "global_ships": 6624, "top100_teu": 34140930, "top100_ships": 6624, "notes": "Extracted 100 operators via ExtJS direct pipeline."}, "operators": [{"snapshot_date": "2026-10-25", "rank": 1, "operator_name": "Mediterranean Shg Co", "total_teu": 7464018, "total_ships": 1018, "market_share": 21.86, "owned_teu": 4794529, "owned_ships": 767, "owned_share": 64.24, "chartered_teu": 2669489, "chartered_ships": 251, "chartered_share": 35.76, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 2, "operator_name": "Maersk", "total_teu": 4717299, "total_ships": 749, "market_share": 13.82, "owned_teu": 2943996, "owned_ships": 359, "owned_share": 62.41, "chartered_teu": 1773303, "chartered_ships": 390, "chartered_share": 37.59, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 3, "operator_name": "CMA CGM Group", "total_teu": 4489970, "total_ships": 731, "market_share": 13.15, "owned_teu": 2998823, "owned_ships": 386, "owned_share": 66.79, "chartered_teu": 1491147, "chartered_ships": 345, "chartered_share": 33.21, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 4, "operator_name": "COSCO Group", "total_teu": 3673704, "total_ships": 566, "market_share": 10.76, "owned_teu": 2226498, "owned_ships": 211, "owned_share": 60.61, "chartered_teu": 1447206, "chartered_ships": 355, "chartered_share": 39.39, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 5, "operator_name": "Hapag-Lloyd", "total_teu": 2410123, "total_ships": 289, "market_share": 7.06, "owned_teu": 1455918, "owned_ships": 134, "owned_share": 60.41, "chartered_teu": 954205, "chartered_ships": 155, "chartered_share": 39.59, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 6, "operator_name": "ONE (Ocean Network Express)", "total_teu": 2199598, "total_ships": 272, "market_share": 6.44, "owned_teu": 1060020, "owned_ships": 113, "owned_share": 48.19, "chartered_teu": 1139578, "chartered_ships": 159, "chartered_share": 51.81, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 7, "operator_name": "Evergreen Line", "total_teu": 2040707, "total_ships": 243, "market_share": 5.98, "owned_teu": 1496083, "owned_ships": 170, "owned_share": 73.31, "chartered_teu": 544624, "chartered_ships": 73, "chartered_share": 26.69, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 8, "operator_name": "HMM Co Ltd", "total_teu": 1034348, "total_ships": 97, "market_share": 3.03, "owned_teu": 847404, "owned_ships": 72, "owned_share": 81.93, "chartered_teu": 186944, "chartered_ships": 25, "chartered_share": 18.07, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 9, "operator_name": "Yang Ming Marine Transport Corp.", "total_teu": 771280, "total_ships": 99, "market_share": 2.26, "owned_teu": 397896, "owned_ships": 64, "owned_share": 51.59, "chartered_teu": 373384, "chartered_ships": 35, "chartered_share": 48.41, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 10, "operator_name": "Zim", "total_teu": 699460, "total_ships": 114, "market_share": 2.05, "owned_teu": 92934, "owned_ships": 15, "owned_share": 13.29, "chartered_teu": 606526, "chartered_ships": 99, "chartered_share": 86.71, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 11, "operator_name": "Wan Hai Lines", "total_teu": 633064, "total_ships": 125, "market_share": 1.85, "owned_teu": 633064, "owned_ships": 125, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 12, "operator_name": "PIL (Pacific Int. Line)", "total_teu": 470419, "total_ships": 101, "market_share": 1.38, "owned_teu": 346748, "owned_ships": 84, "owned_share": 73.71, "chartered_teu": 123671, "chartered_ships": 17, "chartered_share": 26.29, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 13, "operator_name": "X-Press Feeders Group", "total_teu": 191458, "total_ships": 104, "market_share": 0.56, "owned_teu": 116716, "owned_ships": 57, "owned_share": 60.96, "chartered_teu": 74742, "chartered_ships": 47, "chartered_share": 39.04, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 14, "operator_name": "SITC", "total_teu": 187297, "total_ships": 121, "market_share": 0.55, "owned_teu": 163687, "owned_ships": 99, "owned_share": 87.39, "chartered_teu": 23610, "chartered_ships": 22, "chartered_share": 12.61, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 15, "operator_name": "KMTC", "total_teu": 172576, "total_ships": 67, "market_share": 0.51, "owned_teu": 103421, "owned_ships": 31, "owned_share": 59.93, "chartered_teu": 69155, "chartered_ships": 36, "chartered_share": 40.07, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 16, "operator_name": "DP World", "total_teu": 149589, "total_ships": 87, "market_share": 0.44, "owned_teu": 31341, "owned_ships": 10, "owned_share": 20.95, "chartered_teu": 118248, "chartered_ships": 77, "chartered_share": 79.05, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 17, "operator_name": "Global Feeder Shipping LLC", "total_teu": 147560, "total_ships": 57, "market_share": 0.43, "owned_teu": 61553, "owned_ships": 25, "owned_share": 41.71, "chartered_teu": 86007, "chartered_ships": 32, "chartered_share": 58.29, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 18, "operator_name": "IRISL Group", "total_teu": 140184, "total_ships": 27, "market_share": 0.41, "owned_teu": 140184, "owned_ships": 27, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 19, "operator_name": "Sinokor Merchant Marine", "total_teu": 132526, "total_ships": 69, "market_share": 0.39, "owned_teu": 130741, "owned_ships": 68, "owned_share": 98.65, "chartered_teu": 1785, "chartered_ships": 1, "chartered_share": 1.35, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 20, "operator_name": "TS Lines", "total_teu": 129100, "total_ships": 46, "market_share": 0.38, "owned_teu": 106059, "owned_ships": 38, "owned_share": 82.15, "chartered_teu": 23041, "chartered_ships": 8, "chartered_share": 17.85, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 21, "operator_name": "Emirates Shipping Line", "total_teu": 114852, "total_ships": 25, "market_share": 0.34, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 114852, "chartered_ships": 25, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 22, "operator_name": "China United Lines (CULines)", "total_teu": 109433, "total_ships": 47, "market_share": 0.32, "owned_teu": 18120, "owned_ships": 10, "owned_share": 16.56, "chartered_teu": 91313, "chartered_ships": 37, "chartered_share": 83.44, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 23, "operator_name": "RCL (Regional Container L.)", "total_teu": 100409, "total_ships": 34, "market_share": 0.29, "owned_teu": 89787, "owned_ships": 28, "owned_share": 89.42, "chartered_teu": 10622, "chartered_ships": 6, "chartered_share": 10.58, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 24, "operator_name": "Ningbo Ocean Shg Co", "total_teu": 87650, "total_ships": 87, "market_share": 0.26, "owned_teu": 61418, "owned_ships": 49, "owned_share": 70.07, "chartered_teu": 26232, "chartered_ships": 38, "chartered_share": 29.93, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 25, "operator_name": "Interasia Lines", "total_teu": 85077, "total_ships": 28, "market_share": 0.25, "owned_teu": 64553, "owned_ships": 22, "owned_share": 75.88, "chartered_teu": 20524, "chartered_ships": 6, "chartered_share": 24.12, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 26, "operator_name": "Tangshan Port Hede Shipping", "total_teu": 76020, "total_ships": 52, "market_share": 0.22, "owned_teu": 1874, "owned_ships": 3, "owned_share": 2.47, "chartered_teu": 74146, "chartered_ships": 49, "chartered_share": 97.53, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 27, "operator_name": "Grimaldi (Napoli)", "total_teu": 75158, "total_ships": 48, "market_share": 0.22, "owned_teu": 75158, "owned_ships": 48, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 28, "operator_name": "Antong Holdings (QASC)", "total_teu": 72564, "total_ships": 71, "market_share": 0.21, "owned_teu": 53994, "owned_ships": 37, "owned_share": 74.41, "chartered_teu": 18570, "chartered_ships": 34, "chartered_share": 25.59, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 29, "operator_name": "Sinolines", "total_teu": 68743, "total_ships": 42, "market_share": 0.2, "owned_teu": 30566, "owned_ships": 19, "owned_share": 44.46, "chartered_teu": 38177, "chartered_ships": 23, "chartered_share": 55.54, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 30, "operator_name": "Matson", "total_teu": 68420, "total_ships": 28, "market_share": 0.2, "owned_teu": 40355, "owned_ships": 19, "owned_share": 58.98, "chartered_teu": 28065, "chartered_ships": 9, "chartered_share": 41.02, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 31, "operator_name": "Shanghai Jin Jiang Shipping", "total_teu": 67125, "total_ships": 56, "market_share": 0.2, "owned_teu": 32449, "owned_ships": 27, "owned_share": 48.34, "chartered_teu": 34676, "chartered_ships": 29, "chartered_share": 51.66, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 32, "operator_name": "SM Line Corp.", "total_teu": 66801, "total_ships": 15, "market_share": 0.2, "owned_teu": 64188, "owned_ships": 13, "owned_share": 96.09, "chartered_teu": 2613, "chartered_ships": 2, "chartered_share": 3.91, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 33, "operator_name": "Swire Shipping", "total_teu": 59502, "total_ships": 30, "market_share": 0.17, "owned_teu": 47917, "owned_ships": 23, "owned_share": 80.53, "chartered_teu": 11585, "chartered_ships": 7, "chartered_share": 19.47, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 34, "operator_name": "Zhonggu Logistics Corp.", "total_teu": 55725, "total_ships": 60, "market_share": 0.16, "owned_teu": 19957, "owned_ships": 12, "owned_share": 35.81, "chartered_teu": 35768, "chartered_ships": 48, "chartered_share": 64.19, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 35, "operator_name": "FESCO", "total_teu": 53903, "total_ships": 37, "market_share": 0.16, "owned_teu": 35627, "owned_ships": 22, "owned_share": 66.09, "chartered_teu": 18276, "chartered_ships": 15, "chartered_share": 33.91, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 36, "operator_name": "Arkas Line / EMES", "total_teu": 52632, "total_ships": 32, "market_share": 0.15, "owned_teu": 50524, "owned_ships": 30, "owned_share": 95.99, "chartered_teu": 2108, "chartered_ships": 2, "chartered_share": 4.01, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 37, "operator_name": "Seaboard Marine", "total_teu": 47293, "total_ships": 23, "market_share": 0.14, "owned_teu": 34347, "owned_ships": 14, "owned_share": 72.63, "chartered_teu": 12946, "chartered_ships": 9, "chartered_share": 27.37, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 38, "operator_name": "Samudera", "total_teu": 44850, "total_ships": 32, "market_share": 0.13, "owned_teu": 13175, "owned_ships": 14, "owned_share": 29.38, "chartered_teu": 31675, "chartered_ships": 18, "chartered_share": 70.62, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 39, "operator_name": "Meratus", "total_teu": 44718, "total_ships": 67, "market_share": 0.13, "owned_teu": 44718, "owned_ships": 67, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 40, "operator_name": "Akkon Lines", "total_teu": 44496, "total_ships": 31, "market_share": 0.13, "owned_teu": 2894, "owned_ships": 3, "owned_share": 6.5, "chartered_teu": 41602, "chartered_ships": 28, "chartered_share": 93.5, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 41, "operator_name": "Tailwind Shipping Lines", "total_teu": 43406, "total_ships": 12, "market_share": 0.13, "owned_teu": 6330, "owned_ships": 2, "owned_share": 14.58, "chartered_teu": 37076, "chartered_ships": 10, "chartered_share": 85.42, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 42, "operator_name": "Namsung Shipping", "total_teu": 43084, "total_ships": 31, "market_share": 0.13, "owned_teu": 37339, "owned_ships": 27, "owned_share": 86.67, "chartered_teu": 5745, "chartered_ships": 4, "chartered_share": 13.33, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 43, "operator_name": "Tanto Intim Line", "total_teu": 39481, "total_ships": 58, "market_share": 0.12, "owned_teu": 39481, "owned_ships": 58, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 44, "operator_name": "Shandong Marine Corporation", "total_teu": 31246, "total_ships": 45, "market_share": 0.09, "owned_teu": 11598, "owned_ships": 17, "owned_share": 37.12, "chartered_teu": 19648, "chartered_ships": 28, "chartered_share": 62.88, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 45, "operator_name": "Salam Pacific Indonesia Lines", "total_teu": 31010, "total_ships": 44, "market_share": 0.09, "owned_teu": 31010, "owned_ships": 44, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 46, "operator_name": "Great White Fleet", "total_teu": 29973, "total_ships": 14, "market_share": 0.09, "owned_teu": 17481, "owned_ships": 7, "owned_share": 58.32, "chartered_teu": 12492, "chartered_ships": 7, "chartered_share": 41.68, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 47, "operator_name": "Linea Messina", "total_teu": 27682, "total_ships": 12, "market_share": 0.08, "owned_teu": 22358, "owned_ships": 5, "owned_share": 80.77, "chartered_teu": 5324, "chartered_ships": 7, "chartered_share": 19.23, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 48, "operator_name": "Sea Legend Shipping", "total_teu": 21556, "total_ships": 9, "market_share": 0.06, "owned_teu": 4890, "owned_ships": 1, "owned_share": 22.69, "chartered_teu": 16666, "chartered_ships": 8, "chartered_share": 77.31, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 49, "operator_name": "Dole Ocean Liner", "total_teu": 21150, "total_ships": 16, "market_share": 0.06, "owned_teu": 20610, "owned_ships": 14, "owned_share": 97.45, "chartered_teu": 540, "chartered_ships": 2, "chartered_share": 2.55, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 50, "operator_name": "Chun Kyung (CK Line)", "total_teu": 20549, "total_ships": 19, "market_share": 0.06, "owned_teu": 13236, "owned_ships": 9, "owned_share": 64.41, "chartered_teu": 7313, "chartered_ships": 10, "chartered_share": 35.59, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 51, "operator_name": "Hainan Yangpu Newnew Shipping", "total_teu": 19470, "total_ships": 7, "market_share": 0.06, "owned_teu": 18250, "owned_ships": 6, "owned_share": 93.73, "chartered_teu": 1220, "chartered_ships": 1, "chartered_share": 6.27, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 52, "operator_name": "Crowley Liner Services", "total_teu": 19142, "total_ships": 16, "market_share": 0.06, "owned_teu": 11094, "owned_ships": 9, "owned_share": 57.96, "chartered_teu": 8048, "chartered_ships": 7, "chartered_share": 42.04, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 53, "operator_name": "Kawa Shipping", "total_teu": 18644, "total_ships": 10, "market_share": 0.05, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 18644, "chartered_ships": 10, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 54, "operator_name": "Asean Seas Line", "total_teu": 18508, "total_ships": 14, "market_share": 0.05, "owned_teu": 1781, "owned_ships": 1, "owned_share": 9.62, "chartered_teu": 16727, "chartered_ships": 13, "chartered_share": 90.38, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 55, "operator_name": "Tropical Shg / TOTE Maritime", "total_teu": 18203, "total_ships": 24, "market_share": 0.05, "owned_teu": 16535, "owned_ships": 21, "owned_share": 90.84, "chartered_teu": 1668, "chartered_ships": 3, "chartered_share": 9.16, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 56, "operator_name": "Shipping Corp. of India", "total_teu": 17834, "total_ships": 3, "market_share": 0.05, "owned_teu": 8800, "owned_ships": 2, "owned_share": 49.34, "chartered_teu": 9034, "chartered_ships": 1, "chartered_share": 50.66, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 57, "operator_name": "Temas Line", "total_teu": 17743, "total_ships": 35, "market_share": 0.05, "owned_teu": 17743, "owned_ships": 35, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 58, "operator_name": "Bengal Tiger Line", "total_teu": 17635, "total_ships": 10, "market_share": 0.05, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 17635, "chartered_ships": 10, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 59, "operator_name": "Taicang Container Lines", "total_teu": 17202, "total_ships": 14, "market_share": 0.05, "owned_teu": 4369, "owned_ships": 4, "owned_share": 25.4, "chartered_teu": 12833, "chartered_ships": 10, "chartered_share": 74.6, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 60, "operator_name": "MTT Shipping", "total_teu": 16717, "total_ships": 18, "market_share": 0.05, "owned_teu": 14293, "owned_ships": 16, "owned_share": 85.5, "chartered_teu": 2424, "chartered_ships": 2, "chartered_share": 14.5, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 61, "operator_name": "Transworld Group Singapore", "total_teu": 14922, "total_ships": 12, "market_share": 0.04, "owned_teu": 14922, "owned_ships": 12, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 62, "operator_name": "Boluda Lines", "total_teu": 14629, "total_ships": 18, "market_share": 0.04, "owned_teu": 9326, "owned_ships": 12, "owned_share": 63.75, "chartered_teu": 5303, "chartered_ships": 6, "chartered_share": 36.25, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 63, "operator_name": "Cool Carriers", "total_teu": 14217, "total_ships": 40, "market_share": 0.04, "owned_teu": 4022, "owned_ships": 13, "owned_share": 28.29, "chartered_teu": 10195, "chartered_ships": 27, "chartered_share": 71.71, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 64, "operator_name": "Turkon Line", "total_teu": 13857, "total_ships": 6, "market_share": 0.04, "owned_teu": 11512, "owned_ships": 5, "owned_share": 83.08, "chartered_teu": 2345, "chartered_ships": 1, "chartered_share": 16.92, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 65, "operator_name": "Eimskip", "total_teu": 13069, "total_ships": 15, "market_share": 0.04, "owned_teu": 5174, "owned_ships": 7, "owned_share": 39.59, "chartered_teu": 7895, "chartered_ships": 8, "chartered_share": 60.41, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 66, "operator_name": "Pasha Hawaii Transport Lines", "total_teu": 12903, "total_ships": 6, "market_share": 0.04, "owned_teu": 12903, "owned_ships": 6, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 67, "operator_name": "Independent Container Line", "total_teu": 12398, "total_ships": 4, "market_share": 0.04, "owned_teu": 6182, "owned_ships": 2, "owned_share": 49.86, "chartered_teu": 6216, "chartered_ships": 2, "chartered_share": 50.14, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 68, "operator_name": "Caribbean Feeder Services", "total_teu": 12090, "total_ships": 10, "market_share": 0.04, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 12090, "chartered_ships": 10, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 69, "operator_name": "Peel Ports (BG Freight)", "total_teu": 12061, "total_ships": 12, "market_share": 0.04, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 12061, "chartered_ships": 12, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 70, "operator_name": "HR Lines", "total_teu": 11932, "total_ships": 8, "market_share": 0.03, "owned_teu": 11932, "owned_ships": 8, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 71, "operator_name": "Pan Ocean (Container)", "total_teu": 11399, "total_ships": 10, "market_share": 0.03, "owned_teu": 9186, "owned_ships": 7, "owned_share": 80.59, "chartered_teu": 2213, "chartered_ships": 3, "chartered_share": 19.41, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 72, "operator_name": "Silmar Shipping FZCO", "total_teu": 11315, "total_ships": 5, "market_share": 0.03, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 11315, "chartered_ships": 5, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 73, "operator_name": "MODUL", "total_teu": 11191, "total_ships": 4, "market_share": 0.03, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 11191, "chartered_ships": 4, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 74, "operator_name": "Hai An Transport", "total_teu": 11057, "total_ships": 8, "market_share": 0.03, "owned_teu": 11057, "owned_ships": 8, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 75, "operator_name": "Qatar Navigation (Milaha)", "total_teu": 10939, "total_ships": 7, "market_share": 0.03, "owned_teu": 8615, "owned_ships": 5, "owned_share": 78.75, "chartered_teu": 2324, "chartered_ships": 2, "chartered_share": 21.25, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 76, "operator_name": "King Ocean", "total_teu": 10853, "total_ships": 15, "market_share": 0.03, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 10853, "chartered_ships": 15, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 77, "operator_name": "Greta Shipping", "total_teu": 10516, "total_ships": 6, "market_share": 0.03, "owned_teu": 1118, "owned_ships": 1, "owned_share": 10.63, "chartered_teu": 9398, "chartered_ships": 5, "chartered_share": 89.37, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 78, "operator_name": "Philippine Span Asia Carrier Corp.", "total_teu": 10143, "total_ships": 17, "market_share": 0.03, "owned_teu": 8926, "owned_ships": 15, "owned_share": 88.0, "chartered_teu": 1217, "chartered_ships": 2, "chartered_share": 12.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 79, "operator_name": "Neptune Pacific Direct Line", "total_teu": 9783, "total_ships": 9, "market_share": 0.03, "owned_teu": 9783, "owned_ships": 9, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 80, "operator_name": "Imoto Lines", "total_teu": 9295, "total_ships": 31, "market_share": 0.03, "owned_teu": 7423, "owned_ships": 24, "owned_share": 79.86, "chartered_teu": 1872, "chartered_ships": 7, "chartered_share": 20.14, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 81, "operator_name": "Pan Continental Shg", "total_teu": 9288, "total_ships": 8, "market_share": 0.03, "owned_teu": 8660, "owned_ships": 7, "owned_share": 93.24, "chartered_teu": 628, "chartered_ships": 1, "chartered_share": 6.76, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 82, "operator_name": "Borchard Lines", "total_teu": 9284, "total_ships": 10, "market_share": 0.03, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 9284, "chartered_ships": 10, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 83, "operator_name": "Dalian Trawind Marine Co", "total_teu": 9272, "total_ships": 2, "market_share": 0.03, "owned_teu": 9272, "owned_ships": 2, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 84, "operator_name": "Dalian Jifa Bohai Rim Container L.", "total_teu": 9082, "total_ships": 13, "market_share": 0.03, "owned_teu": 3140, "owned_ships": 4, "owned_share": 34.57, "chartered_teu": 5942, "chartered_ships": 9, "chartered_share": 65.43, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 85, "operator_name": "Sea Express Shipping Lines", "total_teu": 8865, "total_ships": 6, "market_share": 0.03, "owned_teu": 1550, "owned_ships": 1, "owned_share": 17.48, "chartered_teu": 7315, "chartered_ships": 5, "chartered_share": 82.52, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 86, "operator_name": "Q Express Line Sdn Bhd", "total_teu": 8458, "total_ships": 2, "market_share": 0.02, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 8458, "chartered_ships": 2, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 87, "operator_name": "GS Lines", "total_teu": 8154, "total_ships": 9, "market_share": 0.02, "owned_teu": 6718, "owned_ships": 7, "owned_share": 82.39, "chartered_teu": 1436, "chartered_ships": 2, "chartered_share": 17.61, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 88, "operator_name": "Irish Continental Group", "total_teu": 8041, "total_ships": 9, "market_share": 0.02, "owned_teu": 4699, "owned_ships": 5, "owned_share": 58.44, "chartered_teu": 3342, "chartered_ships": 4, "chartered_share": 41.56, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 89, "operator_name": "GT Lines", "total_teu": 8034, "total_ships": 8, "market_share": 0.02, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 8034, "chartered_ships": 8, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 90, "operator_name": "EAS Datong", "total_teu": 8017, "total_ships": 6, "market_share": 0.02, "owned_teu": 7415, "owned_ships": 5, "owned_share": 92.49, "chartered_teu": 602, "chartered_ships": 1, "chartered_share": 7.51, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 91, "operator_name": "Oceanic Cargo Lines", "total_teu": 7970, "total_ships": 17, "market_share": 0.02, "owned_teu": 7970, "owned_ships": 17, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 92, "operator_name": "OVP Shipping", "total_teu": 7774, "total_ships": 6, "market_share": 0.02, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 7774, "chartered_ships": 6, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 93, "operator_name": "Safetrans Shipping", "total_teu": 7772, "total_ships": 3, "market_share": 0.02, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 7772, "chartered_ships": 3, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 94, "operator_name": "Harbour-Link Group Bhd", "total_teu": 7687, "total_ships": 10, "market_share": 0.02, "owned_teu": 7687, "owned_ships": 10, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 95, "operator_name": "Del Monte Fresh Produce Co", "total_teu": 7656, "total_ships": 6, "market_share": 0.02, "owned_teu": 7656, "owned_ships": 6, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 96, "operator_name": "Panda Express Line", "total_teu": 7628, "total_ships": 5, "market_share": 0.02, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 7628, "chartered_ships": 5, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 97, "operator_name": "Kambara Kisen", "total_teu": 7566, "total_ships": 7, "market_share": 0.02, "owned_teu": 7566, "owned_ships": 7, "owned_share": 100.0, "chartered_teu": 0, "chartered_ships": 0, "chartered_share": 0.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 98, "operator_name": "Transit LLC", "total_teu": 7420, "total_ships": 6, "market_share": 0.02, "owned_teu": 5910, "owned_ships": 5, "owned_share": 79.65, "chartered_teu": 1510, "chartered_ships": 1, "chartered_share": 20.35, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 99, "operator_name": "Tarros", "total_teu": 7323, "total_ships": 5, "market_share": 0.02, "owned_teu": 0, "owned_ships": 0, "owned_share": 0.0, "chartered_teu": 7323, "chartered_ships": 5, "chartered_share": 100.0, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}, {"snapshot_date": "2026-10-25", "rank": 100, "operator_name": "Folk Maritime", "total_teu": 7184, "total_ships": 5, "market_share": 0.02, "owned_teu": 6449, "owned_ships": 4, "owned_share": 89.77, "chartered_teu": 735, "chartered_ships": 1, "chartered_share": 10.23, "orderbook_teu": 0, "orderbook_ships": 0, "orderbook_share": 0.0}]}}};
+        let currentActiveDate = null;
+        let currentCompareDate = null;
+        let chartTop10Instance = null;
+        let chartOwnershipInstance = null;
+
+        function fmtNum(n) {
+            if (n === null || n === undefined || isNaN(n)) return "0";
+            return Number(n).toLocaleString();
+        }
+
+        function initApp() {
+            const dates = RAW_DATASET.dates || [];
+            if (!dates.length) return;
+
+            const selActive = document.getElementById('select-active-date');
+            const selCompare = document.getElementById('select-compare-date');
+
+            selActive.innerHTML = '';
+            selCompare.innerHTML = '';
+
+            [...dates].reverse().forEach((d, idx) => {
+                selActive.innerHTML += `<option value="${d}">${d}</option>`;
+                selCompare.innerHTML += `<option value="${d}">${d}</option>`;
+            });
+
+            currentActiveDate = dates[dates.length - 1];
+            currentCompareDate = dates.length > 1 ? dates[dates.length - 2] : dates[dates.length - 1];
+
+            selActive.value = currentActiveDate;
+            selCompare.value = currentCompareDate;
+
+            renderDashboard();
+        }
+
+        function onDateChange() {
+            currentActiveDate = document.getElementById('select-active-date').value;
+            renderDashboard();
+        }
+
+        function onCompareChange() {
+            currentCompareDate = document.getElementById('select-compare-date').value;
+            renderDashboard();
+        }
+
+        function renderDashboard() {
+            const current = RAW_DATASET.snapshots[currentActiveDate];
+            const compare = RAW_DATASET.snapshots[currentCompareDate];
+            if (!current) return;
+
+            document.getElementById('label-compare-date').innerText = currentCompareDate;
+
+            renderKPIs(current, compare);
+            renderCharts(current);
+            renderTable(current, compare);
+        }
+
+        function renderKPIs(current, compare) {
+            const cMeta = current.meta || {};
+            const pMeta = compare ? compare.meta : cMeta;
+
+            const gTeuDelta = (cMeta.global_teu || 0) - (pMeta.global_teu || 0);
+            document.getElementById('kpi-global-teu').innerText = `${fmtNum(cMeta.global_teu)} TEU`;
+            document.getElementById('kpi-global-ships').innerText = `${fmtNum(cMeta.global_ships)} Ships`;
+            renderDeltaTag('kpi-global-delta', gTeuDelta, 'TEU');
+
+            const tTeuDelta = (cMeta.top100_teu || 0) - (pMeta.top100_teu || 0);
+            const t100Share = cMeta.global_teu ? ((cMeta.top100_teu / cMeta.global_teu) * 100).toFixed(1) : "0.0";
+            document.getElementById('kpi-top100-teu').innerText = `${fmtNum(cMeta.top100_teu)} TEU`;
+            document.getElementById('kpi-top100-ships').innerText = `${fmtNum(cMeta.top100_ships)} Ships`;
+            document.getElementById('kpi-top100-share').innerText = `${t100Share}% of Global Fleet`;
+            renderDeltaTag('kpi-top100-delta', tTeuDelta, 'TEU');
+
+            const top10Ops = (current.operators || []).slice(0, 10);
+            const top10TEU = top10Ops.reduce((sum, o) => sum + (o.total_teu || 0), 0);
+            const top10Share = cMeta.global_teu ? ((top10TEU / cMeta.global_teu) * 100).toFixed(1) : "0.0";
+
+            const pTop10Ops = (compare.operators || []).slice(0, 10);
+            const pTop10TEU = pTop10Ops.reduce((sum, o) => sum + (o.total_teu || 0), 0);
+            const top10Delta = top10TEU - pTop10TEU;
+
+            document.getElementById('kpi-top10-share').innerText = `${top10Share}%`;
+            document.getElementById('kpi-top10-teu').innerText = `${fmtNum(top10TEU)} TEU`;
+            renderDeltaTag('kpi-top10-delta', top10Delta, 'TEU');
+
+            const totalOrderbook = (current.operators || []).reduce((sum, o) => sum + (o.orderbook_teu || 0), 0);
+            const pTotalOrderbook = (compare.operators || []).reduce((sum, o) => sum + (o.orderbook_teu || 0), 0);
+            const obRatio = cMeta.top100_teu ? ((totalOrderbook / cMeta.top100_teu) * 100).toFixed(2) : "0.00";
+            const obDelta = totalOrderbook - pTotalOrderbook;
+
+            document.getElementById('kpi-orderbook-teu').innerText = `${fmtNum(totalOrderbook)} TEU`;
+            document.getElementById('kpi-orderbook-ratio').innerText = `${obRatio}% of Top 100`;
+            renderDeltaTag('kpi-orderbook-delta', obDelta, 'TEU');
+        }
+
+        function renderDeltaTag(elementId, deltaValue, unit) {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+
+            if (deltaValue > 0) {
+                el.className = "delta-tag delta-up";
+                el.innerText = `+${fmtNum(deltaValue)} ${unit}`;
+            } else if (deltaValue < 0) {
+                el.className = "delta-tag delta-down";
+                el.innerText = `${fmtNum(deltaValue)} ${unit}`;
+            } else {
+                el.className = "delta-tag delta-flat";
+                el.innerText = `0 ${unit}`;
+            }
+        }
+
+        function renderCharts(currentSnap) {
+            const top10 = (currentSnap.operators || []).slice(0, 10);
+            const labels = top10.map(o => o.operator_name.length > 14 ? o.operator_name.substring(0, 12) + '..' : o.operator_name);
+
+            const ctx1 = document.getElementById('chartTop10').getContext('2d');
+            if (chartTop10Instance) chartTop10Instance.destroy();
+
+            chartTop10Instance = new Chart(ctx1, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Existing TEU',
+                            data: top10.map(o => o.total_teu),
+                            backgroundColor: '#38bdf8',
+                            borderRadius: 2
+                        },
+                        {
+                            label: 'Orderbook TEU',
+                            data: top10.map(o => o.orderbook_teu),
+                            backgroundColor: '#f59e0b',
+                            borderRadius: 2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            stacked: true,
+                            grid: { color: 'rgba(19, 34, 56, 0.4)' },
+                            ticks: { color: '#8fa0b5', font: { family: 'JetBrains Mono', size: 10 } }
+                        },
+                        y: {
+                            stacked: true,
+                            grid: { color: 'rgba(19, 34, 56, 0.4)' },
+                            ticks: {
+                                color: '#8fa0b5',
+                                font: { family: 'JetBrains Mono', size: 10 },
+                                callback: val => (val / 1000000).toFixed(1) + 'M'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { color: '#e2e8f0', font: { family: 'Inter', size: 11 } }
+                        }
+                    }
+                }
+            });
+
+            const ctx2 = document.getElementById('chartOwnership').getContext('2d');
+            if (chartOwnershipInstance) chartOwnershipInstance.destroy();
+
+            chartOwnershipInstance = new Chart(ctx2, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Owned TEU',
+                            data: top10.map(o => o.owned_teu),
+                            backgroundColor: '#10b981',
+                            borderRadius: 2
+                        },
+                        {
+                            label: 'Chartered TEU',
+                            data: top10.map(o => o.chartered_teu),
+                            backgroundColor: '#6366f1',
+                            borderRadius: 2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            stacked: true,
+                            grid: { color: 'rgba(19, 34, 56, 0.4)' },
+                            ticks: { color: '#8fa0b5', font: { family: 'JetBrains Mono', size: 10 } }
+                        },
+                        y: {
+                            stacked: true,
+                            grid: { color: 'rgba(19, 34, 56, 0.4)' },
+                            ticks: {
+                                color: '#8fa0b5',
+                                font: { family: 'JetBrains Mono', size: 10 },
+                                callback: val => (val / 1000000).toFixed(1) + 'M'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { color: '#e2e8f0', font: { family: 'Inter', size: 11 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderTable(currentSnap, compareSnap) {
+            const tbody = document.getElementById('table-body');
+            const ops = currentSnap.operators || [];
+
+            const baseMap = new Map();
+            (compareSnap.operators || []).forEach(o => {
+                baseMap.set(o.operator_name, o);
+            });
+
+            let rowsHtml = '';
+            ops.forEach(op => {
+                const baseOp = baseMap.get(op.operator_name);
+                const deltaTEU = baseOp ? (op.total_teu - baseOp.total_teu) : 0;
+                let deltaHtml = '<span class="num-font" style="color: var(--text-muted);">-</span>';
+
+                if (deltaTEU > 0) {
+                    deltaHtml = `<span class="num-font" style="color: var(--green-up);">+${fmtNum(deltaTEU)}</span>`;
+                } else if (deltaTEU < 0) {
+                    deltaHtml = `<span class="num-font" style="color: var(--red-down);">${fmtNum(deltaTEU)}</span>`;
+                }
+
+                rowsHtml += `
+                    <tr>
+                        <td class="text-center"><span class="rank-badge">${op.rank}</span></td>
+                        <td>
+                            <div class="carrier-name">
+                                <span>${op.operator_name}</span>
+                            </div>
+                        </td>
+                        <td class="text-right num-font" style="color: #fff; font-weight:600;">${fmtNum(op.total_teu)}</td>
+                        <td class="text-right num-font">${fmtNum(op.total_ships)}</td>
+                        <td class="text-right num-font" style="color: var(--blue-accent);">
+                            ${op.market_share.toFixed(1)}%
+                            <div class="share-bar-container"><div class="share-bar-fill" style="width: ${Math.min(op.market_share * 4.5, 100)}%;"></div></div>
+                        </td>
+                        <td class="text-right num-font">${fmtNum(op.owned_teu)}</td>
+                        <td class="text-right num-font">${fmtNum(op.owned_ships)}</td>
+                        <td class="text-right num-font" style="color: var(--text-secondary);">${op.owned_share.toFixed(1)}%</td>
+                        <td class="text-right num-font">${fmtNum(op.chartered_teu)}</td>
+                        <td class="text-right num-font">${fmtNum(op.chartered_ships)}</td>
+                        <td class="text-right num-font" style="color: var(--text-secondary);">${op.chartered_share.toFixed(1)}%</td>
+                        <td class="text-right num-font" style="color: var(--amber-bloomberg);">${fmtNum(op.orderbook_teu)}</td>
+                        <td class="text-right num-font">${fmtNum(op.orderbook_ships)}</td>
+                        <td class="text-right num-font" style="color: var(--amber-bloomberg);">${op.orderbook_share.toFixed(1)}%</td>
+                        <td class="text-right">${deltaHtml}</td>
+                    </tr>
+                `;
+            });
+
+            tbody.innerHTML = rowsHtml;
+        }
+
+        function filterTable() {
+            const term = document.getElementById('table-search-input').value.toLowerCase();
+            const rows = document.querySelectorAll('#table-body tr');
+            rows.forEach(r => {
+                const text = r.children[1].innerText.toLowerCase();
+                r.style.display = text.includes(term) ? '' : 'none';
+            });
+        }
+
+        function exportActiveTableToCSV() {
+            const currentSnap = RAW_DATASET.snapshots[currentActiveDate];
+            if (!currentSnap || !currentSnap.operators) return;
+
+            const headers = [
+                "Rank", "Operator", "Total_TEU", "Total_Ships", "Market_Share_Pct",
+                "Owned_TEU", "Owned_Ships", "Owned_Share_Pct",
+                "Chartered_TEU", "Chartered_Ships", "Chartered_Share_Pct",
+                "Orderbook_TEU", "Orderbook_Ships", "Orderbook_Share_Pct"
+            ];
+
+            let csvContent = "﻿" + headers.join(",") + "\n";
+
+            currentSnap.operators.forEach(o => {
+                const row = [
+                    o.rank,
+                    `"${(o.operator_name || "").replace(/"/g, '""')}"`,
+                    o.total_teu,
+                    o.total_ships,
+                    o.market_share,
+                    o.owned_teu,
+                    o.owned_ships,
+                    o.owned_share,
+                    o.chartered_teu,
+                    o.chartered_ships,
+                    o.chartered_share,
+                    o.orderbook_teu,
+                    o.orderbook_ships,
+                    o.orderbook_share
+                ];
+                csvContent += row.join(",") + "\n";
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", `Alphaliner_TOP100_${currentActiveDate}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        window.addEventListener('DOMContentLoaded', initApp);
+    </script>
 </body>
 </html>
