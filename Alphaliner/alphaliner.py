@@ -238,38 +238,17 @@ def process_and_persist(records):
         owned_share = parse_float(get_field_val(r, ["OwnedShare", "ownedShare", "OwnShare", "own_share"]))
         owned_ships = parse_int(get_field_val(r, ["OwnedShips", "ownedShips", "OwnShips", "own_ships"]))
 
-        # Alphaliner ExtJS Store field aliases for Orderbook
         orderbook_teu = parse_int(get_field_val(r, [
-            "TEUOrderbook",
-            "TeuOrderbook",
-            "teu_orderbook",
-            "teuorderbook",
-            "OrderbookTeu",
-            "orderbookTeu",
-            "OrderBookTEU",
-            "OrderbookTEU",
-            "orderbook_teu",
-            "orderbookteu",
-            "Orderbook_Teu",
-            "OBTeu",
-            "OBTEU",
+            "TEUOrderbook", "TeuOrderbook", "teu_orderbook", "teuorderbook",
+            "OrderbookTeu", "orderbookTeu", "OrderBookTEU", "OrderbookTEU",
+            "orderbook_teu", "orderbookteu", "Orderbook_Teu", "OBTeu", "OBTEU"
         ]))
 
         orderbook_ships = parse_int(get_field_val(r, [
-            "ShipsOrderbook",
-            "ShipOrderbook",
-            "ships_orderbook",
-            "shipsorderbook",
-            "OrderbookShips",
-            "orderbookShips",
-            "OrderBookShips",
-            "OrderBookNb",
-            "OrderbookNb",
-            "orderbook_ships",
-            "orderbookships",
-            "Orderbook_Ships",
-            "OBShips",
-            "OBNb",
+            "ShipsOrderbook", "ShipOrderbook", "ships_orderbook", "shipsorderbook",
+            "OrderbookShips", "orderbookShips", "OrderBookShips", "OrderBookNb",
+            "OrderbookNb", "orderbook_ships", "orderbookships", "Orderbook_Ships",
+            "OBShips", "OBNb"
         ]))
 
         orderbook_teu_share = parse_float(get_field_val(r, [
@@ -448,7 +427,6 @@ body {{
   -webkit-font-smoothing: antialiased;
 }}
 
-/* Top Command Bar */
 .top-command-bar {{
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-dim);
@@ -568,7 +546,6 @@ select option {{
   color: #fff;
 }}
 
-/* Main Container */
 .main-content {{
   padding: 16px;
   flex: 1;
@@ -580,7 +557,6 @@ select option {{
   width: 100%;
 }}
 
-/* KPI Banner */
 .kpi-grid {{
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -656,7 +632,6 @@ select option {{
 .delta-down {{ color: var(--accent-red); background: rgba(248, 81, 73, 0.1); }}
 .delta-zero {{ color: var(--text-dim); background: rgba(255, 255, 255, 0.05); }}
 
-/* Terminal Table Container */
 .table-panel {{
   background: var(--bg-secondary);
   border: 1px solid var(--border-dim);
@@ -721,7 +696,6 @@ table.alphaliner-table td:last-child {{
   border-right: none;
 }}
 
-/* 2-Tier Header Styling */
 table.alphaliner-table thead tr:first-child th {{
   background: #091522;
   color: var(--text-secondary);
@@ -755,7 +729,6 @@ table.alphaliner-table thead tr:last-child th:hover {{
   text-align: center !important;
 }}
 
-/* Table Body Rows */
 table.alphaliner-table tbody tr {{
   transition: background 0.1s ease;
 }}
@@ -817,13 +790,11 @@ table.alphaliner-table tbody tr:hover {{
   z-index: 2;
 }}
 
-/* Time Travel Delta Display */
 .delta-val {{
   font-size: 9px;
   margin-left: 4px;
 }}
 
-/* Status Footer */
 .terminal-footer {{
   background: var(--bg-secondary);
   border-top: 1px solid var(--border-dim);
@@ -852,7 +823,6 @@ table.alphaliner-table tbody tr:hover {{
 </head>
 <body>
 
-<!-- Top Navigation & Controls -->
 <header class="top-command-bar">
   <div class="brand-section">
     <span class="terminal-tag">ALPHALINER</span>
@@ -874,73 +844,62 @@ table.alphaliner-table tbody tr:hover {{
       </select>
     </div>
 
-    <button class="btn btn-accent" onclick="exportCSV()">
-      <span>⬇</span> CSV EXPORT
-    </button>
+    <button class="btn btn-accent" onclick="exportCSV()">EXPORT CSV</button>
   </div>
 </header>
 
-<!-- Main Dashboard Grid -->
 <main class="main-content">
-  <!-- Key Metrics Row -->
   <section class="kpi-grid">
     <div class="kpi-card accent-blue">
       <div class="kpi-header">
         <span class="kpi-title">TOTAL TOP 100 FLEET</span>
-        <span class="kpi-sub" id="kpiFleetSub">TEU / SHIPS</span>
+        <span class="kpi-sub" id="snapshotTimestamp">LATEST</span>
       </div>
-      <div class="kpi-value" id="kpiTotalTeu">0 TEU</div>
+      <div class="kpi-value" id="kpiTotalTeu">--</div>
       <div class="kpi-meta">
-        <span id="kpiTotalShips">0 Ships</span>
-        <span id="kpiTeuDelta" class="delta-badge delta-zero">--</span>
+        <span id="kpiTotalShips">-- Ships</span>
       </div>
     </div>
 
     <div class="kpi-card accent-amber">
       <div class="kpi-header">
-        <span class="kpi-title">TOP 10 CONCENTRATION</span>
+        <span class="kpi-title">TOP 10 MARKET CONCENTRATION</span>
         <span class="kpi-sub">CR10 SHARE</span>
       </div>
-      <div class="kpi-value" id="kpiTop10Share">0.0%</div>
+      <div class="kpi-value" id="kpiTop10Share">--%</div>
       <div class="kpi-meta">
-        <span id="kpiTop10Teu">0 TEU</span>
-        <span id="kpiTop10Delta" class="delta-badge delta-zero">--</span>
+        <span id="kpiTop10Teu">-- TEU</span>
       </div>
     </div>
 
     <div class="kpi-card accent-purple">
       <div class="kpi-header">
-        <span class="kpi-title">ORDERBOOK PIPELINE</span>
-        <span class="kpi-sub">ON ORDER</span>
+        <span class="kpi-title">TOTAL ORDERBOOK</span>
+        <span class="kpi-sub" id="kpiOrderbookShare">--% of Fleet</span>
       </div>
-      <div class="kpi-value" id="kpiOrderbookTeu">0 TEU</div>
+      <div class="kpi-value" id="kpiOrderbookTeu">--</div>
       <div class="kpi-meta">
-        <span id="kpiOrderbookShips">0 Ships</span>
-        <span id="kpiOrderbookShare">0.0% of Fleet</span>
+        <span id="kpiOrderbookShips">-- Ships</span>
       </div>
     </div>
 
     <div class="kpi-card accent-green">
       <div class="kpi-header">
-        <span class="kpi-title">CHARTERED RATIO</span>
-        <span class="kpi-sub">TOP 100 AVG</span>
+        <span class="kpi-title">CHARTERED CAPACITY RATIO</span>
+        <span class="kpi-sub">TOP 100 AGGREGATE</span>
       </div>
-      <div class="kpi-value" id="kpiCharteredRatio">0.0%</div>
+      <div class="kpi-value" id="kpiCharteredRatio">--%</div>
       <div class="kpi-meta">
-        <span id="kpiCharteredTeu">0 TEU Chartered</span>
+        <span id="kpiCharteredTeu">-- TEU Chartered</span>
       </div>
     </div>
   </section>
 
-  <!-- Grouped Master Table -->
   <section class="table-panel">
     <div class="panel-toolbar">
       <div class="panel-title-group">
-        <span class="panel-title">GLOBAL LINER OPERATORS FLEET & ORDERBOOK DEPLOYMENT</span>
+        <span class="panel-title">GLOBAL LINER RANKING & ORDERBOOK POSITION</span>
         <span class="count-badge" id="rowCountBadge">100 OPERATORS</span>
-      </div>
-      <div style="font-size:10px; color:var(--text-muted);" id="snapshotTimestamp">
-        AS OF: 2026-10-25
       </div>
     </div>
 
@@ -948,51 +907,51 @@ table.alphaliner-table tbody tr:hover {{
       <table class="alphaliner-table" id="operatorTable">
         <thead>
           <tr>
-            <th colspan="3" class="th-left">OPERATOR IDENTITY</th>
-            <th colspan="3">EXISTING FLEET TOTAL</th>
-            <th colspan="3">OWNED TONNAGE</th>
-            <th colspan="3">CHARTERED TONNAGE</th>
-            <th colspan="3">ORDERBOOK PIPELINE</th>
+            <th colspan="3" class="th-left">OPERATOR PROFILE</th>
+            <th colspan="3">TOTAL CAPACITY</th>
+            <th colspan="3">OWNED CAPACITY</th>
+            <th colspan="3">CHARTERED CAPACITY</th>
+            <th colspan="3">ORDERBOOK CAPACITY</th>
           </tr>
           <tr>
-            <th class="th-center" style="width: 45px;" onclick="sortTable(0)">RK ⇅</th>
-            <th class="th-left" style="width: 200px;" onclick="sortTable(1)">OPERATOR NAME ⇅</th>
-            <th class="th-center" style="width: 60px;" onclick="sortTable(2)">FLAG ⇅</th>
-            <th onclick="sortTable(3)">TOTAL TEU ⇅</th>
-            <th style="width: 70px;" onclick="sortTable(4)">SHARE % ⇅</th>
-            <th style="width: 65px;" onclick="sortTable(5)">SHIPS ⇅</th>
-            <th onclick="sortTable(6)">OWNED TEU ⇅</th>
-            <th style="width: 65px;" onclick="sortTable(7)">OWN % ⇅</th>
-            <th style="width: 55px;" onclick="sortTable(8)">SHIPS ⇅</th>
-            <th onclick="sortTable(9)">CHT TEU ⇅</th>
-            <th style="width: 65px;" onclick="sortTable(10)">CHT % ⇅</th>
-            <th style="width: 55px;" onclick="sortTable(11)">SHIPS ⇅</th>
-            <th onclick="sortTable(12)">ORDERBOOK TEU ⇅</th>
-            <th style="width: 65px;" onclick="sortTable(13)">% FLEET ⇅</th>
-            <th style="width: 55px;" onclick="sortTable(14)">SHIPS ⇅</th>
+            <th class="th-center" onclick="sortTable(0)">RK</th>
+            <th class="th-left" onclick="sortTable(1)">OPERATOR NAME</th>
+            <th class="th-center" onclick="sortTable(2)">FLAG</th>
+
+            <th onclick="sortTable(3)">TEU</th>
+            <th onclick="sortTable(4)">SHARE</th>
+            <th onclick="sortTable(5)">SHIPS</th>
+
+            <th onclick="sortTable(6)">TEU</th>
+            <th onclick="sortTable(7)">%</th>
+            <th onclick="sortTable(8)">SHIPS</th>
+
+            <th onclick="sortTable(9)">TEU</th>
+            <th onclick="sortTable(10)">%</th>
+            <th onclick="sortTable(11)">SHIPS</th>
+
+            <th onclick="sortTable(12)">TEU</th>
+            <th onclick="sortTable(13)">%</th>
+            <th onclick="sortTable(14)">SHIPS</th>
           </tr>
         </thead>
-        <tbody id="tableBody">
-          <!-- Dynamically populated via JS -->
-        </tbody>
+        <tbody id="tableBody"></tbody>
       </table>
     </div>
   </section>
 </main>
 
-<!-- Status Bar -->
 <footer class="terminal-footer">
   <div class="status-indicator">
     <span class="status-dot"></span>
-    <span>FEED: AXSMARINE / ALPHALINER PUBLIC LIVE ENGINE</span>
+    <span>SYSTEM ACTIVE | AXSMARINE ALPHALINER AUTOMATION</span>
   </div>
   <div id="footerMeta">INITIALIZING...</div>
 </footer>
 
 <script>
 const DATA = {json_str};
-
-let currentSnapshotKey = DATA.latest_date || (DATA.dates && DATA.dates[0]);
+let currentSnapshotKey = DATA.latest_date || (DATA.dates && DATA.dates[0]) || '';
 let compareSnapshotKey = null;
 let currentSortCol = 0;
 let sortAsc = true;
@@ -1045,8 +1004,6 @@ function renderDashboard() {{
     compareSnap.operators.forEach(op => compareMap.set(op.name, op));
   }}
 
-  // Update KPIs
-  const meta = activeSnap.meta;
   const operators = activeSnap.operators || [];
 
   let totalTeu = 0;
@@ -1084,7 +1041,6 @@ function renderDashboard() {{
   document.getElementById('snapshotTimestamp').textContent = 'SNAPSHOT: ' + currentSnapshotKey + (compareSnapshotKey ? ' | VS ' + compareSnapshotKey : '');
   document.getElementById('footerMeta').textContent = 'TOTAL SNAPSHOTS: ' + DATA.dates.length + ' | UPDATED: ' + (DATA.generated_at || '');
 
-  // Render Table
   renderTable(operators, compareMap);
 }}
 
@@ -1280,10 +1236,10 @@ def trigger_scrape():
         records = fetch_alphaliner_data()
         date_key = process_and_persist(records)
         export_json_and_html()
-        return {{"status": "success", "date": date_key, "count": len(records)}}
+        return {"status": "success", "date": date_key, "count": len(records)}
     except Exception as e:
         logger.error(f"API Scrape error: {e}")
-        return {{"status": "error", "message": str(e)}}, 500
+        return {"status": "error", "message": str(e)}, 500
 
 # =========================================================
 # 7. Main Entry Point
@@ -1291,11 +1247,14 @@ def trigger_scrape():
 def main():
     parser = argparse.ArgumentParser(description="Alphaliner TOP 100 Scraper & MI Terminal Dashboard")
     parser.add_argument("--scrape-only", action="store_true", help="Scrape latest data, persist to DB/JSON/HTML, and exit")
+    parser.add_argument("--cron", action="store_true", help="Run in cron/headless mode (scrape, export and exit)")
     parser.add_argument("--export-only", action="store_true", help="Export JSON and HTML from current DB without scraping")
     parser.add_argument("--host", default="0.0.0.0", help="Flask host (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=8080, help="Flask port (default: 8080)")
 
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
+    if unknown:
+        logger.info(f"Ignored unknown CLI arguments: {unknown}")
 
     init_db()
 
@@ -1303,7 +1262,7 @@ def main():
         export_json_and_html()
         sys.exit(0)
 
-    if args.scrape_only:
+    if args.scrape_only or args.cron:
         try:
             records = fetch_alphaliner_data()
             process_and_persist(records)
