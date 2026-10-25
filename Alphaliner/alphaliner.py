@@ -868,6 +868,52 @@ def flatten_record(row):
 
     return flat
 
+def debug_print_sample_keys(items, limit=3):
+    print("[DEBUG] Sample raw record keys:")
+    for i, row in enumerate(items[:limit]):
+        flat = flatten_record(row)
+        print(f"[DEBUG] row {i}: {sorted(flat.keys())[:100]}")
+        if i == 0:
+            print(f"[DEBUG] row {i} sample: {flat}")
+
+def find_value_by_keywords(record, *keywords):
+    """
+    Flexible match for keys with variations like:
+    - chartered_teu / charteredteu / charter_teu / charterteu
+    - owned_teu / ownedteu / own_teu / ownteu
+    Works even when keys are in different casing or with/without underscores.
+    """
+    if record is None:
+        return None
+
+    flat = flatten_record(record)
+    if not flat:
+        if isinstance(record, dict):
+            flat = record
+        else:
+            return None
+
+    keyword_variants = []
+    for kw in keywords:
+        s = str(kw).strip().lower()
+        keyword_variants.append(s)
+        keyword_variants.append(s.replace("_", ""))
+        keyword_variants.append(s.replace(" ", ""))
+        keyword_variants.append(s.replace("_", "").replace(" ", ""))
+
+    for key, value in flat.items():
+        nk = normalize_key(key)
+        if not nk:
+            continue
+
+        nk_no_underscore = nk.replace("_", "")
+        for variant in keyword_variants:
+            if variant in nk or nk in variant or variant in nk_no_underscore or nk_no_underscore in variant:
+                if value is not None and value != "" and value != "null" and value != "None":
+                    return value
+
+    return None
+
 def variant_keys(name):
     n = str(name).strip()
     if not n:
@@ -1160,6 +1206,8 @@ def process_and_persist(raw_res):
     if not items:
         raise ValueError("Extraction failure: ExtJS Store returned zero records.")
 
+    debug_print_sample_keys(items, limit=3)
+
     sample_keys = list(items[0].keys()) if isinstance(items[0], dict) else []
     logging.info("[Crawler] Sample record keys: %s", sample_keys[:50])
 
@@ -1218,56 +1266,63 @@ def process_and_persist(raw_res):
             "total_market_share", "share_percentage", "market_percentage"
         ))
 
-        owned_teu = parse_int(pick_first(
+        owned_teu = parse_int(find_value_by_keywords(
             row_data,
             "owned_teu", "own_teu", "owned", "owned_capacity_teu", "owned_fleet_teu",
             "ownedcapacityteu", "ownedteu", "owned_capacity", "ownedfleetteu",
-            "own_teu_total", "own_capacity_teu", "owned_total_teu"
+            "own_teu_total", "own_capacity_teu", "owned_total_teu",
+            "owner_teu", "owncapacityteu"
         ))
-        owned_ships = parse_int(pick_first(
+        owned_ships = parse_int(find_value_by_keywords(
             row_data,
             "owned_ships", "own_ships", "owned_ship_count", "owned_fleet_ships",
-            "ownedships", "ownships", "owned_count", "owned_total_ships"
+            "ownedships", "ownships", "owned_count", "owned_total_ships",
+            "ownerships", "ownshipcount"
         ))
-        owned_share = parse_float(pick_first(
+        owned_share = parse_float(find_value_by_keywords(
             row_data,
             "owned_share", "own_share", "owned_pct", "owned_share_pct",
-            "own_share_pct", "ownedshare", "owned_share_percent", "own_pct"
+            "own_share_pct", "ownedshare", "owned_share_percent", "own_pct",
+            "ownedpercentage", "own_percentage"
         ))
 
-        chartered_teu = parse_int(pick_first(
+        chartered_teu = parse_int(find_value_by_keywords(
             row_data,
             "chartered_teu", "cht_teu", "charter_teu", "chartered", "leased_teu",
             "chartered_fleet_teu", "charteredcapacityteu", "charterteu",
-            "chartered_total_teu", "chartered_capacity_teu"
+            "chartered_total_teu", "chartered_capacity_teu", "chartercapacityteu",
+            "charteredcapacity", "chartercteu", "leasedcapacityteu"
         ))
-        chartered_ships = parse_int(pick_first(
+        chartered_ships = parse_int(find_value_by_keywords(
             row_data,
             "chartered_ships", "cht_ships", "charter_ships", "leased_ships",
-            "charterships", "charteredships", "chartered_fleet_ships", "charter_total_ships"
+            "charterships", "charteredships", "chartered_fleet_ships", "charter_total_ships",
+            "charteredshipcount", "chartershipcount", "leasedships"
         ))
-        chartered_share = parse_float(pick_first(
+        chartered_share = parse_float(find_value_by_keywords(
             row_data,
             "chartered_share", "cht_share", "charter_share", "chartered_pct",
-            "charter_share_pct", "charteredshare", "charter_pct"
+            "charter_share_pct", "charteredshare", "charter_pct", "charterpercentage",
+            "chartered_percentage"
         ))
 
-        orderbook_teu = parse_int(pick_first(
+        orderbook_teu = parse_int(find_value_by_keywords(
             row_data,
             "orderbook_teu", "ord_teu", "order_teu", "orderbook", "newbuild_teu",
             "order_book_teu", "orderbook_total_teu", "orderbookcapacityteu",
-            "orderbook_teu_total", "teu_on_order"
+            "orderbook_teu_total", "teu_on_order", "newbuildingteu", "newbuildcapacityteu"
         ))
-        order_ships = parse_int(pick_first(
+        order_ships = parse_int(find_value_by_keywords(
             row_data,
             "orderbook_ships", "ord_ships", "order_ships", "newbuild_ships",
-            "order_book_ships", "orderbook_ships_total", "ships_on_order"
+            "order_book_ships", "orderbook_ships_total", "ships_on_order",
+            "newbuildingships", "newbuildshipcount"
         ))
-        order_share = parse_float(pick_first(
+        order_share = parse_float(find_value_by_keywords(
             row_data,
             "orderbook_share", "ord_share", "order_pct", "orderbook_pct",
             "newbuild_pct", "order_book_share", "orderbook_share_pct",
-            "order_share", "orderbook_percentage"
+            "order_share", "orderbook_percentage", "newbuildpercentage"
         ))
 
         if total_teu > 0:
