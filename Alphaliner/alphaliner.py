@@ -154,9 +154,8 @@ def fetch_alphaliner_data():
 
         wait = WebDriverWait(driver, 30)
         wait.until(lambda d: d.execute_script("return typeof Ext !== 'undefined' && Ext.isReady;"))
-        time.sleep(3)  # Allow ExtJS Store hydration
+        time.sleep(3)  # ExtJS Store 메모리 동기화 대기
 
-        # Extract top 100 store and global fleet indicators
         js_extractor = """
         var results = {
             rows: [],
@@ -176,7 +175,6 @@ def fetch_alphaliner_data():
             });
         }
 
-        // Global totals DOM inspection
         var bodyText = document.body ? document.body.innerText : "";
         results.raw_text = bodyText;
 
@@ -216,7 +214,7 @@ def parse_float(val):
         return 0.0
 
 def process_and_persist(raw_data, db_file: Path = DB_PATH):
-    """Normalize extracted data, resolve missing fleet splits, and save to SQLite."""
+    """Normalize extracted data, resolve fleet splits, and save to SQLite."""
     today_str = datetime.now().strftime("%Y-%m-%d")
     now_iso = datetime.now().isoformat()
 
@@ -252,10 +250,6 @@ def process_and_persist(raw_data, db_file: Path = DB_PATH):
         tot_teu = parse_int(row.get("teu") or row.get("tot_teu") or row.get("total_teu") or row.get("capacity"))
         tot_ships = parse_int(row.get("ships") or row.get("tot_ships") or row.get("total_ships") or row.get("vessels"))
 
-        # -----------------------------------------------------------------
-        # Fleet composition
-        # Reconcile Chartered = Total - Owned when chartered keys are omitted.
-        # -----------------------------------------------------------------
         owned_teu = parse_int(
             row.get("owned_teu")
             or row.get("own_teu")
@@ -284,6 +278,7 @@ def process_and_persist(raw_data, db_file: Path = DB_PATH):
             or row.get("charteredShips")
         )
 
+        # Chartered 미제공 시 Total - Owned 자동 역산
         cht_teu = (
             explicit_cht_teu
             if explicit_cht_teu > 0
@@ -339,7 +334,6 @@ def process_and_persist(raw_data, db_file: Path = DB_PATH):
     global_teu = extracted_global_teu if extracted_global_teu > 0 else top100_teu
     global_ships = extracted_global_ships if extracted_global_ships > 0 else top100_ships
 
-    # Recalculate market share accurately against global capacity
     for op in operators:
         op["market_share"] = round((op["total_teu"] / global_teu) * 100, 2) if global_teu > 0 else 0.0
 
@@ -376,7 +370,7 @@ def process_and_persist(raw_data, db_file: Path = DB_PATH):
     return today_str
 
 # =========================================================
-# 4. JSON Serialization & Time Travel Data Engine
+# 4. JSON Serialization Engine
 # =========================================================
 def export_dataset_json(db_file: Path = DB_PATH, out_json: Path = JSON_PATH):
     """Serialize entire SQLite time-series dataset into structured JSON."""
@@ -427,7 +421,7 @@ def export_dataset_json(db_file: Path = DB_PATH, out_json: Path = JSON_PATH):
 # 5. Bloomberg Terminal Static HTML Generator
 # =========================================================
 def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
-    """Render high-density Bloomberg MI Terminal Dashboard with integrated interactive charts & table."""
+    """Render high-density Bloomberg MI Terminal Dashboard."""
     raw_json_str = json.dumps(json_data, ensure_ascii=False)
 
     html_content = f"""<!DOCTYPE html>
@@ -476,14 +470,6 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
     .mono {{ font-family: var(--font-mono); }}
     .num {{ font-family: var(--font-mono); text-align: right; }}
 
-    /* Layout Grids */
-    .grid-12 {{
-      display: grid;
-      grid-template-columns: repeat(12, 1fr);
-      gap: 10px;
-    }}
-
-    /* Ticker Header */
     .ticker-bar {{
       display: flex;
       justify-content: space-between;
@@ -539,29 +525,6 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
       color: #000;
     }}
 
-    /* Panels */
-    .panel {{
-      background: var(--bg-panel);
-      border: 1px solid var(--line);
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-    }}
-    .panel-header {{
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1px solid var(--line);
-      padding-bottom: 6px;
-      margin-bottom: 10px;
-      font-size: 11px;
-      font-weight: 700;
-      color: var(--text-muted);
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-    }}
-
-    /* KPI Cards */
     .kpi-row {{
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -602,19 +565,42 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
       font-family: var(--font-mono);
     }}
 
-    /* Delta Indicators */
     .up {{ color: var(--green); }}
     .down {{ color: var(--red); }}
     .flat {{ color: var(--text-dim); }}
 
-    /* Chart Container */
+    .charts-row {{
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }}
+    .panel {{
+      background: var(--bg-panel);
+      border: 1px solid var(--line);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+    }}
+    .panel-header {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 6px;
+      margin-bottom: 10px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }}
     .chart-box {{
       position: relative;
-      height: 280px;
+      height: 260px;
       width: 100%;
     }}
 
-    /* Table Styles */
     .table-container {{
       max-height: 520px;
       overflow-y: auto;
@@ -664,7 +650,7 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
       background: rgba(246, 166, 35, 0.03);
     }}
     .share-bar-cell {{
-      width: 90px;
+      width: 80px;
       padding: 2px 6px;
     }}
     .progress-bar-bg {{
@@ -679,13 +665,11 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
       background: var(--orange);
     }}
 
-    /* Scrollbars */
     ::-webkit-scrollbar {{ width: 6px; height: 6px; }}
     ::-webkit-scrollbar-track {{ background: var(--bg); }}
     ::-webkit-scrollbar-thumb {{ background: var(--line-bright); }}
     ::-webkit-scrollbar-thumb:hover {{ background: var(--orange); }}
 
-    /* Status Bar Footer */
     .status-bar {{
       margin-top: 10px;
       display: flex;
@@ -742,11 +726,10 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
       <div class="kpi-val" id="kpi-top10-teu">0 TEU</div>
       <div class="kpi-sub">
         <span id="kpi-top10-share">0.0% Market Share</span>
-        <span id="kpi-top10-delta" class="flat">--</span>
       </div>
     </div>
     <div class="kpi-card purple">
-      <div class="kpi-label">Top 100 Orderbook</div>
+      <div class="kpi-label">Total Orderbook Pipeline</div>
       <div class="kpi-val" id="kpi-orderbook-teu">0 TEU</div>
       <div class="kpi-sub">
         <span id="kpi-orderbook-ships">0 Ships</span>
@@ -755,24 +738,21 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
     </div>
   </div>
 
-  <!-- MAIN GRIDS -->
-  <div class="grid-12" style="margin-bottom:10px;">
-    <!-- LEFT: TOP 15 CAPACITY SHARE CHART -->
-    <div class="panel" style="grid-column: span 7;">
+  <!-- CHARTS ROW -->
+  <div class="charts-row">
+    <div class="panel">
       <div class="panel-header">
-        <span>Top 15 Carriers // Existing Fleet vs Orderbook (TEU)</span>
-        <span class="mono" style="color:var(--orange)">CAPACITY BREAKDOWN</span>
+        <span>Top 15 Carriers Capacity & Orderbook Breakdown</span>
+        <span class="mono">TEU CAPACITY</span>
       </div>
       <div class="chart-box">
         <canvas id="topChart"></canvas>
       </div>
     </div>
-
-    <!-- RIGHT: FLEET OWNERSHIP & ALLIANCE CONCENTRATION -->
-    <div class="panel" style="grid-column: span 5;">
+    <div class="panel">
       <div class="panel-header">
-        <span>Global Top 100 Fleet Dynamics</span>
-        <span class="mono" style="color:var(--cyan)">PORTFOLIO MIX</span>
+        <span>Fleet Structure Ratio</span>
+        <span class="mono">GLOBAL TOP 100</span>
       </div>
       <div class="chart-box">
         <canvas id="ratioChart"></canvas>
@@ -780,34 +760,34 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
     </div>
   </div>
 
-  <!-- FULL OPERATOR DETAIL TABLE -->
+  <!-- MAIN OPERATOR TABLE PANEL -->
   <div class="panel">
     <div class="panel-header">
-      <span>Official Liner Operator Ranking & Fleet Detail</span>
-      <span id="table-record-count" class="mono" style="color:var(--text-dim)">100 OPERATORS</span>
+      <span>Official Alphaliner Top 100 Ranking & Detailed Breakdown</span>
+      <span class="mono" id="table-record-count">100 OPERATORS</span>
     </div>
     <div class="table-container">
-      <table id="operatorTable">
+      <table>
         <thead>
           <tr>
-            <th rowspan="2" style="width:45px;">RK</th>
-            <th rowspan="2" style="text-align:left; min-width:180px;">Operator Name</th>
-            <th colspan="3" class="group-th" style="color:var(--orange);">TOTAL FLEET</th>
-            <th colspan="2" class="group-th" style="color:var(--blue);">OWNED FLEET</th>
-            <th colspan="2" class="group-th" style="color:var(--amber);">CHARTERED FLEET</th>
-            <th colspan="2" class="group-th" style="color:var(--purple);">ORDERBOOK</th>
-            <th rowspan="2" style="width:100px;">Share Trend</th>
+            <th rowspan="2">Rank</th>
+            <th rowspan="2" style="text-align:left;">Operator Name</th>
+            <th colspan="3" class="group-th">Existing Fleet Total</th>
+            <th colspan="2" class="group-th">Owned Fleet</th>
+            <th colspan="2" class="group-th">Chartered Fleet</th>
+            <th colspan="2" class="group-th">Orderbook</th>
+            <th rowspan="2">Global Share</th>
           </tr>
           <tr>
-            <th style="width:90px;">TEU</th>
-            <th style="width:60px;">Ships</th>
-            <th style="width:65px;">Share</th>
-            <th style="width:85px;">TEU</th>
-            <th style="width:60px;">%</th>
-            <th style="width:85px;">TEU</th>
-            <th style="width:60px;">%</th>
-            <th style="width:85px;">TEU</th>
-            <th style="width:60px;">%</th>
+            <th class="num">TEU</th>
+            <th class="num">Ships</th>
+            <th class="num">Share %</th>
+            <th class="num">TEU</th>
+            <th class="num">% Total</th>
+            <th class="num">TEU</th>
+            <th class="num">% Total</th>
+            <th class="num">TEU</th>
+            <th class="num">% Fleet</th>
           </tr>
         </thead>
         <tbody id="operatorTableBody"></tbody>
@@ -815,11 +795,10 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
     </div>
   </div>
 
-  <!-- STATUS FOOTER -->
+  <!-- STATUS FOOTER BAR -->
   <div class="status-bar">
-    <div>SOURCE: ALPHALINER PUBLIC TOP 100 // EXTRACTOR ENGINE OPTIMIZED</div>
+    <div>SYSTEM: <span style="color:var(--green)">ONLINE</span> | PROVIDER: AXS MARINE / ALPHALINER</div>
     <div id="footer-sync-time">LAST SYNC: --</div>
-    <div>TERMINAL STATUS: <span style="color:var(--green)">ONLINE</span></div>
   </div>
 
   <script>
@@ -854,7 +833,7 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
       }});
 
       if (dates.length > 1) {{
-        cSel.selectedIndex = 2; // Default compare against previous snapshot
+        cSel.selectedIndex = 1;
       }}
     }}
 
@@ -891,7 +870,6 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
       const top100Share = meta.global_teu > 0 ? ((meta.top100_teu / meta.global_teu) * 100).toFixed(1) : "0.0";
       document.getElementById("kpi-top100-share").textContent = top100Share + "% of Global";
 
-      // Top 10 Aggregate
       const top10Ops = ops.slice(0, 10);
       const top10Teu = top10Ops.reduce((acc, x) => acc + x.total_teu, 0);
       const top10Share = meta.global_teu > 0 ? ((top10Teu / meta.global_teu) * 100).toFixed(1) : "0.0";
@@ -899,7 +877,6 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
       document.getElementById("kpi-top10-teu").textContent = formatNumber(top10Teu) + " TEU";
       document.getElementById("kpi-top10-share").textContent = top10Share + "% Market Share";
 
-      // Orderbook
       const obTeu = ops.reduce((acc, x) => acc + x.orderbook_teu, 0);
       const obShips = ops.reduce((acc, x) => acc + x.orderbook_ships, 0);
       const obRatio = meta.top100_teu > 0 ? ((obTeu / meta.top100_teu) * 100).toFixed(1) : "0.0";
@@ -908,13 +885,12 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
       document.getElementById("kpi-orderbook-ships").textContent = formatNumber(obShips) + " Ships";
       document.getElementById("kpi-orderbook-ratio").textContent = obRatio + "% of Existing";
 
-      // Deltas if available
       const deltaEl = document.getElementById("kpi-global-delta");
       if (compare && compare.meta) {{
         const diff = meta.global_teu - compare.meta.global_teu;
         const sign = diff > 0 ? "+" : "";
         deltaEl.className = diff > 0 ? "up" : (diff < 0 ? "down" : "flat");
-        deltaEl.textContent = sign + formatNumber(diff) + " TEU vs " + compare.meta.snapshot_date;
+        deltaEl.textContent = sign + formatNumber(diff) + " TEU vs " + (compare.meta.snapshot_date || "BASE");
       }} else {{
         deltaEl.className = "flat";
         deltaEl.textContent = "HISTORICAL BASE";
@@ -988,7 +964,6 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
         }}
       }});
 
-      // Aggregates for Chart 2 (Owned vs Chartered vs Others)
       const allOps = current.operators || [];
       const totalOwned = allOps.reduce((acc, x) => acc + x.owned_teu, 0);
       const totalCht = allOps.reduce((acc, x) => acc + x.chartered_teu, 0);
@@ -1026,24 +1001,10 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
       tbody.innerHTML = "";
 
       const ops = current.operators || [];
-      const cmpMap = {};
-      if (compare && compare.operators) {{
-        compare.operators.forEach(o => cmpMap[o.operator_name] = o);
-      }}
-
       document.getElementById("table-record-count").textContent = ops.length + " OPERATORS MONITORED";
 
       ops.forEach(op => {{
         const tr = document.createElement("tr");
-
-        const cmp = cmpMap[op.operator_name];
-        let deltaHtml = "<span class='flat'>-</span>";
-        if (cmp) {{
-          const diff = op.total_teu - cmp.total_teu;
-          if (diff > 0) deltaHtml = `<span class='up mono'>+${{formatNumber(diff)}}</span>`;
-          else if (diff < 0) deltaHtml = `<span class='down mono'>${{formatNumber(diff)}}</span>`;
-        }}
-
         tr.innerHTML = `
           <td class="rank-cell mono">${{op.rank}}</td>
           <td class="op-name">${{op.operator_name}}</td>
