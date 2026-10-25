@@ -64,10 +64,10 @@ logger = logging.getLogger("AlphalinerCrawler")
 db_lock = Lock()
 
 # =========================================================
-# 2. Database Management
+# 2. Database Management & Auto Migration
 # =========================================================
 def init_db(db_file: Path = DB_PATH):
-    """Initialize SQLite database schema."""
+    """Initialize SQLite database schema with automatic schema migration."""
     with db_lock:
         conn = sqlite3.connect(str(db_file))
         cursor = conn.cursor()
@@ -106,8 +106,24 @@ def init_db(db_file: Path = DB_PATH):
             )
         """)
 
+        # 기존 DB 테이블 구조 확인 및 자동 컬럼 마이그레이션
+        cursor.execute("PRAGMA table_info(operator_snapshots)")
+        cols = [row[1] for row in cursor.fetchall()]
+
+        if "operator" in cols and "operator_name" not in cols:
+            logger.info("Migrating legacy column 'operator' -> 'operator_name' in operator_snapshots")
+            try:
+                cursor.execute("ALTER TABLE operator_snapshots RENAME COLUMN operator TO operator_name")
+                cols.append("operator_name")
+            except Exception as e:
+                logger.warning(f"Column rename failed or already handled: {e}")
+
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_op_date ON operator_snapshots(snapshot_date);")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_op_name ON operator_snapshots(operator_name);")
+
+        if "operator_name" in cols:
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_op_name ON operator_snapshots(operator_name);")
+        elif "operator" in cols:
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_op_name ON operator_snapshots(operator);")
 
         conn.commit()
         conn.close()
@@ -246,7 +262,7 @@ def process_and_persist(raw_data, db_file: Path = DB_PATH):
             continue
         seen_ranks.add(rank)
 
-        name = str(row.get("operator") or row.get("operator_name") or row.get("liner") or f"Operator {rank}").strip()
+        name = str(row.get("operator_name") or row.get("operator") or row.get("liner") or f"Operator {rank}").strip()
         tot_teu = parse_int(row.get("teu") or row.get("tot_teu") or row.get("total_teu") or row.get("capacity"))
         tot_ships = parse_int(row.get("ships") or row.get("tot_ships") or row.get("total_ships") or row.get("vessels"))
 
@@ -278,7 +294,6 @@ def process_and_persist(raw_data, db_file: Path = DB_PATH):
             or row.get("charteredShips")
         )
 
-        # Chartered 미제공 시 Total - Owned 자동 역산
         cht_teu = (
             explicit_cht_teu
             if explicit_cht_teu > 0
@@ -390,7 +405,14 @@ def export_dataset_json(db_file: Path = DB_PATH, out_json: Path = JSON_PATH):
         for m in meta_rows:
             s_date = m["snapshot_date"]
             cursor.execute("SELECT * FROM operator_snapshots WHERE snapshot_date = ? ORDER BY rank ASC", (s_date,))
-            op_rows = [dict(r) for r in cursor.fetchall()]
+            raw_ops = [dict(r) for r in cursor.fetchall()]
+
+            # 컬럼 호환성 보장
+            op_rows = []
+            for r in raw_ops:
+                if "operator" in r and "operator_name" not in r:
+                    r["operator_name"] = r["operator"]
+                op_rows.append(r)
 
             snapshots[s_date] = {
                 "meta": {
@@ -729,11 +751,11 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
       </div>
     </div>
     <div class="kpi-card purple">
-      <div class="kpi-label">Total Orderbook Pipeline</div>
+      <div class="kpi-label">Orderbook Pipeline</div>
       <div class="kpi-val" id="kpi-orderbook-teu">0 TEU</div>
       <div class="kpi-sub">
         <span id="kpi-orderbook-ships">0 Ships</span>
-        <span id="kpi-orderbook-ratio">0.0% of Existing</span>
+        <span id="kpi-orderbook-ratio">0.0% of Fleet</span>
       </div>
     </div>
   </div>
@@ -742,8 +764,8 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
   <div class="charts-row">
     <div class="panel">
       <div class="panel-header">
-        <span>Top 15 Carriers Capacity & Orderbook Breakdown</span>
-        <span class="mono">TEU CAPACITY</span>
+        <span>TOP 15 OPERATORS FLEET COMPOSITION & ORDERBOOK</span>
+        <span style="font-size:10px; color:var(--text-dim);">UNIT: TEU</span>
       </div>
       <div class="chart-box">
         <canvas id="topChart"></canvas>
@@ -751,8 +773,8 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
     </div>
     <div class="panel">
       <div class="panel-header">
-        <span>Fleet Structure Ratio</span>
-        <span class="mono">GLOBAL TOP 100</span>
+        <span>GLOBAL FLEET SPLIT RATIO</span>
+        <span style="font-size:10px; color:var(--text-dim);">OWNED vs CHARTERED</span>
       </div>
       <div class="chart-box">
         <canvas id="ratioChart"></canvas>
@@ -760,28 +782,28 @@ def build_static_dashboard(json_data, out_html: Path = HTML_PATH):
     </div>
   </div>
 
-  <!-- MAIN OPERATOR TABLE PANEL -->
-  <div class="panel">
+  <!-- DATA TABLE PANEL -->
+  <div class="panel" style="margin-bottom:0;">
     <div class="panel-header">
-      <span>Official Alphaliner Top 100 Ranking & Detailed Breakdown</span>
-      <span class="mono" id="table-record-count">100 OPERATORS</span>
+      <span>TOP 100 CAPACITY MATRIX</span>
+      <span id="table-record-count" style="font-size:10px; color:var(--orange);">-- OPERATORS</span>
     </div>
     <div class="table-container">
       <table>
         <thead>
           <tr>
-            <th rowspan="2">Rank</th>
-            <th rowspan="2" style="text-align:left;">Operator Name</th>
-            <th colspan="3" class="group-th">Existing Fleet Total</th>
+            <th rowspan="2" style="width:40px;">RK</th>
+            <th rowspan="2">Operator Name</th>
+            <th colspan="3" class="group-th">Total Fleet</th>
             <th colspan="2" class="group-th">Owned Fleet</th>
             <th colspan="2" class="group-th">Chartered Fleet</th>
             <th colspan="2" class="group-th">Orderbook</th>
-            <th rowspan="2">Global Share</th>
+            <th rowspan="2" style="width:80px;">Share</th>
           </tr>
           <tr>
             <th class="num">TEU</th>
             <th class="num">Ships</th>
-            <th class="num">Share %</th>
+            <th class="num">Share</th>
             <th class="num">TEU</th>
             <th class="num">% Total</th>
             <th class="num">TEU</th>
