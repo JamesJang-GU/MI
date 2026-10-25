@@ -59,11 +59,13 @@ logger = logging.getLogger("Alphaliner")
 db_lock = Lock()
 
 # =========================================================
-# 2. Database Schema & Utilities
+# 2. Database Schema & Migration Utilities
 # =========================================================
 def init_db():
     with db_lock, sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
+
+        # 1) snapshot_meta 테이블 생성
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS snapshot_meta (
                 snapshot_date TEXT PRIMARY KEY,
@@ -77,6 +79,8 @@ def init_db():
                 orderbook_ships INTEGER
             )
         """)
+
+        # 2) operator_snapshots 테이블 생성
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS operator_snapshots (
                 snapshot_date TEXT,
@@ -99,6 +103,50 @@ def init_db():
                 PRIMARY KEY (snapshot_date, rank)
             )
         """)
+
+        # 3) 기존 DB 컬럼 누락 방지를 위한 자동 마이그레이션 (ALTER TABLE)
+        cursor.execute("PRAGMA table_info(snapshot_meta)")
+        existing_meta_cols = {col[1] for col in cursor.fetchall()}
+
+        expected_meta_cols = {
+            "updated_at": "TEXT",
+            "total_teu": "INTEGER",
+            "total_ships": "INTEGER",
+            "top100_teu": "INTEGER",
+            "top100_ships": "INTEGER",
+            "top100_share": "REAL",
+            "orderbook_teu": "INTEGER",
+            "orderbook_ships": "INTEGER"
+        }
+        for col_name, col_type in expected_meta_cols.items():
+            if col_name not in existing_meta_cols:
+                logger.info(f"[DB MIGRATE] Adding missing column '{col_name}' to snapshot_meta")
+                cursor.execute(f"ALTER TABLE snapshot_meta ADD COLUMN {col_name} {col_type}")
+
+        cursor.execute("PRAGMA table_info(operator_snapshots)")
+        existing_op_cols = {col[1] for col in cursor.fetchall()}
+
+        expected_op_cols = {
+            "country": "TEXT",
+            "teu": "INTEGER",
+            "teu_share": "REAL",
+            "ships": "INTEGER",
+            "chartered_teu": "INTEGER",
+            "chartered_share": "REAL",
+            "chartered_ships": "INTEGER",
+            "owned_teu": "INTEGER",
+            "owned_share": "REAL",
+            "owned_ships": "INTEGER",
+            "orderbook_teu": "INTEGER",
+            "orderbook_teu_share": "REAL",
+            "orderbook_ships": "INTEGER",
+            "created_at": "TEXT"
+        }
+        for col_name, col_type in expected_op_cols.items():
+            if col_name not in existing_op_cols:
+                logger.info(f"[DB MIGRATE] Adding missing column '{col_name}' to operator_snapshots")
+                cursor.execute(f"ALTER TABLE operator_snapshots ADD COLUMN {col_name} {col_type}")
+
         conn.commit()
 
 def parse_int(val):
@@ -141,7 +189,7 @@ def get_chrome_driver():
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-    chrome_bin = os.getenv("CHROME_BIN") or os.getenv("GOOGLE_CHROME_BIN")
+    chrome_bin = os.getenv("CHROME_BINARY") or os.getenv("CHROME_BIN") or os.getenv("GOOGLE_CHROME_BIN")
     if chrome_bin and os.path.exists(chrome_bin):
         options.binary_location = chrome_bin
 
@@ -205,12 +253,9 @@ def fetch_alphaliner_data():
 # 4. Processing & Persistence
 # =========================================================
 def process_and_persist(records):
+    init_db()
     snapshot_date = datetime.now().strftime("%Y-%m-%d")
     now_iso = datetime.now().isoformat()
-
-    if records:
-        logger.info(f"[EXTJS] Available raw fields: {list(records[0].keys())}")
-        logger.info(f"[EXTJS] First raw record sample: {records[0]}")
 
     operators = []
     tot_teu = 0
@@ -227,33 +272,36 @@ def process_and_persist(records):
         country = str(get_field_val(r, ["Country", "country", "Flag", "flag"], "")).strip()
 
         teu = parse_int(get_field_val(r, ["TotalTeu", "totalTeu", "TEU", "teu", "Capacity", "capacity"]))
-        teu_share = parse_float(get_field_val(r, ["TotalShare", "totalShare", "Share", "share", "MarketShare", "marketShare"]))
+        teu_share = parse_float(get_field_val(r, ["TotalShare", "totalShare", "Share", "share", "MarketShare", "marketShare", "percent"]))
         ships = parse_int(get_field_val(r, ["TotalShips", "totalShips", "Ships", "ships", "NbShips", "nbShips"]))
 
-        chartered_teu = parse_int(get_field_val(r, ["CharteredTeu", "charteredTeu", "CharterTeu", "charter_teu"]))
-        chartered_share = parse_float(get_field_val(r, ["CharteredShare", "charteredShare", "CharterShare", "charter_share"]))
-        chartered_ships = parse_int(get_field_val(r, ["CharteredShips", "charteredShips", "CharterShips", "charter_ships"]))
+        chartered_teu = parse_int(get_field_val(r, ["CharteredTeu", "charteredTeu", "CharterTeu", "charter_teu", "chartTeu"]))
+        chartered_share = parse_float(get_field_val(r, ["CharteredShare", "charteredShare", "CharterShare", "charter_share", "chartProcent"]))
+        chartered_ships = parse_int(get_field_val(r, ["CharteredShips", "charteredShips", "CharterShips", "charter_ships", "chartShips"]))
 
         owned_teu = parse_int(get_field_val(r, ["OwnedTeu", "ownedTeu", "OwnTeu", "own_teu"]))
         owned_share = parse_float(get_field_val(r, ["OwnedShare", "ownedShare", "OwnShare", "own_share"]))
+        if owned_share == 0.0 and teu > 0 and owned_teu > 0:
+            owned_share = round((owned_teu / teu) * 100, 1)
+
         owned_ships = parse_int(get_field_val(r, ["OwnedShips", "ownedShips", "OwnShips", "own_ships"]))
 
         orderbook_teu = parse_int(get_field_val(r, [
             "TEUOrderbook", "TeuOrderbook", "teu_orderbook", "teuorderbook",
             "OrderbookTeu", "orderbookTeu", "OrderBookTEU", "OrderbookTEU",
-            "orderbook_teu", "orderbookteu", "Orderbook_Teu", "OBTeu", "OBTEU"
+            "orderbook_teu", "orderbookteu", "Orderbook_Teu", "OBTeu", "OBTEU", "orderTeu"
         ]))
 
         orderbook_ships = parse_int(get_field_val(r, [
             "ShipsOrderbook", "ShipOrderbook", "ships_orderbook", "shipsorderbook",
             "OrderbookShips", "orderbookShips", "OrderBookShips", "OrderBookNb",
             "OrderbookNb", "orderbook_ships", "orderbookships", "Orderbook_Ships",
-            "OBShips", "OBNb"
+            "OBShips", "OBNb", "orderShips"
         ]))
 
         orderbook_teu_share = parse_float(get_field_val(r, [
             "OrderbookShare", "orderbookShare", "OrderBookShare",
-            "TEUOrderbookShare", "orderbook_share", "OBShare"
+            "TEUOrderbookShare", "orderbook_share", "OBShare", "orderProcents"
         ]))
         if orderbook_teu_share == 0.0 and teu > 0 and orderbook_teu > 0:
             orderbook_teu_share = round((orderbook_teu / teu) * 100, 2)
@@ -370,7 +418,6 @@ def export_json_and_html():
     generate_static_html(data_payload)
 
 def generate_static_html(payload):
-    json_str = json.dumps(payload, ensure_ascii=False)
     html_template = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -844,123 +891,126 @@ table.alphaliner-table tbody tr:hover {{
       </select>
     </div>
 
-    <button class="btn btn-accent" onclick="exportCSV()">EXPORT CSV</button>
+    <button class="btn btn-accent" onclick="exportCSV()">
+      <span>↓ CSV</span>
+    </button>
   </div>
 </header>
 
 <main class="main-content">
-  <section class="kpi-grid">
+  <div class="kpi-grid">
     <div class="kpi-card accent-blue">
       <div class="kpi-header">
-        <span class="kpi-title">TOTAL TOP 100 FLEET</span>
-        <span class="kpi-sub" id="snapshotTimestamp">LATEST</span>
+        <span class="kpi-title">Total Ships</span>
+        <span class="kpi-sub">GLOBAL TOP 100</span>
       </div>
-      <div class="kpi-value" id="kpiTotalTeu">--</div>
-      <div class="kpi-meta">
-        <span id="kpiTotalShips">-- Ships</span>
-      </div>
-    </div>
-
-    <div class="kpi-card accent-amber">
-      <div class="kpi-header">
-        <span class="kpi-title">TOP 10 MARKET CONCENTRATION</span>
-        <span class="kpi-sub">CR10 SHARE</span>
-      </div>
-      <div class="kpi-value" id="kpiTop10Share">--%</div>
-      <div class="kpi-meta">
-        <span id="kpiTop10Teu">-- TEU</span>
-      </div>
-    </div>
-
-    <div class="kpi-card accent-purple">
-      <div class="kpi-header">
-        <span class="kpi-title">TOTAL ORDERBOOK</span>
-        <span class="kpi-sub" id="kpiOrderbookShare">--% of Fleet</span>
-      </div>
-      <div class="kpi-value" id="kpiOrderbookTeu">--</div>
-      <div class="kpi-meta">
-        <span id="kpiOrderbookShips">-- Ships</span>
-      </div>
+      <div class="kpi-value" id="kpiTotalShips">--</div>
+      <div class="kpi-meta" id="kpiTotalShipsMeta">--</div>
     </div>
 
     <div class="kpi-card accent-green">
       <div class="kpi-header">
-        <span class="kpi-title">CHARTERED CAPACITY RATIO</span>
-        <span class="kpi-sub">TOP 100 AGGREGATE</span>
+        <span class="kpi-title">Total Fleet TEU</span>
+        <span class="kpi-sub">GLOBAL TOP 100</span>
       </div>
-      <div class="kpi-value" id="kpiCharteredRatio">--%</div>
+      <div class="kpi-value" id="kpiTotalTeu">--</div>
+      <div class="kpi-meta" id="kpiTotalTeuMeta">--</div>
+    </div>
+
+    <div class="kpi-card accent-amber">
+      <div class="kpi-header">
+        <span class="kpi-title">Top 10 Concentration</span>
+        <span class="kpi-sub">MARKET SHARE (CR10)</span>
+      </div>
+      <div class="kpi-value" id="kpiTop10Share">--</div>
+      <div class="kpi-meta" id="kpiTop10Teu">--</div>
+    </div>
+
+    <div class="kpi-card accent-purple">
+      <div class="kpi-header">
+        <span class="kpi-title">Orderbook</span>
+        <span class="kpi-sub">PIPELINE CAPACITY</span>
+      </div>
+      <div class="kpi-value" id="kpiOrderbookTeu">--</div>
       <div class="kpi-meta">
-        <span id="kpiCharteredTeu">-- TEU Chartered</span>
+        <span id="kpiOrderbookShips">--</span>
+        <span id="kpiOrderbookShare">--</span>
       </div>
     </div>
-  </section>
+  </div>
 
-  <section class="table-panel">
+  <div class="table-panel">
     <div class="panel-toolbar">
       <div class="panel-title-group">
-        <span class="panel-title">GLOBAL LINER RANKING & ORDERBOOK POSITION</span>
+        <span class="panel-title">TOP 100 OPERATOR RANKINGS & FLEET DECOMPOSITION</span>
         <span class="count-badge" id="rowCountBadge">100 OPERATORS</span>
       </div>
+      <div id="snapshotTimestamp" style="color: var(--text-dim); font-size: 10px;"></div>
     </div>
 
     <div class="table-responsive">
       <table class="alphaliner-table" id="operatorTable">
         <thead>
           <tr>
-            <th colspan="3" class="th-left">OPERATOR PROFILE</th>
-            <th colspan="3">TOTAL CAPACITY</th>
-            <th colspan="3">OWNED CAPACITY</th>
-            <th colspan="3">CHARTERED CAPACITY</th>
-            <th colspan="3">ORDERBOOK CAPACITY</th>
+            <th colspan="3" class="th-center">OPERATOR IDENTIFIER</th>
+            <th colspan="3" class="th-center" style="background:#0c1e31;">TOTAL FLEET CAPACITY</th>
+            <th colspan="3" class="th-center" style="background:#091929;">OWNED FLEET</th>
+            <th colspan="3" class="th-center" style="background:#071524;">CHARTERED FLEET</th>
+            <th colspan="3" class="th-center" style="background:#13112c;">ORDERBOOK PIPELINE</th>
           </tr>
           <tr>
             <th class="th-center" onclick="sortTable(0)">RK</th>
-            <th class="th-left" onclick="sortTable(1)">OPERATOR NAME</th>
+            <th class="th-left" onclick="sortTable(1)">OPERATOR</th>
             <th class="th-center" onclick="sortTable(2)">FLAG</th>
-
-            <th onclick="sortTable(3)">TEU</th>
-            <th onclick="sortTable(4)">SHARE</th>
+            <th onclick="sortTable(3)">TOTAL TEU</th>
+            <th onclick="sortTable(4)">SHARE %</th>
             <th onclick="sortTable(5)">SHIPS</th>
-
-            <th onclick="sortTable(6)">TEU</th>
-            <th onclick="sortTable(7)">%</th>
+            <th onclick="sortTable(6)">OWN TEU</th>
+            <th onclick="sortTable(7)">OWN %</th>
             <th onclick="sortTable(8)">SHIPS</th>
-
-            <th onclick="sortTable(9)">TEU</th>
-            <th onclick="sortTable(10)">%</th>
+            <th onclick="sortTable(9)">CHT TEU</th>
+            <th onclick="sortTable(10)">CHT %</th>
             <th onclick="sortTable(11)">SHIPS</th>
-
-            <th onclick="sortTable(12)">TEU</th>
-            <th onclick="sortTable(13)">%</th>
+            <th onclick="sortTable(12)" style="color:var(--accent-purple);">OB TEU</th>
+            <th onclick="sortTable(13)">% FLEET</th>
             <th onclick="sortTable(14)">SHIPS</th>
           </tr>
         </thead>
         <tbody id="tableBody"></tbody>
       </table>
     </div>
-  </section>
+  </div>
 </main>
 
 <footer class="terminal-footer">
   <div class="status-indicator">
-    <span class="status-dot"></span>
-    <span>SYSTEM ACTIVE | AXSMARINE ALPHALINER AUTOMATION</span>
+    <div class="status-dot"></div>
+    <span>ALPHALINER TERMINAL ENGINE: ACTIVE</span>
   </div>
-  <div id="footerMeta">INITIALIZING...</div>
+  <div id="footerMeta"></div>
 </footer>
 
 <script>
-const DATA = {json_str};
-let currentSnapshotKey = DATA.latest_date || (DATA.dates && DATA.dates[0]) || '';
+let DATA = null;
+let currentSnapshotKey = null;
 let compareSnapshotKey = null;
 let currentSortCol = 0;
 let sortAsc = true;
 
-function init() {{
-  if (!DATA.dates || DATA.dates.length === 0) {{
-    document.getElementById('tableBody').innerHTML = '<tr><td colspan="15" style="text-align:center; padding:30px;">NO DATA AVAILABLE</td></tr>';
-    return;
+async function init() {{
+  try {{
+    const res = await fetch('alphaliner_data.json');
+    if (!res.ok) throw new Error('Failed to load alphaliner_data.json');
+    DATA = await res.json();
+    setupUI();
+  }} catch(e) {{
+    console.error(e);
   }}
+}}
+
+function setupUI() {{
+  if (!DATA || !DATA.dates || DATA.dates.length === 0) return;
+  currentSnapshotKey = DATA.latest_date;
 
   const snapSelect = document.getElementById('snapshotSelect');
   const compSelect = document.getElementById('compareSelect');
@@ -1022,21 +1072,34 @@ function renderDashboard() {{
     if (idx < 10) top10Teu += op.teu;
   }});
 
-  document.getElementById('kpiTotalTeu').textContent = totalTeu.toLocaleString() + ' TEU';
-  document.getElementById('kpiTotalShips').textContent = totalShips.toLocaleString() + ' Ships';
+  let compTotalTeu = 0, compTotalShips = 0, compTop10Teu = 0, compObTeu = 0, compObShips = 0;
+  if (compareSnap && compareSnap.operators) {{
+    compareSnap.operators.forEach((op, idx) => {{
+      compTotalTeu += op.teu;
+      compTotalShips += op.ships;
+      compObTeu += op.orderbook_teu;
+      compObShips += op.orderbook_ships;
+      if (idx < 10) compTop10Teu += op.teu;
+    }});
+  }}
+
+  document.getElementById('kpiTotalShips').innerHTML = totalShips.toLocaleString() + ' Ships' + (compareSnapshotKey ? formatDelta(totalShips - compTotalShips) : '');
+  document.getElementById('kpiTotalShipsMeta').textContent = operators.length + ' Operators Monitored';
+
+  document.getElementById('kpiTotalTeu').innerHTML = totalTeu.toLocaleString() + ' TEU' + (compareSnapshotKey ? formatDelta(totalTeu - compTotalTeu) : '');
+  document.getElementById('kpiTotalTeuMeta').textContent = 'Global Active Capacity';
 
   const cr10Share = totalTeu > 0 ? ((top10Teu / totalTeu) * 100).toFixed(1) : 0;
-  document.getElementById('kpiTop10Share').textContent = cr10Share + '%';
-  document.getElementById('kpiTop10Teu').textContent = top10Teu.toLocaleString() + ' TEU';
+  const compCr10Share = compTotalTeu > 0 ? ((compTop10Teu / compTotalTeu) * 100).toFixed(1) : 0;
+  const cr10Diff = compareSnapshotKey ? (parseFloat(cr10Share) - parseFloat(compCr10Share)) : 0;
 
-  document.getElementById('kpiOrderbookTeu').textContent = totalObTeu.toLocaleString() + ' TEU';
+  document.getElementById('kpiTop10Share').innerHTML = cr10Share + '%' + (compareSnapshotKey ? formatDelta(cr10Diff, true) : '');
+  document.getElementById('kpiTop10Teu').textContent = top10Teu.toLocaleString() + ' TEU in Top 10';
+
+  document.getElementById('kpiOrderbookTeu').innerHTML = totalObTeu.toLocaleString() + ' TEU' + (compareSnapshotKey ? formatDelta(totalObTeu - compObTeu) : '');
   document.getElementById('kpiOrderbookShips').textContent = totalObShips.toLocaleString() + ' Ships';
   const obRatio = totalTeu > 0 ? ((totalObTeu / totalTeu) * 100).toFixed(1) : 0;
-  document.getElementById('kpiOrderbookShare').textContent = obRatio + '% of Active Fleet';
-
-  const chtRatio = totalTeu > 0 ? ((totalCharteredTeu / totalTeu) * 100).toFixed(1) : 0;
-  document.getElementById('kpiCharteredRatio').textContent = chtRatio + '%';
-  document.getElementById('kpiCharteredTeu').textContent = totalCharteredTeu.toLocaleString() + ' TEU Chartered';
+  document.getElementById('kpiOrderbookShare').textContent = ' (' + obRatio + '% of Fleet)';
 
   document.getElementById('snapshotTimestamp').textContent = 'SNAPSHOT: ' + currentSnapshotKey + (compareSnapshotKey ? ' | VS ' + compareSnapshotKey : '');
   document.getElementById('footerMeta').textContent = 'TOTAL SNAPSHOTS: ' + DATA.dates.length + ' | UPDATED: ' + (DATA.generated_at || '');
@@ -1273,7 +1336,7 @@ def main():
             logger.error(f"Scrape failed: {e}")
             sys.exit(1)
 
-    # Standard run: scrape once if DB empty, generate static files, then run Flask
+    # Standard run
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cnt = conn.cursor().execute("SELECT count(*) FROM snapshot_meta").fetchone()[0]
