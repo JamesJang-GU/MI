@@ -841,20 +841,92 @@ def generate_static_dashboard():
 def normalize_key(value):
     if value is None:
         return ""
-    return str(value).strip().lower().replace(" ", "_").replace("-", "_").replace(".", "_").replace("/", "_")
+    s = str(value).strip().lower()
+    s = re.sub(r"[^a-z0-9]+", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s
+
+def flatten_record(row):
+    """Convert a record object or dict into a plain dict for field extraction."""
+    if row is None:
+        return {}
+
+    if isinstance(row, dict):
+        flat = dict(row)
+    else:
+        flat = {}
+
+        if hasattr(row, "data") and isinstance(row.data, dict):
+            flat.update(row.data)
+        if hasattr(row, "raw") and isinstance(row.raw, dict):
+            flat.update(row.raw)
+
+    if hasattr(row, "data") and isinstance(getattr(row, "data"), dict):
+        flat.update(row.data)
+    if hasattr(row, "raw") and isinstance(getattr(row, "raw"), dict):
+        flat.update(row.raw)
+
+    return flat
+
+def variant_keys(name):
+    n = str(name).strip()
+    if not n:
+        return set()
+    base = normalize_key(n)
+    variants = {base, base.replace("_", "")}
+    # common variations
+    variants.update({
+        base + "_pct",
+        base + "_percentage",
+        base + "_share",
+        base + "_teu",
+        base + "_ships",
+        base + "_count",
+        base + "_total",
+        base + "_capacity",
+        base + "_fleet",
+        base.replace("_", "") + "_pct",
+        base.replace("_", "") + "_share",
+        base.replace("_", "") + "_teu",
+        base.replace("_", "") + "_ships",
+    })
+    return {v for v in variants if v}
 
 def pick_first(record, *keys, default=None):
-    if not isinstance(record, dict):
+    """
+    Accept dict-like row or ExtJS record-like object and find first matching candidate.
+    """
+    if record is None:
         return default
 
-    # normalized lookup to tolerate different key names
-    normalized_map = {normalize_key(k): v for k, v in record.items()}
+    flat = flatten_record(record)
+    if not flat:
+        if isinstance(record, dict):
+            flat = record
+        else:
+            return default
+
+    normalized_map = {}
+    for k, v in flat.items():
+        nk = normalize_key(k)
+        normalized_map[nk] = v
+        normalized_map[nk.replace("_", "")] = v
+
+    for key in keys:
+        for candidate in variant_keys(key):
+            if candidate in normalized_map:
+                value = normalized_map[candidate]
+                if value is not None and value != "" and value != "null" and value != "None":
+                    return value
+
+    # Fallback: exact normalized form
     for key in keys:
         nk = normalize_key(key)
         if nk in normalized_map:
             value = normalized_map[nk]
-            if value is not None and value != "" and value != "null":
+            if value is not None and value != "" and value != "null" and value != "None":
                 return value
+
     return default
 
 def parse_int(val) -> int:
@@ -862,15 +934,49 @@ def parse_int(val) -> int:
         return 0
     if isinstance(val, (int, float)):
         return int(val)
-    s = re.sub(r"[^\d]", "", str(val))
-    return int(s) if s else 0
+    if isinstance(val, str):
+        s = val.strip()
+        if s == "":
+            return 0
+        # handle "1,234", "1,234.56", "1234.0", "1.234,56" (Europe)
+        s = s.replace(" ", "")
+        s = s.replace(",", "")
+        if "." in s and "," in s:
+            s = s.replace(".", "").replace(",", ".")
+        elif "," in s and "." not in s:
+            # likely European format -> remove comma and keep decimals if any
+            if s.count(",") == 1 and len(s.split(",")[-1]) <= 2:
+                s = s.replace(",", "")
+            else:
+                s = s.replace(",", "")
+        s = re.sub(r"[^0-9.\\-]", "", s)
+        if s in ("", "-", ".", "-.", ".-"):
+            return 0
+        # if value has decimal part, truncate
+        if "." in s:
+            s = s.split(".", 1)[0]
+        try:
+            return int(float(s))
+        except ValueError:
+            return 0
+    return int(str(val))
 
 def parse_float(val) -> float:
     if val is None:
         return 0.0
     if isinstance(val, (int, float)):
         return float(val)
-    s = str(val).replace(",", "").replace("%", "").strip()
+    s = str(val).strip()
+    if s == "":
+        return 0.0
+    s = s.replace(" ", "")
+    s = s.replace("%", "")
+    s = s.replace(",", "")
+    if "." in s and "," in s:
+        s = s.replace(".", "").replace(",", ".")
+    elif "," in s and "." not in s:
+        s = s.replace(",", ".")
+    s = re.sub(r"[^0-9.\\-]", "", s)
     try:
         return float(s)
     except ValueError:
@@ -904,28 +1010,67 @@ def setup_chrome_driver():
 def check_and_extract_store(driver):
     """Attempt to extract ExtJS store data from current active frame."""
     return driver.execute_script("""
+        function safeGet(obj, path) {
+            try {
+                return path.split('.').reduce((o, k) => (o != null ? o[k] : undefined), obj);
+            } catch (e) {
+                return undefined;
+            }
+        }
+
         if (typeof Ext !== 'undefined' && Ext.StoreMgr) {
-            var store = Ext.StoreMgr.lookup('Top100description');
+            var store = null;
+            if (Ext.StoreMgr.lookup) {
+                store = Ext.StoreMgr.lookup('Top100description');
+            }
             if (!store) {
-                var stores = Ext.StoreMgr.items;
-                for (var i = 0; i < stores.length; i++) {
-                    if (stores[i].getCount && stores[i].getCount() >= 50) {
-                        store = stores[i];
+                var items = Ext.StoreMgr.items;
+                for (var i = 0; i < items.length; i++) {
+                    if (items[i] && items[i].getCount && items[i].getCount() >= 50) {
+                        store = items[i];
                         break;
                     }
                 }
             }
-            if (store && store.getCount() > 0) {
+
+            if (store && store.getCount && store.getCount() > 0) {
                 var records = [];
-                store.each(function(rec) {
-                    records.push(rec.data);
-                });
+                for (var i = 0; i < store.getCount(); i++) {
+                    var rec = store.getAt(i);
+                    if (rec) {
+                        var data = rec.data || rec.raw || {};
+                        records.push(data);
+                    }
+                }
+
                 return {
                     items: records,
                     bodyText: document.body ? document.body.innerText : ""
                 };
             }
         }
+
+        // additional fallback: search for store-like objects in page globals
+        try {
+            var candidate = null;
+            for (var key in window) {
+                if (key && key.toLowerCase().indexOf('top100') >= 0 && window[key] && window[key].getCount) {
+                    candidate = window[key];
+                    break;
+                }
+            }
+            if (candidate && candidate.getCount && candidate.getCount() > 0) {
+                var records2 = [];
+                for (var i = 0; i < candidate.getCount(); i++) {
+                    var rec2 = candidate.getAt(i);
+                    if (rec2) {
+                        records2.push(rec2.data || rec2.raw || {});
+                    }
+                }
+                return { items: records2, bodyText: document.body ? document.body.innerText : "" };
+            }
+        } catch (err) {}
+
         return null;
     """)
 
@@ -1016,9 +1161,8 @@ def process_and_persist(raw_res):
     if not items:
         raise ValueError("Extraction failure: ExtJS Store returned zero records.")
 
-    # Useful for debugging when the real site key names differ from expected ones
     sample_keys = list(items[0].keys()) if isinstance(items[0], dict) else []
-    logging.info("[Crawler] Sample record keys: %s", sample_keys[:30])
+    logging.info("[Crawler] Sample record keys: %s", sample_keys[:50])
 
     today_str = datetime.now().strftime("%Y-%m-%d")
     collected_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1027,67 +1171,104 @@ def process_and_persist(raw_res):
 
     operators = []
     for row in items:
-        rank = parse_int(pick_first(row, "rank", "id", "position"))
+        row_data = flatten_record(row)
+
+        rank = parse_int(pick_first(
+            row_data,
+            "rank", "position", "id", "order", "rank_no", "rank_num", "sequence",
+            "place", "index"
+        ))
         if rank <= 0 or rank > 100:
             continue
 
         op_name = str(
             pick_first(
-                row,
+                row_data,
                 "operator",
                 "carrier",
                 "name",
                 "operator_name",
                 "operator_name_en",
                 "carrier_name",
+                "company",
+                "company_name",
+                "shipping_line",
+                "line",
+                "operatorname",
+                "title",
                 default=f"Operator {rank}"
             )
         ).strip()
 
-        total_teu = parse_int(pick_first(row, "tot_teu", "teu", "total_teu", "total", "capacity_teu", "fleet_teu"))
-        total_ships = parse_int(pick_first(row, "tot_ships", "ships", "total_ships", "num_ships", "ship_count", "fleet_ships"))
+        total_teu = parse_int(pick_first(
+            row_data,
+            "total_teu", "teu", "total", "capacity_teu", "fleet_teu",
+            "totalcapacityteu", "total_capacity_teu", "teu_total",
+            "capacity", "fleetcapacity", "totalcapacity"
+        ))
+        total_ships = parse_int(pick_first(
+            row_data,
+            "total_ships", "ships", "ship_count", "num_ships", "fleet_ships",
+            "totalships", "total_ship_count", "shipcount", "ships_total"
+        ))
 
         market_share = parse_float(pick_first(
-            row,
-            "market_share",
-            "share",
-            "market",
-            "share_pct",
-            "market_share_pct",
-            "pct_share"
+            row_data,
+            "market_share", "share", "market", "share_pct", "market_share_pct",
+            "marketshare", "share_percent", "market_share_percent", "pct_share",
+            "total_market_share", "share_percentage", "market_percentage"
         ))
-        owned_teu = parse_int(pick_first(row, "owned_teu", "own_teu", "owned", "owned_capacity_teu", "owned_fleet_teu"))
-        owned_ships = parse_int(pick_first(row, "owned_ships", "own_ships", "owned_ship_count", "owned_fleet_ships"))
+
+        owned_teu = parse_int(pick_first(
+            row_data,
+            "owned_teu", "own_teu", "owned", "owned_capacity_teu", "owned_fleet_teu",
+            "ownedcapacityteu", "ownedteu", "owned_capacity", "ownedfleetteu",
+            "own_teu_total", "own_capacity_teu", "owned_total_teu"
+        ))
+        owned_ships = parse_int(pick_first(
+            row_data,
+            "owned_ships", "own_ships", "owned_ship_count", "owned_fleet_ships",
+            "ownedships", "ownships", "owned_count", "owned_total_ships"
+        ))
         owned_share = parse_float(pick_first(
-            row,
-            "owned_share",
-            "own_share",
-            "owned_pct",
-            "owned_share_pct",
-            "own_share_pct"
+            row_data,
+            "owned_share", "own_share", "owned_pct", "owned_share_pct",
+            "own_share_pct", "ownedshare", "owned_share_percent", "own_pct"
         ))
 
-        chartered_teu = parse_int(pick_first(row, "chartered_teu", "cht_teu", "charter_teu", "chartered", "leased_teu", "charter_fleet_teu"))
-        chartered_ships = parse_int(pick_first(row, "chartered_ships", "cht_ships", "charter_ships", "chartered_ships", "leased_ships", "charter_fleet_ships"))
+        chartered_teu = parse_int(pick_first(
+            row_data,
+            "chartered_teu", "cht_teu", "charter_teu", "chartered", "leased_teu",
+            "chartered_fleet_teu", "charteredcapacityteu", "charterteu",
+            "chartered_total_teu", "chartered_capacity_teu"
+        ))
+        chartered_ships = parse_int(pick_first(
+            row_data,
+            "chartered_ships", "cht_ships", "charter_ships", "leased_ships",
+            "charterships", "charteredships", "chartered_fleet_ships", "charter_total_ships"
+        ))
         chartered_share = parse_float(pick_first(
-            row,
-            "chartered_share",
-            "cht_share",
-            "charter_share",
-            "chartered_pct",
-            "charter_pct"
+            row_data,
+            "chartered_share", "cht_share", "charter_share", "chartered_pct",
+            "charter_share_pct", "charteredshare", "charter_pct"
         ))
 
-        orderbook_teu = parse_int(pick_first(row, "orderbook_teu", "ord_teu", "order_teu", "orderbook", "newbuild_teu", "order_book_teu"))
-        order_ships = parse_int(pick_first(row, "orderbook_ships", "ord_ships", "order_ships", "newbuild_ships", "order_book_ships"))
+        orderbook_teu = parse_int(pick_first(
+            row_data,
+            "orderbook_teu", "ord_teu", "order_teu", "orderbook", "newbuild_teu",
+            "order_book_teu", "orderbook_total_teu", "orderbookcapacityteu",
+            "orderbook_teu_total", "teu_on_order"
+        ))
+        order_ships = parse_int(pick_first(
+            row_data,
+            "orderbook_ships", "ord_ships", "order_ships", "newbuild_ships",
+            "order_book_ships", "orderbook_ships_total", "ships_on_order"
+        ))
         order_share = parse_float(pick_first(
-            row,
-            "orderbook_share",
-            "ord_share",
-            "order_pct",
-            "orderbook_pct",
-            "newbuild_pct",
-            "order_book_share"
+            row_data,
+            "orderbook_share", "ord_share", "order_pct", "orderbook_pct",
+            "newbuild_pct", "order_book_share", "orderbook_share_pct",
+            "order_share", "orderbook_percentage"
         ))
 
         # Conservative auto-fill if site omits certain percentages
