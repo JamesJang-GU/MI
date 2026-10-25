@@ -27,7 +27,7 @@ from pathlib import Path
 from threading import Lock
 
 import pandas as pd
-from flask import Flask, Response, send_from_directory
+from flask import Flask, Response, request, send_from_directory
 from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.chrome.options import Options
@@ -59,12 +59,11 @@ db_lock = Lock()
 app = Flask(__name__, static_folder=str(BASE_DIR))
 
 # =========================================================
-# 2. SQLite Database Schema & Initialization
+# 2. SQLite Database Schema & Migration
 # =========================================================
 def init_db(db_file: Path = DB_PATH):
     """
-    Initializes the SQLite schema.
-    Maintains clean separation between Global Official Figures and TOP 100 aggregates.
+    Initializes the SQLite schema and performs auto-migration for legacy databases.
     """
     with db_lock:
         conn = sqlite3.connect(str(db_file))
@@ -113,6 +112,22 @@ def init_db(db_file: Path = DB_PATH):
             ON operator_snapshots (operator_name)
         """)
 
+        # Auto-migration: Check missing columns in existing snapshot_meta
+        cursor.execute("PRAGMA table_info(snapshot_meta)")
+        existing_cols = {row[1] for row in cursor.fetchall()}
+        required_cols = {
+            "created_at": "TEXT",
+            "global_teu": "INTEGER",
+            "global_ships": "INTEGER",
+            "top100_teu": "INTEGER",
+            "top100_ships": "INTEGER",
+            "notes": "TEXT"
+        }
+        for col_name, col_type in required_cols.items():
+            if col_name not in existing_cols:
+                cursor.execute(f"ALTER TABLE snapshot_meta ADD COLUMN {col_name} {col_type}")
+                logger.info(f"[DB MIGRATION] Added missing column '{col_name}' to snapshot_meta.")
+
         conn.commit()
         conn.close()
 
@@ -120,7 +135,6 @@ def init_db(db_file: Path = DB_PATH):
 # 3. Crawler Core Logic (ExtJS Direct Extraction)
 # =========================================================
 def get_chrome_driver():
-    """Initializes a robust headless Chrome driver compatible with local and GitHub Actions."""
     options = Options()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
@@ -130,27 +144,16 @@ def get_chrome_driver():
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
 
-    driver = None
     if HAS_WEBDRIVER_MANAGER:
         try:
             service = Service(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=options)
-            return driver
+            return webdriver.Chrome(service=service, options=options)
         except Exception as e:
-            logger.warning(f"ChromeDriverManager initialization failed: {e}. Falling back to default PATH.")
+            logger.warning(f"ChromeDriverManager initialization failed: {e}. Falling back to default.")
 
-    try:
-        driver = webdriver.Chrome(options=options)
-        return driver
-    except Exception as e:
-        logger.error(f"Failed to instantiate Chrome WebDriver: {e}")
-        raise
+    return webdriver.Chrome(options=options)
 
 def fetch_alphaliner_data():
-    """
-    Crawls Alphaliner TOP 100 via direct ExtJS store querying in headless Chrome.
-    Extracts official top summary totals as well as individual operator rows.
-    """
     url = "https://alphaliner.axsmarine.com/PublicTop100/"
     driver = None
     logger.info(f"Navigating to {url}...")
@@ -204,19 +207,10 @@ def fetch_alphaliner_data():
         if not raw_result or not raw_result.get("data"):
             raise ValueError("Failed to retrieve valid operator records from ExtJS StoreManager.")
 
-        # Attempt to harvest official summary figures from DOM
-        global_summary = {
-            "global_teu": None,
-            "global_ships": None
-        }
+        # Harvest global total figures from DOM
+        global_summary = {"global_teu": None, "global_ships": None}
         try:
-            summary_script = """
-                var textNodes = document.body.innerText;
-                return textNodes;
-            """
-            body_text = driver.execute_script(summary_script) or ""
-
-            # Match patterns like: Total: 31,524,204 TEU (6,980 ships)
+            body_text = driver.execute_script("return document.body.innerText;") or ""
             m = re.search(r"Total\s*:\s*([\d,]+)\s*TEU\s*\(([\d,]+)\s*ships?\)", body_text, re.IGNORECASE)
             if m:
                 global_summary["global_teu"] = int(m.group(1).replace(",", ""))
@@ -253,11 +247,16 @@ def parse_float(val):
     s = re.sub(r"[^\d\.\-]", "", str(val))
     return float(s) if s and s != "-" else 0.0
 
+def get_field_val(record: dict, aliases: list, default=None):
+    """Case-insensitive and multi-alias dictionary field search."""
+    normalized = {k.lower().replace("_", ""): v for k, v in record.items()}
+    for alias in aliases:
+        norm_alias = alias.lower().replace("_", "")
+        if norm_alias in normalized and normalized[norm_alias] is not None:
+            return normalized[norm_alias]
+    return default
+
 def process_and_persist(raw_data, db_file: Path = DB_PATH):
-    """
-    Cleanses extracted raw records and persists to SQLite.
-    Validates minimum operator thresholds to prevent corrupt overwrites.
-    """
     records = raw_data.get("records", [])
     summary = raw_data.get("global_summary", {})
     if not records:
@@ -267,26 +266,29 @@ def process_and_persist(raw_data, db_file: Path = DB_PATH):
     now_iso = datetime.now().isoformat()
 
     operators = []
-    for r in records:
-        # Resolve field keys dynamically against variations
-        rank = parse_int(r.get("Rank") or r.get("rank") or r.get("Rnk"))
-        operator_name = str(r.get("Operator") or r.get("operator") or r.get("Carrier") or r.get("Lines") or "Unknown").strip()
+    for idx, r in enumerate(records):
+        # Flexible multi-alias field extraction
+        rank_val = get_field_val(r, ["Rank", "rank", "rnk", "pos", "position", "id", "rowNum"])
+        rank = parse_int(rank_val) if rank_val is not None else (idx + 1)
+        if rank <= 0:
+            rank = idx + 1
 
-        total_teu = parse_int(r.get("Teu") or r.get("TotalTeu") or r.get("totalteu") or r.get("TEU"))
-        total_ships = parse_int(r.get("Ships") or r.get("TotalShips") or r.get("totalships") or r.get("NbVessels"))
+        operator_name = str(get_field_val(r, ["Operator", "operator", "Carrier", "carrier", "Lines", "lines", "Name", "name", "Company"], f"Operator_{rank}")).strip()
 
-        market_share = parse_float(r.get("Share") or r.get("MarketShare") or r.get("marketshare") or r.get("TEUShare"))
+        total_teu = parse_int(get_field_val(r, ["Teu", "TotalTeu", "totalteu", "TEU", "Total_Teu", "TotTeu", "fleet_teu"]))
+        total_ships = parse_int(get_field_val(r, ["Ships", "TotalShips", "totalships", "NbVessels", "Total_Ships", "TotShips", "fleet_ships"]))
 
-        owned_teu = parse_int(r.get("OwnedTeu") or r.get("ownedTeu") or r.get("OwnedTEU") or r.get("owned_teu"))
-        owned_ships = parse_int(r.get("OwnedShips") or r.get("ownedShips") or r.get("OwnedNb") or r.get("owned_ships"))
+        market_share = parse_float(get_field_val(r, ["Share", "MarketShare", "marketshare", "TEUShare", "Share_Teu", "market_share"]))
 
-        chartered_teu = parse_int(r.get("CharteredTeu") or r.get("charteredTeu") or r.get("CharteredTEU") or r.get("chartered_teu"))
-        chartered_ships = parse_int(r.get("CharteredShips") or r.get("charteredShips") or r.get("CharteredNb") or r.get("chartered_ships"))
+        owned_teu = parse_int(get_field_val(r, ["OwnedTeu", "ownedTeu", "OwnedTEU", "owned_teu", "ownedteu"]))
+        owned_ships = parse_int(get_field_val(r, ["OwnedShips", "ownedShips", "OwnedNb", "owned_ships", "ownedships"]))
 
-        orderbook_teu = parse_int(r.get("OrderbookTeu") or r.get("orderbookTeu") or r.get("OrderBookTEU") or r.get("orderbook_teu"))
-        orderbook_ships = parse_int(r.get("OrderbookShips") or r.get("orderbookShips") or r.get("OrderBookNb") or r.get("orderbook_ships"))
+        chartered_teu = parse_int(get_field_val(r, ["CharteredTeu", "charteredTeu", "CharteredTEU", "chartered_teu", "charteredteu"]))
+        chartered_ships = parse_int(get_field_val(r, ["CharteredShips", "charteredShips", "CharteredNb", "chartered_ships", "charteredships"]))
 
-        # Logical fallback calculations for chartered figures if zeroed in store
+        orderbook_teu = parse_int(get_field_val(r, ["OrderbookTeu", "orderbookTeu", "OrderBookTEU", "orderbook_teu", "orderbookteu", "Orderbook_Teu"]))
+        orderbook_ships = parse_int(get_field_val(r, ["OrderbookShips", "orderbookShips", "OrderBookNb", "orderbook_ships", "orderbookships", "Orderbook_Ships"]))
+
         if chartered_teu == 0 and total_teu > owned_teu:
             chartered_teu = total_teu - owned_teu
         if chartered_ships == 0 and total_ships > owned_ships:
@@ -296,7 +298,7 @@ def process_and_persist(raw_data, db_file: Path = DB_PATH):
         chartered_share = round((chartered_teu / total_teu * 100), 2) if total_teu > 0 else 0.0
         orderbook_share = round((orderbook_teu / total_teu * 100), 2) if total_teu > 0 else 0.0
 
-        if rank > 0 and total_teu > 0:
+        if total_teu > 0 or total_ships > 0:
             operators.append({
                 "rank": rank,
                 "operator_name": operator_name,
@@ -316,8 +318,10 @@ def process_and_persist(raw_data, db_file: Path = DB_PATH):
 
     operators.sort(key=lambda x: x["rank"])
 
-    # Protect historical database against partial / corrupted extractions
     if len(operators) < 80:
+        if records:
+            logger.warning(f"Sample raw record keys: {list(records[0].keys())}")
+            logger.warning(f"Sample raw record data: {records[0]}")
         raise ValueError(
             f"Invalid Top 100 extraction: only {len(operators)} valid operator rows found. "
             "Snapshot persistence has been blocked to protect historical data."
@@ -329,7 +333,6 @@ def process_and_persist(raw_data, db_file: Path = DB_PATH):
     global_teu = summary.get("global_teu") or top100_teu
     global_ships = summary.get("global_ships") or top100_ships
 
-    # Re-normalize market share against official global fleet if available
     for o in operators:
         if global_teu > 0:
             o["market_share"] = round((o["total_teu"] / global_teu) * 100, 2)
@@ -387,19 +390,6 @@ def process_and_persist(raw_data, db_file: Path = DB_PATH):
 # 3-1. Historical Snapshot Validation & Repair
 # =========================================================
 def repair_historical_snapshots(db_file: Path = DB_PATH):
-    """
-    Repair historical data without changing the existing schema.
-
-    Repair policy:
-    1. Remove invalid snapshot dates with no operator rows.
-    2. Remove incomplete snapshots with fewer than 80 operator rows.
-    3. Recalculate Top 100 aggregate TEU / Ships from persisted operator records.
-    4. Restore chartered fleet values where legacy records stored zero despite
-       total fleet exceeding owned fleet.
-    5. Recalculate all percentage fields.
-    6. Preserve official global fleet data when it exists; otherwise use the
-       existing Top 100 aggregate fallback policy.
-    """
     init_db(db_file)
 
     with db_lock:
@@ -412,7 +402,7 @@ def repair_historical_snapshots(db_file: Path = DB_PATH):
             FROM snapshot_meta
             ORDER BY snapshot_date ASC
         """)
-        meta_rows = cursor.fetchall()
+        meta_rows = [dict(r) for r in cursor.fetchall()]
 
         removed_dates = []
         repaired_dates = []
@@ -433,35 +423,19 @@ def repair_historical_snapshots(db_file: Path = DB_PATH):
                     f"Removing invalid historical snapshot {snapshot_date}: "
                     f"{len(operators)} operator rows found."
                 )
-
-                cursor.execute(
-                    "DELETE FROM operator_snapshots WHERE snapshot_date = ?",
-                    (snapshot_date,)
-                )
-                cursor.execute(
-                    "DELETE FROM snapshot_meta WHERE snapshot_date = ?",
-                    (snapshot_date,)
-                )
-
+                cursor.execute("DELETE FROM operator_snapshots WHERE snapshot_date = ?", (snapshot_date,))
+                cursor.execute("DELETE FROM snapshot_meta WHERE snapshot_date = ?", (snapshot_date,))
                 removed_dates.append(snapshot_date)
                 continue
 
             top100_teu = sum(parse_int(op.get("total_teu")) for op in operators)
             top100_ships = sum(parse_int(op.get("total_ships")) for op in operators)
 
-            existing_global_teu = parse_int(meta_row["global_teu"])
-            existing_global_ships = parse_int(meta_row["global_ships"])
+            existing_global_teu = parse_int(meta_row.get("global_teu"))
+            existing_global_ships = parse_int(meta_row.get("global_ships"))
 
-            global_teu = (
-                existing_global_teu
-                if existing_global_teu > 0
-                else top100_teu
-            )
-            global_ships = (
-                existing_global_ships
-                if existing_global_ships > 0
-                else top100_ships
-            )
+            global_teu = existing_global_teu if existing_global_teu > 0 else top100_teu
+            global_ships = existing_global_ships if existing_global_ships > 0 else top100_ships
 
             cursor.execute("""
                 UPDATE snapshot_meta
@@ -470,51 +444,28 @@ def repair_historical_snapshots(db_file: Path = DB_PATH):
                     top100_teu = ?,
                     top100_ships = ?
                 WHERE snapshot_date = ?
-            """, (
-                global_teu,
-                global_ships,
-                top100_teu,
-                top100_ships,
-                snapshot_date
-            ))
+            """, (global_teu, global_ships, top100_teu, top100_ships, snapshot_date))
 
             for op in operators:
                 rank = parse_int(op.get("rank"))
-
                 total_teu = parse_int(op.get("total_teu"))
                 total_ships = parse_int(op.get("total_ships"))
-
                 owned_teu = parse_int(op.get("owned_teu"))
                 owned_ships = parse_int(op.get("owned_ships"))
-
                 chartered_teu = parse_int(op.get("chartered_teu"))
                 chartered_ships = parse_int(op.get("chartered_ships"))
-
                 orderbook_teu = parse_int(op.get("orderbook_teu"))
                 orderbook_ships = parse_int(op.get("orderbook_ships"))
 
                 if chartered_teu == 0 and total_teu > owned_teu:
                     chartered_teu = total_teu - owned_teu
-
                 if chartered_ships == 0 and total_ships > owned_ships:
                     chartered_ships = total_ships - owned_ships
 
-                market_share = (
-                    round((total_teu / global_teu) * 100, 2)
-                    if global_teu > 0 else 0.0
-                )
-                owned_share = (
-                    round((owned_teu / total_teu) * 100, 2)
-                    if total_teu > 0 else 0.0
-                )
-                chartered_share = (
-                    round((chartered_teu / total_teu) * 100, 2)
-                    if total_teu > 0 else 0.0
-                )
-                orderbook_share = (
-                    round((orderbook_teu / total_teu) * 100, 2)
-                    if total_teu > 0 else 0.0
-                )
+                market_share = round((total_teu / global_teu) * 100, 2) if global_teu > 0 else 0.0
+                owned_share = round((owned_teu / total_teu) * 100, 2) if total_teu > 0 else 0.0
+                chartered_share = round((chartered_teu / total_teu) * 100, 2) if total_teu > 0 else 0.0
+                orderbook_share = round((orderbook_teu / total_teu) * 100, 2) if total_teu > 0 else 0.0
 
                 cursor.execute("""
                     UPDATE operator_snapshots
@@ -524,18 +475,8 @@ def repair_historical_snapshots(db_file: Path = DB_PATH):
                         owned_share = ?,
                         chartered_share = ?,
                         orderbook_share = ?
-                    WHERE snapshot_date = ?
-                      AND rank = ?
-                """, (
-                    market_share,
-                    chartered_teu,
-                    chartered_ships,
-                    owned_share,
-                    chartered_share,
-                    orderbook_share,
-                    snapshot_date,
-                    rank
-                ))
+                    WHERE snapshot_date = ? AND rank = ?
+                """, (market_share, chartered_teu, chartered_ships, owned_share, chartered_share, orderbook_share, snapshot_date, rank))
 
             repaired_dates.append(snapshot_date)
 
@@ -543,26 +484,14 @@ def repair_historical_snapshots(db_file: Path = DB_PATH):
         conn.close()
 
     if removed_dates:
-        logger.info(
-            "Removed invalid historical snapshots: "
-            + ", ".join(removed_dates)
-        )
-
+        logger.info(f"Removed invalid historical snapshots: {', '.join(removed_dates)}")
     if repaired_dates:
-        logger.info(
-            "Repaired historical snapshots: "
-            + ", ".join(repaired_dates)
-        )
-    else:
-        logger.info("No valid historical snapshots required repair.")
+        logger.info(f"Repaired historical snapshots: {', '.join(repaired_dates)}")
 
 # =========================================================
 # 4. JSON Serialization Engine
 # =========================================================
 def export_dataset_json(db_file: Path = DB_PATH, out_json: Path = JSON_PATH):
-    """
-    Exports complete historical database into static JSON payload with delta analysis.
-    """
     init_db(db_file)
     with db_lock:
         conn = sqlite3.connect(str(db_file))
@@ -570,12 +499,14 @@ def export_dataset_json(db_file: Path = DB_PATH, out_json: Path = JSON_PATH):
         cursor = conn.cursor()
 
         cursor.execute("SELECT * FROM snapshot_meta ORDER BY snapshot_date ASC")
-        meta_rows = cursor.fetchall()
+        raw_meta = cursor.fetchall()
 
-        if not meta_rows:
+        if not raw_meta:
             conn.close()
             return {"dates": [], "snapshots": {}}
 
+        # Safe dictionary conversion to eliminate missing key IndexErrors
+        meta_rows = [dict(r) for r in raw_meta]
         dates = [r["snapshot_date"] for r in meta_rows]
         snapshots = {}
 
@@ -587,12 +518,12 @@ def export_dataset_json(db_file: Path = DB_PATH, out_json: Path = JSON_PATH):
             snapshots[d] = {
                 "meta": {
                     "snapshot_date": d,
-                    "created_at": r["created_at"],
-                    "global_teu": r["global_teu"],
-                    "global_ships": r["global_ships"],
-                    "top100_teu": r["top100_teu"],
-                    "top100_ships": r["top100_ships"],
-                    "notes": r["notes"]
+                    "created_at": r.get("created_at") or d,
+                    "global_teu": r.get("global_teu") or 0,
+                    "global_ships": r.get("global_ships") or 0,
+                    "top100_teu": r.get("top100_teu") or 0,
+                    "top100_ships": r.get("top100_ships") or 0,
+                    "notes": r.get("notes") or ""
                 },
                 "operators": op_rows
             }
@@ -615,9 +546,6 @@ def export_dataset_json(db_file: Path = DB_PATH, out_json: Path = JSON_PATH):
 # 5. Bloomberg Terminal Static HTML Builder
 # =========================================================
 def build_static_dashboard(json_payload, out_html: Path = HTML_PATH):
-    """
-    Renders standalone Bloomberg Terminal HTML dashboard with client-side reactive time-travel.
-    """
     json_str = json.dumps(json_payload, ensure_ascii=False)
 
     html_content = f"""<!DOCTYPE html>
@@ -626,7 +554,6 @@ def build_static_dashboard(json_payload, out_html: Path = HTML_PATH):
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ALPHALINER TOP 100 // INTELLIGENCE TERMINAL</title>
-    <!-- Fonts & Chart.js -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -673,7 +600,6 @@ def build_static_dashboard(json_payload, out_html: Path = HTML_PATH):
             padding-bottom: 24px;
         }}
 
-        /* Ticker Top Bar */
         .ticker-bar {{
             background: rgba(6, 10, 17, 0.95);
             border-bottom: 1px solid var(--border-dim);
@@ -681,7 +607,7 @@ def build_static_dashboard(json_payload, out_html: Path = HTML_PATH):
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 6px 20px;
+            padding: 8px 20px;
             position: sticky;
             top: 0;
             z-index: 1000;
@@ -774,7 +700,6 @@ def build_static_dashboard(json_payload, out_html: Path = HTML_PATH):
             color: #060a11;
         }}
 
-        /* Grid Layout */
         .terminal-container {{
             max-width: 1720px;
             margin: 16px auto;
@@ -786,31 +711,25 @@ def build_static_dashboard(json_payload, out_html: Path = HTML_PATH):
 
         .grid-kpi {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
             gap: 12px;
         }}
 
         .kpi-card {{
             background: var(--bg-card);
             border: 1px solid var(--border-dim);
-            border-radius: 4px;
-            padding: 12px 14px;
-            position: relative;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            border-radius: 6px;
+            padding: 14px 16px;
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
-        }}
-
-        .kpi-card:hover {{
-            border-color: var(--border-glow);
-            background: var(--bg-card-hover);
+            gap: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         }}
 
         .kpi-header {{
             font-family: var(--font-mono);
             font-size: 11px;
-            color: var(--text-muted);
+            color: var(--text-secondary);
             text-transform: uppercase;
             letter-spacing: 0.05em;
             display: flex;
@@ -822,170 +741,145 @@ def build_static_dashboard(json_payload, out_html: Path = HTML_PATH):
             font-size: 20px;
             font-weight: 700;
             color: #fff;
-            margin: 4px 0 2px 0;
         }}
 
         .kpi-sub {{
-            font-family: var(--font-mono);
             font-size: 11px;
-            color: var(--text-secondary);
+            color: var(--text-muted);
             display: flex;
             justify-content: space-between;
             align-items: center;
         }}
 
         .delta-tag {{
+            font-family: var(--font-mono);
+            font-size: 11px;
             font-weight: 600;
             padding: 1px 4px;
             border-radius: 2px;
         }}
-
         .delta-up {{ color: var(--green-up); background: rgba(16, 185, 129, 0.1); }}
         .delta-down {{ color: var(--red-down); background: rgba(239, 68, 68, 0.1); }}
-        .delta-flat {{ color: var(--text-muted); }}
+        .delta-flat {{ color: var(--text-muted); background: rgba(82, 99, 122, 0.1); }}
 
-        /* Two Column Analytics Layout */
-        .analytics-row {{
+        .grid-charts {{
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 16px;
+            gap: 12px;
         }}
 
-        @media (max-width: 1100px) {{
-            .analytics-row {{ grid-template-columns: 1fr; }}
-        }}
-
-        .panel-box {{
+        .chart-card {{
             background: var(--bg-card);
             border: 1px solid var(--border-dim);
-            border-radius: 4px;
+            border-radius: 6px;
             padding: 14px;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-        }}
-
-        .panel-box-header {{
+            height: 280px;
             display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid var(--border-dim);
-            padding-bottom: 8px;
-            margin-bottom: 12px;
+            flex-direction: column;
         }}
 
-        .panel-title {{
+        .chart-title {{
             font-family: var(--font-mono);
-            font-weight: 600;
             font-size: 12px;
-            color: var(--amber-bloomberg);
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
             text-transform: uppercase;
-            letter-spacing: 0.08em;
-            display: flex;
-            align-items: center;
-            gap: 6px;
         }}
 
         .chart-wrapper {{
-            height: 240px;
-            width: 100%;
+            flex: 1;
             position: relative;
         }}
 
-        /* Table Architecture */
-        .table-controls {{
+        .table-card {{
+            background: var(--bg-card);
+            border: 1px solid var(--border-dim);
+            border-radius: 6px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }}
+
+        .table-toolbar {{
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border-dim);
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 10px;
-            gap: 12px;
+            background: rgba(9, 18, 31, 0.6);
         }}
 
         .search-box {{
             background: #09121f;
             border: 1px solid var(--border-dim);
-            border-radius: 3px;
-            padding: 4px 10px;
             color: var(--text-primary);
+            padding: 4px 10px;
+            border-radius: 3px;
             font-family: var(--font-mono);
-            font-size: 11px;
-            width: 220px;
+            font-size: 12px;
+            width: 240px;
             outline: none;
         }}
-
         .search-box:focus {{
             border-color: var(--blue-accent);
         }}
 
         .table-responsive {{
             overflow-x: auto;
-            max-height: 720px;
-            border: 1px solid var(--border-dim);
-            border-radius: 3px;
-            background: #070c14;
+            max-height: 640px;
         }}
 
-        table.alphaliner-table {{
+        table.terminal-table {{
             width: 100%;
-            border-collapse: separate;
-            border-spacing: 0;
+            border-collapse: collapse;
             font-size: 12px;
-            font-family: var(--font-sans);
-            text-align: left;
-        }}
-
-        table.alphaliner-table th, table.alphaliner-table td {{
-            padding: 6px 10px;
-            border-bottom: 1px solid var(--border-dim);
-            border-right: 1px solid rgba(19, 34, 56, 0.5);
             white-space: nowrap;
         }}
 
-        table.alphaliner-table th:last-child, table.alphaliner-table td:last-child {{
-            border-right: none;
-        }}
-
-        /* Sticky 2-Tier Header */
-        table.alphaliner-table thead tr:first-child th {{
+        table.terminal-table th {{
             position: sticky;
             top: 0;
-            background: #0d1829;
-            z-index: 10;
+            background: #09121f;
+            color: var(--text-secondary);
             font-family: var(--font-mono);
+            font-weight: 600;
             font-size: 11px;
             text-transform: uppercase;
-            color: var(--text-secondary);
-            font-weight: 600;
+            padding: 8px 10px;
             border-bottom: 1px solid var(--border-glow);
+            border-right: 1px solid rgba(19, 34, 56, 0.4);
+            z-index: 10;
         }}
 
-        table.alphaliner-table thead tr:nth-child(2) th {{
-            position: sticky;
-            top: 29px;
-            background: #09121e;
-            z-index: 9;
-            font-family: var(--font-mono);
-            font-size: 10px;
-            text-transform: uppercase;
-            color: var(--text-muted);
-            font-weight: 500;
-            border-bottom: 1px solid var(--border-glow);
+        table.terminal-table th.th-group {{
+            text-align: center;
+            background: #060b13;
+            border-bottom: 1px solid var(--border-dim);
         }}
 
-        table.alphaliner-table tbody tr {{
-            transition: background 0.15s ease;
+        table.terminal-table td {{
+            padding: 6px 10px;
+            border-bottom: 1px solid rgba(19, 34, 56, 0.3);
+            border-right: 1px solid rgba(19, 34, 56, 0.2);
         }}
 
-        table.alphaliner-table tbody tr:nth-child(even) {{
-            background: rgba(11, 19, 32, 0.4);
+        table.terminal-table tr:hover td {{
+            background: var(--bg-card-hover);
         }}
 
-        table.alphaliner-table tbody tr:hover {{
-            background: rgba(31, 58, 96, 0.35);
-        }}
-
-        /* Column Alignments & Badges */
-        .text-right {{ text-align: right; }}
         .text-center {{ text-align: center; }}
-        .num-font {{ font-family: var(--font-mono); font-weight: 500; }}
+        .text-right {{ text-align: right; }}
+        .num-font {{ font-family: var(--font-mono); }}
+
+        .rank-badge {{
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--amber-bloomberg);
+            font-family: var(--font-mono);
+            font-weight: 700;
+            padding: 1px 6px;
+            border-radius: 3px;
+        }}
 
         .carrier-name {{
             font-weight: 600;
@@ -995,182 +889,132 @@ def build_static_dashboard(json_payload, out_html: Path = HTML_PATH):
             gap: 6px;
         }}
 
-        .rank-badge {{
-            font-family: var(--font-mono);
-            font-size: 11px;
-            font-weight: 700;
-            color: var(--amber-bloomberg);
-            background: rgba(245, 158, 11, 0.1);
-            padding: 1px 5px;
-            border-radius: 2px;
-            display: inline-block;
-            min-width: 24px;
-            text-align: center;
-        }}
-
         .share-bar-container {{
-            width: 50px;
+            width: 100%;
             height: 4px;
-            background: rgba(255, 255, 255, 0.08);
+            background: rgba(19, 34, 56, 0.8);
             border-radius: 2px;
-            display: inline-block;
-            margin-left: 6px;
-            vertical-align: middle;
+            margin-top: 3px;
             overflow: hidden;
         }}
-
         .share-bar-fill {{
             height: 100%;
             background: var(--blue-accent);
         }}
 
-        /* Footer Status */
-        .status-footer {{
-            margin-top: 8px;
-            font-family: var(--font-mono);
-            font-size: 11px;
-            color: var(--text-muted);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 8px 16px;
-            background: var(--bg-card);
-            border: 1px solid var(--border-dim);
-            border-radius: 4px;
-        }}
-
-        .status-indicator {{
-            display: inline-block;
-            width: 7px;
-            height: 7px;
-            background: var(--green-up);
-            border-radius: 50%;
-            margin-right: 6px;
-            box-shadow: 0 0 6px var(--green-up);
+        @media (max-width: 1024px) {{
+            .grid-charts {{
+                grid-template-columns: 1fr;
+            }}
         }}
     </style>
 </head>
 <body>
-
-    <!-- TOP TICKER BAR -->
     <div class="ticker-bar">
         <div class="brand-cluster">
-            <span class="brand-code">MI&lt;GO&gt;</span>
-            <span class="brand-title">ALPHALINER TOP 100 LINER OPERATORS</span>
+            <span class="brand-code">ALPH&lt;GO&gt;</span>
+            <span class="brand-title">ALPHALINER TOP 100 FLEET MONITOR</span>
         </div>
         <div class="top-controls">
             <div class="date-control-group">
-                <span class="date-control-label">CURRENT SNAPSHOT</span>
-                <select id="select-current-date" class="terminal-select" onchange="onSnapshotDateChange(this.value)"></select>
+                <span class="date-control-label">Snapshot:</span>
+                <select id="select-active-date" class="terminal-select" onchange="onDateChange()"></select>
             </div>
             <div class="date-control-group">
-                <span class="date-control-label">COMPARE TO</span>
-                <select id="select-compare-date" class="terminal-select" onchange="onCompareDateChange(this.value)"></select>
+                <span class="date-control-label">Compare Base:</span>
+                <select id="select-compare-date" class="terminal-select" onchange="onCompareChange()"></select>
             </div>
-            <button class="btn-export" onclick="exportActiveTableToCSV()">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                EXPORT CSV
-            </button>
+            <button class="btn-export" onclick="exportActiveTableToCSV()">EXPORT CSV</button>
         </div>
     </div>
 
-    <!-- MAIN TERMINAL VIEWPORT -->
     <div class="terminal-container">
-
-        <!-- 4-METRIC EXECUTIVE KPI GRID -->
+        <!-- KPI Row -->
         <div class="grid-kpi">
             <div class="kpi-card">
                 <div class="kpi-header">
-                    <span>GLOBAL ACTIVE FLEET</span>
-                    <span>OFFICIAL TOTAL</span>
+                    <span>Global Fleet (Official)</span>
+                    <span id="kpi-global-ships">-</span>
                 </div>
-                <div class="kpi-value" id="kpi-global-teu">0 TEU</div>
+                <div class="kpi-value" id="kpi-global-teu">-</div>
                 <div class="kpi-sub">
-                    <span id="kpi-global-ships">0 Ships</span>
-                    <span id="kpi-global-delta" class="delta-tag delta-flat">-- vs Base</span>
+                    <span>100% Industry Baseline</span>
+                    <span id="kpi-global-delta" class="delta-tag delta-flat">-</span>
                 </div>
             </div>
 
             <div class="kpi-card">
                 <div class="kpi-header">
-                    <span>TOP 100 AGGREGATE CAPACITY</span>
-                    <span>TOTAL TEU</span>
+                    <span>Top 100 Capacity</span>
+                    <span id="kpi-top100-ships">-</span>
                 </div>
-                <div class="kpi-value" id="kpi-top100-teu">0 TEU</div>
+                <div class="kpi-value" id="kpi-top100-teu">-</div>
                 <div class="kpi-sub">
-                    <span id="kpi-top100-share">0.00% Global</span>
-                    <span id="kpi-top100-delta" class="delta-tag delta-flat">-- vs Base</span>
+                    <span id="kpi-top100-share">-</span>
+                    <span id="kpi-top100-delta" class="delta-tag delta-flat">-</span>
                 </div>
             </div>
 
             <div class="kpi-card">
                 <div class="kpi-header">
-                    <span>TOP 10 CONCENTRATION</span>
-                    <span>DOMINANCE RATIO</span>
+                    <span>Top 10 Concentration</span>
+                    <span id="kpi-top10-share">-</span>
                 </div>
-                <div class="kpi-value" id="kpi-top10-share">0.00%</div>
+                <div class="kpi-value" id="kpi-top10-teu">-</div>
                 <div class="kpi-sub">
-                    <span id="kpi-top10-teu">0 TEU</span>
-                    <span id="kpi-top10-delta" class="delta-tag delta-flat">-- vs Base</span>
+                    <span>Top 10 Lines TEU</span>
+                    <span id="kpi-top10-delta" class="delta-tag delta-flat">-</span>
                 </div>
             </div>
 
             <div class="kpi-card">
                 <div class="kpi-header">
-                    <span>ACTIVE ORDERBOOK EXPOSURE</span>
-                    <span>INDUSTRY PIPELINE</span>
+                    <span>Orderbook Pipeline</span>
+                    <span id="kpi-orderbook-ratio">-</span>
                 </div>
-                <div class="kpi-value" id="kpi-orderbook-teu">0 TEU</div>
+                <div class="kpi-value" id="kpi-orderbook-teu" style="color: var(--amber-bloomberg);">-</div>
                 <div class="kpi-sub">
-                    <span id="kpi-orderbook-ratio">0.00% of Fleet</span>
-                    <span id="kpi-orderbook-delta" class="delta-tag delta-flat">-- vs Base</span>
+                    <span>Top 100 On-Order</span>
+                    <span id="kpi-orderbook-delta" class="delta-tag delta-flat">-</span>
                 </div>
             </div>
         </div>
 
-        <!-- ANALYTICS CHARTS (TOP 10 CAPACITIES & CHARTERED EXPOSURE) -->
-        <div class="analytics-row">
-            <div class="panel-box">
-                <div class="panel-box-header">
-                    <span class="panel-title">TOP 10 OPERATOR CAPACITY (EXISTING VS ORDERBOOK)</span>
-                    <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">TEU VOLUME</span>
-                </div>
+        <!-- Charts Row -->
+        <div class="grid-charts">
+            <div class="chart-card">
+                <div class="chart-title">Top 10 Lines // Existing Fleet vs Orderbook Pipeline</div>
                 <div class="chart-wrapper">
                     <canvas id="chartTop10"></canvas>
                 </div>
             </div>
-
-            <div class="panel-box">
-                <div class="panel-box-header">
-                    <span class="panel-title">TOP 10 FLEET OWNERSHIP STRUCTURE (OWNED VS CHARTERED)</span>
-                    <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">CAPACITY PROPORTION</span>
-                </div>
+            <div class="chart-card">
+                <div class="chart-title">Top 10 Lines // Fleet Ownership Structure (Owned vs Chartered)</div>
                 <div class="chart-wrapper">
                     <canvas id="chartOwnership"></canvas>
                 </div>
             </div>
         </div>
 
-        <!-- AUTHENTIC ALPHALINER 2-TIER TABLE -->
-        <div class="panel-box">
-            <div class="table-controls">
-                <div class="panel-title">
-                    <span>OFFICIAL TOP 100 CARRIER RANKINGS & HISTORICAL DELTA</span>
+        <!-- Detailed Table -->
+        <div class="table-card">
+            <div class="table-toolbar">
+                <input type="text" id="table-search-input" class="search-box" placeholder="Filter carrier / operator..." onkeyup="filterTable()">
+                <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);">
+                    Comparison Delta vs <span id="label-compare-date" style="color: var(--blue-accent);">-</span>
                 </div>
-                <input type="text" id="table-search-input" class="search-box" placeholder="Filter Carrier..." onkeyup="filterTable()">
             </div>
-
             <div class="table-responsive">
-                <table class="alphaliner-table" id="operator-data-table">
+                <table class="terminal-table">
                     <thead>
                         <tr>
-                            <th rowspan="2" class="text-center" style="width: 45px;">Rnk</th>
-                            <th rowspan="2" style="min-width: 180px;">Operator / Liner Name</th>
-                            <th colspan="3" class="text-center">Total Existing Fleet</th>
-                            <th colspan="3" class="text-center">Owned Fleet</th>
-                            <th colspan="3" class="text-center">Chartered Fleet</th>
-                            <th colspan="3" class="text-center">Orderbook Pipeline</th>
-                            <th rowspan="2" class="text-right" style="min-width: 100px;">Delta (TEU)</th>
+                            <th rowspan="2" style="width: 50px;">#</th>
+                            <th rowspan="2" style="min-width: 180px;">Operator</th>
+                            <th colspan="3" class="th-group">Total Fleet</th>
+                            <th colspan="3" class="th-group">Owned Fleet</th>
+                            <th colspan="3" class="th-group">Chartered Fleet</th>
+                            <th colspan="3" class="th-group">Orderbook Pipeline</th>
+                            <th rowspan="2" style="min-width: 90px;" class="text-right">TEU Δ</th>
                         </tr>
                         <tr>
                             <th class="text-right">TEU</th>
@@ -1178,125 +1022,98 @@ def build_static_dashboard(json_payload, out_html: Path = HTML_PATH):
                             <th class="text-right">Share</th>
                             <th class="text-right">TEU</th>
                             <th class="text-right">Ships</th>
-                            <th class="text-right">% Own</th>
+                            <th class="text-right">%</th>
                             <th class="text-right">TEU</th>
                             <th class="text-right">Ships</th>
-                            <th class="text-right">% Cht</th>
+                            <th class="text-right">%</th>
                             <th class="text-right">TEU</th>
                             <th class="text-right">Ships</th>
-                            <th class="text-right">% Fleet</th>
+                            <th class="text-right">%</th>
                         </tr>
                     </thead>
-                    <tbody id="table-body">
-                        <!-- Hydrated by JavaScript -->
-                    </tbody>
+                    <tbody id="table-body"></tbody>
                 </table>
             </div>
         </div>
-
-        <!-- STATUS BAR FOOTER -->
-        <div class="status-footer">
-            <div>
-                <span class="status-indicator"></span>
-                <span>SYSTEM ACTIVE: Data Stream Validated (AXSMarine / Alphaliner Source)</span>
-            </div>
-            <div id="footer-meta-info">
-                DATABASE: alphaliner_history.db | SYNCHRONIZED
-            </div>
-        </div>
-
     </div>
 
-    <!-- CLIENT SCRIPT HYDRATION & TIME-TRAVEL ENGINE -->
     <script>
         const RAW_DATASET = {json_str};
-
         let currentActiveDate = null;
-        let compareBaseDate = null;
+        let currentCompareDate = null;
         let chartTop10Instance = null;
         let chartOwnershipInstance = null;
 
         function fmtNum(n) {{
             if (n === null || n === undefined || isNaN(n)) return "0";
-            return Number(n).toLocaleString('en-US');
+            return Number(n).toLocaleString();
         }}
 
         function initApp() {{
             const dates = RAW_DATASET.dates || [];
-            if (dates.length === 0) {{
-                document.getElementById('table-body').innerHTML = '<tr><td colspan="15" class="text-center" style="padding: 24px; color: var(--text-muted);">No historical snapshots available.</td></tr>';
-                return;
-            }}
+            if (!dates.length) return;
+
+            const selActive = document.getElementById('select-active-date');
+            const selCompare = document.getElementById('select-compare-date');
+
+            selActive.innerHTML = '';
+            selCompare.innerHTML = '';
+
+            [...dates].reverse().forEach((d, idx) => {{
+                selActive.innerHTML += `<option value="${{d}}">${{d}}</option>`;
+                selCompare.innerHTML += `<option value="${{d}}">${{d}}</option>`;
+            }});
 
             currentActiveDate = dates[dates.length - 1];
-            compareBaseDate = dates.length > 1 ? dates[dates.length - 2] : dates[dates.length - 1];
+            currentCompareDate = dates.length > 1 ? dates[dates.length - 2] : dates[dates.length - 1];
 
-            populateSelectBoxes(dates);
+            selActive.value = currentActiveDate;
+            selCompare.value = currentCompareDate;
+
             renderDashboard();
         }}
 
-        function populateSelectBoxes(dates) {{
-            const curSel = document.getElementById('select-current-date');
-            const cmpSel = document.getElementById('select-compare-date');
-
-            curSel.innerHTML = '';
-            cmpSel.innerHTML = '';
-
-            dates.slice().reverse().forEach(d => {{
-                const opt1 = new Option(d, d, false, d === currentActiveDate);
-                const opt2 = new Option(d, d, false, d === compareBaseDate);
-                curSel.add(opt1);
-                cmpSel.add(opt2);
-            }});
-        }}
-
-        function onSnapshotDateChange(newDate) {{
-            currentActiveDate = newDate;
+        function onDateChange() {{
+            currentActiveDate = document.getElementById('select-active-date').value;
             renderDashboard();
         }}
 
-        function onCompareDateChange(newDate) {{
-            compareBaseDate = newDate;
+        function onCompareChange() {{
+            currentCompareDate = document.getElementById('select-compare-date').value;
             renderDashboard();
         }}
 
         function renderDashboard() {{
-            const currentSnap = RAW_DATASET.snapshots[currentActiveDate];
-            const compareSnap = RAW_DATASET.snapshots[compareBaseDate] || currentSnap;
+            const current = RAW_DATASET.snapshots[currentActiveDate];
+            const compare = RAW_DATASET.snapshots[currentCompareDate];
+            if (!current) return;
 
-            if (!currentSnap) return;
+            document.getElementById('label-compare-date').innerText = currentCompareDate;
 
-            renderKPIs(currentSnap, compareSnap);
-            renderCharts(currentSnap);
-            renderTable(currentSnap, compareSnap);
-
-            document.getElementById('footer-meta-info').innerText =
-                `SNAPSHOT: ${{currentActiveDate}} | BASE: ${{compareBaseDate}} | GENERATED: ${{RAW_DATASET.generated_at}}`;
+            renderKPIs(current, compare);
+            renderCharts(current);
+            renderTable(current, compare);
         }}
 
         function renderKPIs(current, compare) {{
             const cMeta = current.meta || {{}};
-            const pMeta = compare.meta || {{}};
+            const pMeta = compare ? compare.meta : cMeta;
 
-            // 1. Global Total
+            const gTeuDelta = (cMeta.global_teu || 0) - (pMeta.global_teu || 0);
             document.getElementById('kpi-global-teu').innerText = `${{fmtNum(cMeta.global_teu)}} TEU`;
-            document.getElementById('kpi-global-ships').innerText = `${{fmtNum(cMeta.global_ships)}} Ships Official`;
+            document.getElementById('kpi-global-ships').innerText = `${{fmtNum(cMeta.global_ships)}} Ships`;
+            renderDeltaTag('kpi-global-delta', gTeuDelta, 'TEU');
 
-            const gDelta = (cMeta.global_teu || 0) - (pMeta.global_teu || 0);
-            renderDeltaTag('kpi-global-delta', gDelta, 'TEU');
-
-            // 2. Top 100 Aggregate
+            const tTeuDelta = (cMeta.top100_teu || 0) - (pMeta.top100_teu || 0);
+            const t100Share = cMeta.global_teu ? ((cMeta.top100_teu / cMeta.global_teu) * 100).toFixed(1) : "0.0";
             document.getElementById('kpi-top100-teu').innerText = `${{fmtNum(cMeta.top100_teu)}} TEU`;
-            const top100GlobalRatio = cMeta.global_teu ? ((cMeta.top100_teu / cMeta.global_teu) * 100).toFixed(2) : "0.00";
-            document.getElementById('kpi-top100-share').innerText = `${{top100GlobalRatio}}% of Global`;
+            document.getElementById('kpi-top100-ships').innerText = `${{fmtNum(cMeta.top100_ships)}} Ships`;
+            document.getElementById('kpi-top100-share').innerText = `${{t100Share}}% of Global Fleet`;
+            renderDeltaTag('kpi-top100-delta', tTeuDelta, 'TEU');
 
-            const top100Delta = (cMeta.top100_teu || 0) - (pMeta.top100_teu || 0);
-            renderDeltaTag('kpi-top100-delta', top100Delta, 'TEU');
-
-            // 3. Top 10 Concentration
             const top10Ops = (current.operators || []).slice(0, 10);
             const top10TEU = top10Ops.reduce((sum, o) => sum + (o.total_teu || 0), 0);
-            const top10Share = cMeta.global_teu ? ((top10TEU / cMeta.global_teu) * 100).toFixed(2) : "0.00";
+            const top10Share = cMeta.global_teu ? ((top10TEU / cMeta.global_teu) * 100).toFixed(1) : "0.0";
 
             const pTop10Ops = (compare.operators || []).slice(0, 10);
             const pTop10TEU = pTop10Ops.reduce((sum, o) => sum + (o.total_teu || 0), 0);
@@ -1306,7 +1123,6 @@ def build_static_dashboard(json_payload, out_html: Path = HTML_PATH):
             document.getElementById('kpi-top10-teu').innerText = `${{fmtNum(top10TEU)}} TEU`;
             renderDeltaTag('kpi-top10-delta', top10Delta, 'TEU');
 
-            // 4. Orderbook Pipeline
             const totalOrderbook = (current.operators || []).reduce((sum, o) => sum + (o.orderbook_teu || 0), 0);
             const pTotalOrderbook = (compare.operators || []).reduce((sum, o) => sum + (o.orderbook_teu || 0), 0);
             const obRatio = cMeta.top100_teu ? ((totalOrderbook / cMeta.top100_teu) * 100).toFixed(2) : "0.00";
@@ -1337,7 +1153,6 @@ def build_static_dashboard(json_payload, out_html: Path = HTML_PATH):
             const top10 = (currentSnap.operators || []).slice(0, 10);
             const labels = top10.map(o => o.operator_name.length > 14 ? o.operator_name.substring(0, 12) + '..' : o.operator_name);
 
-            // Chart 1: Capacity vs Orderbook
             const ctx1 = document.getElementById('chartTop10').getContext('2d');
             if (chartTop10Instance) chartTop10Instance.destroy();
 
@@ -1388,7 +1203,6 @@ def build_static_dashboard(json_payload, out_html: Path = HTML_PATH):
                 }}
             }});
 
-            // Chart 2: Owned vs Chartered
             const ctx2 = document.getElementById('chartOwnership').getContext('2d');
             if (chartOwnershipInstance) chartOwnershipInstance.destroy();
 
@@ -1444,7 +1258,6 @@ def build_static_dashboard(json_payload, out_html: Path = HTML_PATH):
             const tbody = document.getElementById('table-body');
             const ops = currentSnap.operators || [];
 
-            // Build base date lookup map
             const baseMap = new Map();
             (compareSnap.operators || []).forEach(o => {{
                 baseMap.set(o.operator_name, o);
