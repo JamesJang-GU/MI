@@ -587,7 +587,6 @@ function exportCSV() {
   if (!snapshot) return;
 
   let csv = "\uFEFFRank,Operator,Total TEU,Total Ships,Market Share %,Owned TEU,Owned Ships,Owned Share %,Chartered TEU,Chartered Ships,Chartered Share %,Orderbook TEU,Orderbook Ships,Orderbook % of Fleet\n";
-
   snapshot.operators.forEach(op => {
     const escapedName = String(op.operator).replace(/"/g, '""');
     csv += [
