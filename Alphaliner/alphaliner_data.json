@@ -1,10 +1,27 @@
 {
-  "generated_at": "2026-10-24 12:10:44",
+  "generated_at": "2026-10-25 09:31:26",
   "dates": [
+    "2026-10-25",
     "2026-10-24",
     "2026-10-23"
   ],
   "snapshots": {
+    "2026-10-25": {
+      "meta": {
+        "snapshot_date": "2026-10-25",
+        "global_total_teu": 0,
+        "global_total_ships": 0,
+        "top100_total_teu": 0,
+        "top100_total_ships": 0,
+        "top10_total_teu": null,
+        "top10_share": 0.0,
+        "orderbook_total_teu": 0,
+        "collected_at": "2026-10-25 09:31:26",
+        "source_url": "https://infographics.alphaliner.com/infographics/top-100-liner-operators",
+        "raw_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "operators": []
+    },
     "2026-10-24": {
       "meta": {
         "snapshot_date": "2026-10-24",
