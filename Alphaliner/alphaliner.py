@@ -846,6 +846,7 @@ def normalize_key(value):
     s = re.sub(r"_+", "_", s).strip("_")
     return s
 
+
 def flatten_record(row):
     """Convert a record object or dict into a plain dict for field extraction."""
     if row is None:
@@ -868,6 +869,7 @@ def flatten_record(row):
 
     return flat
 
+
 def debug_print_sample_keys(items, limit=3):
     print("[DEBUG] Sample raw record keys:")
     for i, row in enumerate(items[:limit]):
@@ -875,6 +877,51 @@ def debug_print_sample_keys(items, limit=3):
         print(f"[DEBUG] row {i}: {sorted(flat.keys())[:100]}")
         if i == 0:
             print(f"[DEBUG] row {i} sample: {flat}")
+
+
+def key_has_tokens(normalized_key, *keywords):
+    """Match keys such as 'ownedcapacityteu' against 'owned_teu' or 'chartershare' against 'chartered_share'."""
+    if not normalized_key:
+        return False
+
+    nk = normalized_key.replace("_", "")
+    for kw in keywords:
+        if kw is None:
+            continue
+        base = normalize_key(kw).replace("_", "")
+        if not base:
+            continue
+
+        if base == nk:
+            return True
+
+        # direct substring is the most common case when fields vary by suffixes
+        if base in nk or nk in base:
+            return True
+
+        tokens = [t for t in re.split(r"[_\s]+", normalize_key(kw)) if t]
+        if len(tokens) >= 2:
+            if all(tok in nk for tok in tokens):
+                return True
+            if sum(1 for tok in tokens if tok in nk) >= max(2, len(tokens) - 1):
+                return True
+
+        # fuzzy aliases for share / pct / capacity / fleet / teu
+        if ("share" in nk or "pct" in nk or "percent" in nk) and (
+            "share" in base or "pct" in base or "percent" in base
+        ):
+            return True
+        if ("teu" in nk or "capacity" in nk or "fleet" in nk) and (
+            "teu" in base or "capacity" in base or "fleet" in base
+        ):
+            return True
+        if ("ship" in nk or "fleet" in nk or "count" in nk) and (
+            "ship" in base or "fleet" in base or "count" in base
+        ):
+            return True
+
+    return False
+
 
 def find_value_by_keywords(record, *keywords):
     """
@@ -893,26 +940,16 @@ def find_value_by_keywords(record, *keywords):
         else:
             return None
 
-    keyword_variants = []
-    for kw in keywords:
-        s = str(kw).strip().lower()
-        keyword_variants.append(s)
-        keyword_variants.append(s.replace("_", ""))
-        keyword_variants.append(s.replace(" ", ""))
-        keyword_variants.append(s.replace("_", "").replace(" ", ""))
-
     for key, value in flat.items():
         nk = normalize_key(key)
         if not nk:
             continue
-
-        nk_no_underscore = nk.replace("_", "")
-        for variant in keyword_variants:
-            if variant in nk or nk in variant or variant in nk_no_underscore or nk_no_underscore in variant:
-                if value is not None and value != "" and value != "null" and value != "None":
-                    return value
+        if key_has_tokens(nk, *keywords):
+            if value is not None and value != "" and value != "null" and value != "None":
+                return value
 
     return None
+
 
 def variant_keys(name):
     n = str(name).strip()
@@ -935,8 +972,15 @@ def variant_keys(name):
         base.replace("_", "") + "_share",
         base.replace("_", "") + "_teu",
         base.replace("_", "") + "_ships",
+        base + "capacity",
+        base + "fleet",
+        base + "teu",
+        base + "ships",
+        base + "share",
+        base + "pct",
     })
     return {v for v in variants if v}
+
 
 def pick_first(record, *keys, default=None):
     """
@@ -965,7 +1009,16 @@ def pick_first(record, *keys, default=None):
                 if value is not None and value != "" and value != "null" and value != "None":
                     return value
 
-    # Fallback: exact normalized form
+    # flexible fuzzy lookup to catch alias patterns such as ownedcapacityteu / charteredshare / orderbookships
+    for key in keys:
+        target = normalize_key(key)
+        for k, v in flat.items():
+            nk = normalize_key(k)
+            if key_has_tokens(nk, target):
+                if v is not None and v != "" and v != "null" and v != "None":
+                    return v
+
+    # exact normalized form fallback
     for key in keys:
         nk = normalize_key(key)
         if nk in normalized_map:
@@ -974,6 +1027,7 @@ def pick_first(record, *keys, default=None):
                 return value
 
     return default
+
 
 def parse_int(val) -> int:
     if val is None:
@@ -1007,6 +1061,7 @@ def parse_int(val) -> int:
             return 0
     return int(str(val))
 
+
 def parse_float(val) -> float:
     if val is None:
         return 0.0
@@ -1027,6 +1082,7 @@ def parse_float(val) -> float:
         return float(s)
     except ValueError:
         return 0.0
+
 
 def setup_chrome_driver():
     options = Options()
@@ -1052,6 +1108,7 @@ def setup_chrome_driver():
         {"source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"}
     )
     return driver
+
 
 def check_and_extract_store(driver):
     """Attempt to extract ExtJS store data from current active frame."""
@@ -1120,6 +1177,7 @@ def check_and_extract_store(driver):
         return null;
     """)
 
+
 def fetch_alphaliner_data():
     logging.info("[Crawler] Launching Headless Chrome to scrape %s", SOURCE_URL)
     driver = setup_chrome_driver()
@@ -1169,6 +1227,7 @@ def fetch_alphaliner_data():
     finally:
         driver.quit()
 
+
 def extract_global_totals(body_text):
     patterns = [
         r"TOTAL\s*[:\-]?\s*([\d,]+)\s*TEU",
@@ -1198,6 +1257,7 @@ def extract_global_totals(body_text):
     extracted_global_ships = parse_int(ships_match.group(1)) if ships_match else 0
 
     return extracted_global_teu, extracted_global_ships
+
 
 def process_and_persist(raw_res):
     items = raw_res.get("items", [])
@@ -1251,19 +1311,22 @@ def process_and_persist(raw_res):
             row_data,
             "total_teu", "teu", "total", "capacity_teu", "fleet_teu",
             "totalcapacityteu", "total_capacity_teu", "teu_total",
-            "capacity", "fleetcapacity", "totalcapacity"
+            "capacity", "fleetcapacity", "totalcapacity",
+            "totalcapacity_teu", "total_capacity", "capacity_total"
         ))
         total_ships = parse_int(pick_first(
             row_data,
             "total_ships", "ships", "ship_count", "num_ships", "fleet_ships",
-            "totalships", "total_ship_count", "shipcount", "ships_total"
+            "totalships", "total_ship_count", "shipcount", "ships_total",
+            "totalships_count", "ship_count_total", "fleetships"
         ))
 
         market_share = parse_float(pick_first(
             row_data,
             "market_share", "share", "market", "share_pct", "market_share_pct",
             "marketshare", "share_percent", "market_share_percent", "pct_share",
-            "total_market_share", "share_percentage", "market_percentage"
+            "total_market_share", "share_percentage", "market_percentage",
+            "marketsharepct", "marketsharepercent"
         ))
 
         owned_teu = parse_int(find_value_by_keywords(
@@ -1271,19 +1334,19 @@ def process_and_persist(raw_res):
             "owned_teu", "own_teu", "owned", "owned_capacity_teu", "owned_fleet_teu",
             "ownedcapacityteu", "ownedteu", "owned_capacity", "ownedfleetteu",
             "own_teu_total", "own_capacity_teu", "owned_total_teu",
-            "owner_teu", "owncapacityteu"
+            "owner_teu", "owncapacityteu", "ownershipteu", "ownfleetteu"
         ))
         owned_ships = parse_int(find_value_by_keywords(
             row_data,
             "owned_ships", "own_ships", "owned_ship_count", "owned_fleet_ships",
             "ownedships", "ownships", "owned_count", "owned_total_ships",
-            "ownerships", "ownshipcount"
+            "ownerships", "ownshipcount", "ownedfleetships", "ownfleetships"
         ))
         owned_share = parse_float(find_value_by_keywords(
             row_data,
             "owned_share", "own_share", "owned_pct", "owned_share_pct",
             "own_share_pct", "ownedshare", "owned_share_percent", "own_pct",
-            "ownedpercentage", "own_percentage"
+            "ownedpercentage", "own_percentage", "ownedsharepct", "ownsharepct"
         ))
 
         chartered_teu = parse_int(find_value_by_keywords(
@@ -1291,38 +1354,41 @@ def process_and_persist(raw_res):
             "chartered_teu", "cht_teu", "charter_teu", "chartered", "leased_teu",
             "chartered_fleet_teu", "charteredcapacityteu", "charterteu",
             "chartered_total_teu", "chartered_capacity_teu", "chartercapacityteu",
-            "charteredcapacity", "chartercteu", "leasedcapacityteu"
+            "charteredcapacity", "chartercteu", "leasedcapacityteu",
+            "charterfleetteu", "charterteu"
         ))
         chartered_ships = parse_int(find_value_by_keywords(
             row_data,
             "chartered_ships", "cht_ships", "charter_ships", "leased_ships",
             "charterships", "charteredships", "chartered_fleet_ships", "charter_total_ships",
-            "charteredshipcount", "chartershipcount", "leasedships"
+            "charteredshipcount", "chartershipcount", "leasedships", "charterfleetships"
         ))
         chartered_share = parse_float(find_value_by_keywords(
             row_data,
             "chartered_share", "cht_share", "charter_share", "chartered_pct",
             "charter_share_pct", "charteredshare", "charter_pct", "charterpercentage",
-            "chartered_percentage"
+            "chartered_percentage", "chartersharepct", "charterpct"
         ))
 
         orderbook_teu = parse_int(find_value_by_keywords(
             row_data,
             "orderbook_teu", "ord_teu", "order_teu", "orderbook", "newbuild_teu",
             "order_book_teu", "orderbook_total_teu", "orderbookcapacityteu",
-            "orderbook_teu_total", "teu_on_order", "newbuildingteu", "newbuildcapacityteu"
+            "orderbook_teu_total", "teu_on_order", "newbuildingteu", "newbuildcapacityteu",
+            "ordercapacityteu", "newbuildteu", "orderbookcapacity"
         ))
         order_ships = parse_int(find_value_by_keywords(
             row_data,
             "orderbook_ships", "ord_ships", "order_ships", "newbuild_ships",
             "order_book_ships", "orderbook_ships_total", "ships_on_order",
-            "newbuildingships", "newbuildshipcount"
+            "newbuildingships", "newbuildshipcount", "ordercapacityships"
         ))
         order_share = parse_float(find_value_by_keywords(
             row_data,
             "orderbook_share", "ord_share", "order_pct", "orderbook_pct",
             "newbuild_pct", "order_book_share", "orderbook_share_pct",
-            "order_share", "orderbook_percentage", "newbuildpercentage"
+            "order_share", "orderbook_percentage", "newbuildpercentage",
+            "orderbooksharepct", "orderpct"
         ))
 
         if total_teu > 0:
@@ -1412,6 +1478,7 @@ def process_and_persist(raw_res):
 def index():
     return Response(HTML_TEMPLATE, mimetype="text/html")
 
+
 @app.route("/alphaliner_data.json")
 def get_json():
     if not JSON_PATH.exists():
@@ -1456,5 +1523,7 @@ def main():
     logging.info("[Server] Starting Bloomberg MI Terminal on http://%s:%d", args.host, args.port)
     app.run(host=args.host, port=args.port, debug=False)
 
+
 if __name__ == "__main__":
     main()
+
