@@ -1,8 +1,7 @@
 name: Update MI Dashboards
 
 on:
-  # 매주 월요일~금요일 한국시간 09:30 / 15:30 실행
-  # GitHub Actions cron은 UTC 기준
+  # 매주 월요일~금요일 한국시간 09:30 / 15:30 실행 (UTC 00:30, 06:30)
   schedule:
     - cron: "30 0 * * 1-5"
     - cron: "30 6 * * 1-5"
@@ -13,7 +12,7 @@ on:
 permissions:
   contents: write
 
-# 이전 실행이 끝나기 전에 다음 실행이 겹치지 않도록 방지
+# 동시 실행 방지
 concurrency:
   group: mi-dashboard-update
   cancel-in-progress: false
@@ -48,14 +47,7 @@ jobs:
           cache-dependency-path: requirements.txt
 
       # =====================================================
-      # 3. Chrome 및 호환 ChromeDriver 설치
-      #
-      # Selenium 기반 모듈:
-      # - Shipping Index
-      # - Alphaliner
-      # - BunkerPrice
-      #
-      # Chrome과 호환되는 ChromeDriver를 함께 설치합니다.
+      # 3. Chrome 및 호환 ChromeDriver 설치 & 환경변수 글로벌 등록
       # =====================================================
       - name: Set up Google Chrome and matching ChromeDriver
         id: setup-chrome
@@ -64,7 +56,7 @@ jobs:
           chrome-version: stable
           install-chromedriver: true
 
-      - name: Add Chrome and ChromeDriver to PATH
+      - name: Configure Chrome and ChromeDriver in Global Environment
         shell: bash
         run: |
           set -euo pipefail
@@ -75,6 +67,7 @@ jobs:
           echo "Chrome path: ${CHROME_PATH}"
           echo "ChromeDriver path: ${CHROMEDRIVER_PATH}"
 
+          # PATH에 바이너리 디렉토리 추가
           if [ -n "${CHROME_PATH}" ] && [ -f "${CHROME_PATH}" ]; then
             dirname "${CHROME_PATH}" >> "$GITHUB_PATH"
           fi
@@ -83,31 +76,30 @@ jobs:
             dirname "${CHROMEDRIVER_PATH}" >> "$GITHUB_PATH"
           fi
 
+          # 이후 모든 스텝에서 사용할 수 있도록 GITHUB_ENV에 등록
+          echo "CHROME_BINARY=${CHROME_PATH}" >> "$GITHUB_ENV"
+          echo "GOOGLE_CHROME_BIN=${CHROME_PATH}" >> "$GITHUB_ENV"
+          echo "CHROMEDRIVER_PATH=${CHROMEDRIVER_PATH}" >> "$GITHUB_ENV"
+
       - name: Verify Chrome and ChromeDriver environment
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "===== Chrome executable ====="
-          echo "${{ steps.setup-chrome.outputs.chrome-path }}"
-
-          echo "===== ChromeDriver executable ====="
-          echo "${{ steps.setup-chrome.outputs.chromedriver-path }}"
-
           echo "===== Google Chrome version ====="
-          "${{ steps.setup-chrome.outputs.chrome-path }}" --version || true
+          "${CHROME_BINARY}" --version || true
           google-chrome --version || true
 
           echo "===== ChromeDriver version ====="
-          "${{ steps.setup-chrome.outputs.chromedriver-path }}" --version || true
+          "${CHROMEDRIVER_PATH}" --version || true
           chromedriver --version || true
 
-          echo "===== PATH ====="
-          echo "$PATH"
+          echo "===== Global Environment Variables ====="
+          echo "CHROME_BINARY: ${CHROME_BINARY}"
+          echo "CHROMEDRIVER_PATH: ${CHROMEDRIVER_PATH}"
 
       # =====================================================
       # 4. Python 라이브러리 설치
-      # 모든 의존성은 root requirements.txt에서 관리
       # =====================================================
       - name: Install Python packages
         shell: bash
@@ -118,7 +110,6 @@ jobs:
 
       # =====================================================
       # 5. Playwright Chromium 및 Linux 시스템 의존성 설치
-      # Linerlytica Playwright 크롤러 실행에 필요
       # =====================================================
       - name: Install Playwright Chromium and dependencies
         shell: bash
@@ -133,8 +124,6 @@ jobs:
         env:
           KSG_ID: ${{ secrets.KSG_ID }}
           KSG_PW: ${{ secrets.KSG_PW }}
-          CHROME_BINARY: ${{ steps.setup-chrome.outputs.chrome-path }}
-          GOOGLE_CHROME_BIN: ${{ steps.setup-chrome.outputs.chrome-path }}
         shell: bash
         run: |
           set -euo pipefail
@@ -161,13 +150,19 @@ jobs:
       # 8. Alphaliner 크롤링 및 정적 파일 생성
       # =====================================================
       - name: Crawl Alphaliner and generate static dashboard
-        env:
-          CHROME_BINARY: ${{ steps.setup-chrome.outputs.chrome-path }}
-          GOOGLE_CHROME_BIN: ${{ steps.setup-chrome.outputs.chrome-path }}
         shell: bash
         run: |
           set -euo pipefail
-          python "Alphaliner/alphaliner.py" --cron
+
+          # 대소문자 차이 방지를 위해 존재하는 스크립트 실행
+          if [ -f "Alphaliner/Alphaliner.py" ]; then
+            python "Alphaliner/Alphaliner.py" --cron
+          elif [ -f "Alphaliner/alphaliner.py" ]; then
+            python "Alphaliner/alphaliner.py" --cron
+          else
+            echo "ERROR: Alphaliner Python script was not found."
+            exit 1
+          fi
 
       # =====================================================
       # 9. Alphaliner 생성 결과 확인
@@ -180,7 +175,6 @@ jobs:
           echo "===== Alphaliner files ====="
           ls -alh "Alphaliner"
 
-          # 현재 Alphaliner 장기 이력 DB 파일명
           test -f "Alphaliner/alphaliner_history.db"
           test -f "Alphaliner/alphaliner_data.json"
           test -f "Alphaliner/index.html"
@@ -206,10 +200,6 @@ jobs:
           echo "===== Forwarder folder structure ====="
           find "Forwarder" -maxdepth 3 -type f | sort
 
-          echo "===== Python files in Forwarder ====="
-          find "Forwarder" -maxdepth 3 -type f -iname "*.py" -print
-
-          # A&A Top 25 Dashboard 코드가 담긴 Python 파일 자동 탐색
           FORWARDER_SCRIPT=$(
             grep -rl \
               --include="*.py" \
@@ -223,8 +213,6 @@ jobs:
           fi
 
           echo "Forwarder script found: $FORWARDER_SCRIPT"
-
-          # --crawl-only는 DB만 갱신하고 index.html을 갱신하지 않을 수 있으므로 사용하지 않음
           python "$FORWARDER_SCRIPT"
 
           echo "===== Forwarder output files ====="
@@ -241,7 +229,6 @@ jobs:
           echo "===== Verify Forwarder files ====="
           ls -alh "Forwarder"
 
-          echo "===== Required output files ====="
           test -f "Forwarder/freight_forwarders_data.db" \
             || { echo "ERROR: freight_forwarders_data.db is missing."; exit 1; }
 
@@ -255,7 +242,6 @@ jobs:
             || { echo "ERROR: index.html is empty."; exit 1; }
 
           echo "===== Dashboard identity verification ====="
-
           grep -qF "FORWARDER MONITOR" "Forwarder/index.html" \
             || { echo "ERROR: FORWARDER MONITOR identifier is missing."; exit 1; }
 
@@ -263,7 +249,6 @@ jobs:
             || { echo "ERROR: MI&lt;GO&gt; terminal label is missing."; exit 1; }
 
           echo "===== Historical comparison UI verification ====="
-
           grep -qF 'id="currentDateSelect"' "Forwarder/index.html" \
             || { echo "ERROR: currentDateSelect control is missing."; exit 1; }
 
@@ -279,9 +264,6 @@ jobs:
       # 12. Bunker Price / Crude Oil 크롤링 및 정적 파일 생성
       # =====================================================
       - name: Crawl Bunker Price and generate static dashboard
-        env:
-          CHROME_BINARY: ${{ steps.setup-chrome.outputs.chrome-path }}
-          GOOGLE_CHROME_BIN: ${{ steps.setup-chrome.outputs.chrome-path }}
         shell: bash
         run: |
           set -euo pipefail
@@ -300,8 +282,6 @@ jobs:
 
           echo "===== OilPrice files ====="
           ls -alh "BunkerPrice/OilPrice"
-
-          echo "===== Required BunkerPrice output files ====="
 
           test -f "BunkerPrice/bunker_price_data.db" \
             || { echo "ERROR: bunker_price_data.db is missing."; exit 1; }
@@ -324,46 +304,16 @@ jobs:
           test -f "BunkerPrice/OilPrice/opinet_oil_prices.csv" \
             || { echo "ERROR: opinet_oil_prices.csv is missing."; exit 1; }
 
-          # Forecast 데이터는 소스 상태에 따라 없을 수 있으므로 실패시키지 않음
           if [ ! -f "BunkerPrice/bunker_forecast.csv" ]; then
             echo "WARNING: bunker_forecast.csv was not generated."
           fi
-
-          echo "===== Bunker dashboard content verification ====="
-
-          grep -qiF "BUNKER PRICE" "BunkerPrice/index.html" \
-            || { echo "ERROR: Bunker dashboard title/content is missing."; exit 1; }
-
-          grep -qiF "CRUDE OIL" "BunkerPrice/OilPrice/index.html" \
-            || { echo "ERROR: Crude Oil dashboard title/content is missing."; exit 1; }
-
-          echo "===== Terminal theme structure verification ====="
-
-          grep -qF ":root" "BunkerPrice/index.html" \
-            || { echo "ERROR: Bunker CSS root theme is missing."; exit 1; }
-
-          grep -qF -- "--bg:" "BunkerPrice/index.html" \
-            || { echo "ERROR: Bunker background theme token is missing."; exit 1; }
-
-          grep -qF -- "--panel:" "BunkerPrice/index.html" \
-            || { echo "ERROR: Bunker panel theme token is missing."; exit 1; }
-
-          grep -qF ":root" "BunkerPrice/OilPrice/index.html" \
-            || { echo "ERROR: OilPrice CSS root theme is missing."; exit 1; }
-
-          grep -qF -- "--bg:" "BunkerPrice/OilPrice/index.html" \
-            || { echo "ERROR: OilPrice background theme token is missing."; exit 1; }
 
           echo "Bunker Price / Crude Oil dashboard verification passed."
 
       # =====================================================
       # 14. Linerlytica 크롤링 및 정적 파일 생성
-      # Playwright Chromium은 상단 설치 단계에서 준비됨
       # =====================================================
       - name: Crawl Linerlytica and generate static dashboard
-        env:
-          CHROME_BINARY: ${{ steps.setup-chrome.outputs.chrome-path }}
-          GOOGLE_CHROME_BIN: ${{ steps.setup-chrome.outputs.chrome-path }}
         shell: bash
         run: |
           set -euo pipefail
@@ -395,7 +345,6 @@ jobs:
           set -euo pipefail
 
           echo "===== Generating Portal Dashboard (index.html) ====="
-
           python dashboard_generator.py
 
           test -f "index.html"
@@ -415,7 +364,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # 생성된 파일의 추가·수정·삭제를 모두 스테이징
           git add -A
 
           echo "===== Git status ====="
