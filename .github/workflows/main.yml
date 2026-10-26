@@ -358,23 +358,22 @@ jobs:
       # =====================================================
       - name: Commit and push dashboard data
         run: |
-    set -euo pipefail
-    git config --global user.name "github-actions[bot]"
-    git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          set -euo pipefail
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-    # 1. 변경된 파일이 있는지 확인
-    if [ -n "$(git status --porcelain)" ]; then
-      git add .
-      git commit -m "Auto: update MI dashboards [skip ci]" || exit 0
+          # 1. 변경된 파일이 있는지 확인
+          if [ -n "$(git status --porcelain)" ]; then
+            git add .
+            git commit -m "Auto: update MI dashboards [skip ci]" || exit 0
 
-      # 2. 푸시 전 원격의 최신 커밋을 Rebase로 통합 (최대 3회 재시도)
-      for i in {1..3}; do
-        git pull --rebase origin main && git push origin main && break || {
-          echo "[WARN] Push failed. Retrying ($i/3)..."
-          sleep 3
-        }
-      done
-    else
-      echo "No changes to commit."
-    fi
-
+            # 2. 푸시 전 원격 최신 커밋을 rebase로 통합 (최대 3회 재시도)
+            for i in {1..3}; do
+              git pull --rebase origin main && git push origin main && break || {
+                echo "[WARN] Push failed. Retrying ($i/3)..."
+                sleep 3
+              }
+            done
+          else
+            echo "No changes to commit."
+          fi
