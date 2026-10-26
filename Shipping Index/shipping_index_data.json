@@ -1,6 +1,6 @@
 {
   "status": "success",
-  "generated_at": "2026-10-25 23:14:49",
+  "generated_at": "2026-10-26 00:09:24",
   "source_database": "index_history.db",
   "indexes": {
     "SCFI": {
@@ -77368,7 +77368,7 @@
       ],
       "record_count": 12890,
       "latest_date": "2026-10-23",
-      "last_sync": "2026-10-25 23:14:49"
+      "last_sync": "2026-10-26 00:09:24"
     },
     "BDI": {
       "regions": [
@@ -331613,7 +331613,7 @@
       ],
       "record_count": 42372,
       "latest_date": "2026-10-22",
-      "last_sync": "2026-10-25 23:14:49"
+      "last_sync": "2026-10-26 00:09:24"
     }
   }
 }
