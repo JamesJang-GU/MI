@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-26T04:53:24.217445",
+  "generated_at": "2026-10-26T05:01:00.429504",
   "dates": [
     "2026-10-26",
     "2026-10-23"
@@ -9,13 +9,14 @@
     "2026-10-26": {
       "meta": {
         "snapshot_date": "2026-10-26",
+        "global_ships": 7672,
         "global_teu": 34140306,
-        "global_ships": 6623,
         "top100_teu": 34140306,
         "top100_ships": 6623,
         "top10_share": 86.41,
+        "official_top10_share": 85.0,
         "orderbook_teu": 13625044,
-        "extracted_at": "2026-10-26T04:53:24.213382"
+        "extracted_at": "2026-10-26T05:01:00.425986"
       },
       "operators": [
         {
@@ -1723,11 +1724,12 @@
     "2026-10-23": {
       "meta": {
         "snapshot_date": "2026-10-23",
+        "global_ships": 7672,
         "global_teu": 34140930,
-        "global_ships": 6624,
         "top100_teu": 34140930,
         "top100_ships": 6624,
         "top10_share": 82.09,
+        "official_top10_share": 85.0,
         "orderbook_teu": null,
         "extracted_at": "2026-10-23T15:16:59.575500"
       },
