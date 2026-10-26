@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-26T01:22:07.244647",
+  "generated_at": "2026-10-26T04:53:24.217445",
   "dates": [
     "2026-10-26",
     "2026-10-23"
@@ -9,24 +9,24 @@
     "2026-10-26": {
       "meta": {
         "snapshot_date": "2026-10-26",
-        "global_teu": 34140930,
-        "global_ships": 6624,
-        "top100_teu": 34140930,
-        "top100_ships": 6624,
+        "global_teu": 34140306,
+        "global_ships": 6623,
+        "top100_teu": 34140306,
+        "top100_ships": 6623,
         "top10_share": 86.41,
         "orderbook_teu": 13625044,
-        "extracted_at": "2026-10-26T01:22:07.241205"
+        "extracted_at": "2026-10-26T04:53:24.213382"
       },
       "operators": [
         {
           "rank": 1,
           "operator_name": "Mediterranean Shg Co",
-          "total_teu": 7464018,
-          "total_ships": 1018,
+          "total_teu": 7463394,
+          "total_ships": 1017,
           "market_share": 21.5,
-          "owned_teu": 4794529,
-          "owned_ships": 767,
-          "owned_share": 64.24,
+          "owned_teu": 4793905,
+          "owned_ships": 766,
+          "owned_share": 64.23,
           "chartered_teu": 2669489,
           "chartered_ships": 251,
           "chartered_share": 35.8,
@@ -91,7 +91,7 @@
           "operator_name": "Hapag-Lloyd",
           "total_teu": 2410123,
           "total_ships": 289,
-          "market_share": 6.9,
+          "market_share": 7.0,
           "owned_teu": 1455918,
           "owned_ships": 134,
           "owned_share": 60.41,
