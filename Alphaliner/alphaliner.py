@@ -1,19 +1,27 @@
 # -*- coding: utf-8 -*-
 """
 Alphaliner TOP 100 Liner Operators Static Dashboard Crawler
-- ExtJS Store extraction
-- Snapshot quality validation before persistence
-- Invalid historical snapshot exclusion during JSON export
-- SQLite historical storage
-- Static dashboard generation
 
-Output files:
-- alphaliner_history.db
-- alphaliner_data.json
-- index.html
+Features
+--------
+- ExtJS Store 직접 추출: Top100description
+- store.getModel() 미사용
+- Chrome / ChromeDriver GitHub Actions 환경 호환
+- 저장 전 데이터 품질 검증
+- 불완전 스냅샷 DB 저장 차단
+- 유효 스냅샷만 JSON / HTML Dashboard에 반영
+- SQLite 기반 히스토리 유지
+- --cron 실행 및 Flask 로컬 서버 지원
+
+Output files
+------------
+- Alphaliner/alphaliner_history.db
+- Alphaliner/alphaliner_data.json
+- Alphaliner/index.html
 """
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -23,10 +31,11 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from threading import Lock
+from typing import Any, Dict, List, Optional, Tuple
 
-from flask import Flask, send_from_directory
+from flask import Flask, Response, send_from_directory
 from selenium import webdriver
+from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
@@ -40,309 +49,563 @@ except Exception:
 # =========================================================
 # 1. Basic Configuration
 # =========================================================
+
 BASE_DIR = Path(__file__).resolve().parent
+
 DB_PATH = BASE_DIR / "alphaliner_history.db"
 JSON_PATH = BASE_DIR / "alphaliner_data.json"
 HTML_PATH = BASE_DIR / "index.html"
 
 TARGET_URL = "https://alphaliner.axsmarine.com/PublicTop100/"
 
-# ---------------------------------------------------------
-# Snapshot Validation Thresholds
-# ---------------------------------------------------------
-# Alphaliner Top 100 데이터의 일반적 규모를 기준으로 설정.
-# 실제 시장 변동은 허용하면서, 0 / null / 일부 컬럼 누락 스냅샷을 차단한다.
-MIN_OPERATOR_COUNT = 95
-MIN_UNIQUE_OPERATOR_COUNT = 95
-MIN_TOTAL_TEU = 20_000_000
-MIN_TOTAL_SHIPS = 4_500
-MIN_TOP10_TEU = 12_000_000
-MIN_TOP10_SHARE = 45.0
-MIN_ORDERBOOK_TEU = 1_000_000
-MIN_ORDERBOOK_SHIPS = 50
-MIN_NONZERO_ORDERBOOK_OPERATORS = 5
-
-# 직전 정상 데이터 대비 허용 가능한 급격한 변동 범위
-# 시장 데이터의 정상 업데이트를 막지 않기 위한 안전 범위다.
-MAX_TOTAL_TEU_CHANGE_RATIO = 0.20
-MAX_TOTAL_SHIPS_CHANGE_RATIO = 0.20
-MAX_ORDERBOOK_TEU_CHANGE_RATIO = 0.70
+LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
 
 logging.basicConfig(
     level=logging.INFO,
-    format="[%(asctime)s] [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    format=LOG_FORMAT,
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 
-logger = logging.getLogger("Alphaliner")
-db_lock = Lock()
+logger = logging.getLogger("alphaliner")
+
+app = Flask(__name__)
 
 # =========================================================
-# 2. Exceptions
+# 2. Data Quality Thresholds
 # =========================================================
-class SnapshotValidationError(RuntimeError):
-    """크롤링 결과가 저장 기준을 충족하지 못할 때 발생."""
+
+MIN_OPERATOR_COUNT = 80
+MIN_TOTAL_FLEET_TEU = 10_000_000
+MIN_TOTAL_FLEET_SHIPS = 500
+MIN_TOP10_TEU = 3_000_000
+MIN_ORDERBOOK_TEU = 500_000
+
+MAX_OPERATOR_COUNT = 150
+MAX_TOP10_SHARE = 0.95
 
 # =========================================================
-# 3. Database Schema & Migration
+# 3. Utility Functions
 # =========================================================
-def init_db():
-    with db_lock, sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
 
-        cursor.execute("""
+def now_iso() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+def today_str() -> str:
+    return datetime.now().strftime("%Y-%m-%d")
+
+def normalize_key(value: Any) -> str:
+    """필드명을 비교 가능한 형태로 정규화한다."""
+    if value is None:
+        return ""
+
+    return re.sub(
+        r"[^a-z0-9]",
+        "",
+        str(value).strip().lower()
+    )
+
+def parse_number(value: Any) -> Optional[float]:
+    """문자열/숫자를 float으로 안전하게 변환한다."""
+    if value is None:
+        return None
+
+    if isinstance(value, bool):
+        return float(value)
+
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    text = str(value).strip()
+
+    if not text:
+        return None
+
+    text = text.replace(",", "")
+    text = text.replace(" ", "")
+    text = text.replace("\xa0", "")
+
+    text = text.replace("TEU", "")
+    text = text.replace("Ships", "")
+    text = text.replace("ships", "")
+    text = text.replace("%", "")
+
+    if text in {"-", "–", "—", "N/A", "n/a", "null", "None"}:
+        return None
+
+    match = re.search(r"-?\d+(?:\.\d+)?", text)
+
+    if not match:
+        return None
+
+    try:
+        return float(match.group(0))
+    except Exception:
+        return None
+
+def parse_int(value: Any, default: int = 0) -> int:
+    parsed = parse_number(value)
+
+    if parsed is None:
+        return default
+
+    return int(round(parsed))
+
+def parse_float(value: Any, default: float = 0.0) -> float:
+    parsed = parse_number(value)
+
+    if parsed is None:
+        return default
+
+    return float(parsed)
+
+def first_value(
+    record: Dict[str, Any],
+    aliases: List[str],
+    default: Any = None,
+) -> Any:
+    """
+    ExtJS Store 레코드의 실제 컬럼명이 달라져도
+    별칭(alias) 기준으로 값을 찾는다.
+    """
+    normalized_record = {
+        normalize_key(key): value
+        for key, value in record.items()
+    }
+
+    for alias in aliases:
+        normalized_alias = normalize_key(alias)
+
+        if normalized_alias in normalized_record:
+            return normalized_record[normalized_alias]
+
+    for alias in aliases:
+        normalized_alias = normalize_key(alias)
+
+        for key, value in normalized_record.items():
+            if normalized_alias and normalized_alias in key:
+                return value
+
+    return default
+
+def safe_json_dumps(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, default=str)
+
+# =========================================================
+# 4. Database Functions
+# =========================================================
+
+def get_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def column_exists(
+    conn: sqlite3.Connection,
+    table_name: str,
+    column_name: str,
+) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+
+    return any(row["name"] == column_name for row in rows)
+
+def add_column_if_missing(
+    conn: sqlite3.Connection,
+    table_name: str,
+    column_definition: str,
+) -> None:
+    column_name = column_definition.split()[0]
+
+    if not column_exists(conn, table_name, column_name):
+        logger.info(
+            "[DB MIGRATE] Adding missing column '%s' to '%s'",
+            column_name,
+            table_name,
+        )
+
+        conn.execute(
+            f"ALTER TABLE {table_name} ADD COLUMN {column_definition}"
+        )
+
+def init_database() -> None:
+    conn = get_connection()
+
+    try:
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS snapshot_meta (
                 snapshot_date TEXT PRIMARY KEY,
-                updated_at TEXT,
-                total_teu INTEGER,
-                total_ships INTEGER,
+                global_total_teu INTEGER,
+                global_total_ships INTEGER,
+                top100_total_teu INTEGER,
+                top100_total_ships INTEGER,
+                top10_total_teu INTEGER,
+                top10_share REAL,
+                orderbook_total_teu INTEGER,
+                extracted_at TEXT,
+                source_url TEXT,
+                raw_hash TEXT,
+                global_teu INTEGER,
+                global_ships INTEGER,
                 top100_teu INTEGER,
                 top100_ships INTEGER,
-                top100_share REAL,
-                orderbook_teu INTEGER,
-                orderbook_ships INTEGER,
+                total_teu INTEGER,
+                total_ships INTEGER,
+                created_at TEXT,
+                updated_at TEXT,
+                notes TEXT,
                 is_valid INTEGER DEFAULT 1,
                 validation_error TEXT
             )
         """)
 
-        cursor.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS operator_snapshots (
-                snapshot_date TEXT,
-                rank INTEGER,
-                name TEXT,
+                snapshot_date TEXT NOT NULL,
+                rank INTEGER NOT NULL,
+                operator TEXT,
+                fleet_teu INTEGER,
+                fleet_ships INTEGER,
+                owned_teu INTEGER,
+                owned_ships INTEGER,
+                owned_share REAL,
+                chartered_teu INTEGER,
+                chartered_ships INTEGER,
+                chartered_share REAL,
+                orderbook_teu INTEGER,
+                orderbook_ships INTEGER,
+                orderbook_share REAL,
                 country TEXT,
                 teu INTEGER,
                 teu_share REAL,
                 ships INTEGER,
-                chartered_teu INTEGER,
-                chartered_share REAL,
-                chartered_ships INTEGER,
-                owned_teu INTEGER,
-                owned_share REAL,
-                owned_ships INTEGER,
-                orderbook_teu INTEGER,
                 orderbook_teu_share REAL,
-                orderbook_ships INTEGER,
                 created_at TEXT,
                 PRIMARY KEY (snapshot_date, rank)
             )
         """)
 
-        cursor.execute("PRAGMA table_info(snapshot_meta)")
-        existing_meta_cols = {row[1] for row in cursor.fetchall()}
+        # 기존 DB와의 호환성을 위한 누락 컬럼 보완
+        meta_columns = [
+            "global_total_teu INTEGER",
+            "global_total_ships INTEGER",
+            "top100_total_teu INTEGER",
+            "top100_total_ships INTEGER",
+            "top10_total_teu INTEGER",
+            "top10_share REAL",
+            "orderbook_total_teu INTEGER",
+            "extracted_at TEXT",
+            "source_url TEXT",
+            "raw_hash TEXT",
+            "global_teu INTEGER",
+            "global_ships INTEGER",
+            "top100_teu INTEGER",
+            "top100_ships INTEGER",
+            "total_teu INTEGER",
+            "total_ships INTEGER",
+            "created_at TEXT",
+            "updated_at TEXT",
+            "notes TEXT",
+            "is_valid INTEGER DEFAULT 1",
+            "validation_error TEXT",
+        ]
 
-        expected_meta_cols = {
-            "updated_at": "TEXT",
-            "total_teu": "INTEGER",
-            "total_ships": "INTEGER",
-            "top100_teu": "INTEGER",
-            "top100_ships": "INTEGER",
-            "top100_share": "REAL",
-            "orderbook_teu": "INTEGER",
-            "orderbook_ships": "INTEGER",
-            "is_valid": "INTEGER DEFAULT 1",
-            "validation_error": "TEXT"
-        }
+        for definition in meta_columns:
+            add_column_if_missing(conn, "snapshot_meta", definition)
 
-        for col_name, col_type in expected_meta_cols.items():
-            if col_name not in existing_meta_cols:
-                logger.info(
-                    "[DB MIGRATE] Adding missing column '%s' to snapshot_meta",
-                    col_name
-                )
-                cursor.execute(
-                    f"ALTER TABLE snapshot_meta ADD COLUMN {col_name} {col_type}"
-                )
+        operator_columns = [
+            "fleet_teu INTEGER",
+            "fleet_ships INTEGER",
+            "owned_teu INTEGER",
+            "owned_ships INTEGER",
+            "owned_share REAL",
+            "chartered_teu INTEGER",
+            "chartered_ships INTEGER",
+            "chartered_share REAL",
+            "orderbook_teu INTEGER",
+            "orderbook_ships INTEGER",
+            "orderbook_share REAL",
+            "country TEXT",
+            "teu INTEGER",
+            "teu_share REAL",
+            "ships INTEGER",
+            "orderbook_teu_share REAL",
+            "created_at TEXT",
+        ]
 
-        cursor.execute("PRAGMA table_info(operator_snapshots)")
-        existing_op_cols = {row[1] for row in cursor.fetchall()}
-
-        expected_op_cols = {
-            "country": "TEXT",
-            "teu": "INTEGER",
-            "teu_share": "REAL",
-            "ships": "INTEGER",
-            "chartered_teu": "INTEGER",
-            "chartered_share": "REAL",
-            "chartered_ships": "INTEGER",
-            "owned_teu": "INTEGER",
-            "owned_share": "REAL",
-            "owned_ships": "INTEGER",
-            "orderbook_teu": "INTEGER",
-            "orderbook_teu_share": "REAL",
-            "orderbook_ships": "INTEGER",
-            "created_at": "TEXT"
-        }
-
-        for col_name, col_type in expected_op_cols.items():
-            if col_name not in existing_op_cols:
-                logger.info(
-                    "[DB MIGRATE] Adding missing column '%s' to operator_snapshots",
-                    col_name
-                )
-                cursor.execute(
-                    f"ALTER TABLE operator_snapshots ADD COLUMN {col_name} {col_type}"
-                )
+        for definition in operator_columns:
+            add_column_if_missing(conn, "operator_snapshots", definition)
 
         conn.commit()
 
+    finally:
+        conn.close()
+
 # =========================================================
-# 4. Utility Functions
+# 5. Chrome / Selenium Functions
 # =========================================================
-def parse_int(val):
-    if val is None or val == "":
-        return 0
 
-    if isinstance(val, (int, float)):
-        return int(val)
+def get_chrome_binary() -> Optional[str]:
+    candidates = [
+        os.getenv("CHROME_BINARY"),
+        os.getenv("GOOGLE_CHROME_BIN"),
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+    ]
 
-    cleaned = re.sub(r"[^\d\-]", "", str(val))
-
-    try:
-        return int(cleaned) if cleaned else 0
-    except ValueError:
-        return 0
-
-def parse_float(val):
-    if val is None or val == "":
-        return 0.0
-
-    if isinstance(val, (int, float)):
-        return float(val)
-
-    cleaned = re.sub(r"[^\d.\-]", "", str(val))
-
-    try:
-        return float(cleaned) if cleaned else 0.0
-    except ValueError:
-        return 0.0
-
-def get_field_val(record, candidates, default=""):
     for candidate in candidates:
-        if candidate in record and record[candidate] is not None:
-            return record[candidate]
-    return default
+        if candidate and os.path.exists(candidate):
+            return candidate
 
-def percent_change(current, previous):
-    if previous is None or previous == 0:
-        return None
-    return (current - previous) / previous
+    return None
 
-# =========================================================
-# 5. Selenium & ExtJS Scraping
-# =========================================================
-def get_chrome_driver():
+def get_chrome_driver() -> webdriver.Chrome:
     options = Options()
 
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-notifications")
+    options.add_argument("--disable-popup-blocking")
+    options.add_argument("--window-size=1920,2200")
+    options.add_argument("--lang=en-US")
+    options.add_argument("--disable-blink-features=AutomationControlled")
 
-    options.add_argument(
-        "--user-agent=Mozilla/5.0 "
-        "(Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 "
-        "(KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
+    options.add_experimental_option(
+        "excludeSwitches",
+        ["enable-automation"]
     )
 
-    chrome_bin = (
-        os.getenv("CHROME_BINARY")
-        or os.getenv("CHROME_BIN")
-        or os.getenv("GOOGLE_CHROME_BIN")
+    options.add_experimental_option(
+        "useAutomationExtension",
+        False
     )
 
-    if chrome_bin and os.path.exists(chrome_bin):
-        options.binary_location = chrome_bin
+    chrome_binary = get_chrome_binary()
+
+    if chrome_binary:
+        logger.info("Using Chrome binary: %s", chrome_binary)
+        options.binary_location = chrome_binary
+    else:
+        logger.warning(
+            "Chrome binary was not explicitly found. "
+            "Using Selenium default Chrome discovery."
+        )
 
     chromedriver_path = os.getenv("CHROMEDRIVER_PATH")
 
     if chromedriver_path and os.path.exists(chromedriver_path):
-        return webdriver.Chrome(
-            service=Service(chromedriver_path),
-            options=options
+        logger.info(
+            "Using CHROMEDRIVER_PATH: %s",
+            chromedriver_path
         )
 
-    if HAS_WEBDRIVER_MANAGER:
-        try:
-            return webdriver.Chrome(
-                service=Service(ChromeDriverManager().install()),
-                options=options
-            )
-        except Exception as exc:
-            logger.warning(
-                "WebDriverManager failed: %s. Falling back to PATH driver.",
-                exc
-            )
+        driver = webdriver.Chrome(
+            service=Service(chromedriver_path),
+            options=options,
+        )
 
-    return webdriver.Chrome(options=options)
+    elif HAS_WEBDRIVER_MANAGER:
+        logger.info(
+            "CHROMEDRIVER_PATH not found. "
+            "Using webdriver-manager fallback."
+        )
 
-def fetch_alphaliner_data():
+        driver_path = ChromeDriverManager().install()
+
+        driver = webdriver.Chrome(
+            service=Service(driver_path),
+            options=options,
+        )
+
+    else:
+        logger.info(
+            "Using Selenium default ChromeDriver resolution."
+        )
+
+        driver = webdriver.Chrome(options=options)
+
+    driver.execute_cdp_cmd(
+        "Page.addScriptToEvaluateOnNewDocument",
+        {
+            "source": """
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+            """
+        },
+    )
+
+    return driver
+
+# =========================================================
+# 6. ExtJS Data Extraction
+# =========================================================
+
+def fetch_alphaliner_data() -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Alphaliner ExtJS Store에서 Top 100 데이터를 추출한다.
+
+    중요:
+    - store.getModel()을 호출하지 않는다.
+    - Alphaliner Store 구현에 getModel() 메서드가 없을 수 있다.
+    """
     logger.info("Navigating to %s", TARGET_URL)
 
     driver = None
 
     try:
         driver = get_chrome_driver()
+        driver.set_page_load_timeout(90)
         driver.get(TARGET_URL)
 
-        wait = WebDriverWait(driver, 25)
+        wait = WebDriverWait(driver, 45)
 
         wait.until(
             lambda d: d.execute_script("""
-                return (
-                    typeof Ext !== 'undefined' &&
-                    Ext.data &&
-                    Ext.data.StoreManager &&
-                    Ext.data.StoreManager.lookup('Top100description') !== undefined
-                );
+                try {
+                    if (typeof Ext === 'undefined') {
+                        return false;
+                    }
+
+                    if (!Ext.data || !Ext.data.StoreManager) {
+                        return false;
+                    }
+
+                    var store =
+                        Ext.data.StoreManager.lookup('Top100description');
+
+                    if (!store) {
+                        return false;
+                    }
+
+                    if (typeof store.getCount === 'function') {
+                        return store.getCount() > 0;
+                    }
+
+                    if (store.data && store.data.items) {
+                        return store.data.items.length > 0;
+                    }
+
+                    return false;
+
+                } catch (e) {
+                    return false;
+                }
             """)
         )
 
         time.sleep(2)
 
-        raw_data = driver.execute_script("""
-            var store = Ext.data.StoreManager.lookup('Top100description');
+        extraction_result = driver.execute_script("""
+            try {
+                var store =
+                    Ext.data.StoreManager.lookup('Top100description');
 
-            if (!store) {
-                return null;
+                if (!store) {
+                    return {
+                        ok: false,
+                        error: 'Top100description Store was not found.',
+                        records: [],
+                        fields: []
+                    };
+                }
+
+                var records = [];
+
+                if (typeof store.each === 'function') {
+                    store.each(function(rec) {
+                        if (rec && rec.data) {
+                            records.push(rec.data);
+                        }
+                    });
+                } else if (
+                    store.data &&
+                    store.data.items &&
+                    Array.isArray(store.data.items)
+                ) {
+                    store.data.items.forEach(function(rec) {
+                        if (rec && rec.data) {
+                            records.push(rec.data);
+                        }
+                    });
+                }
+
+                var fields = [];
+
+                if (records.length > 0 && records[0]) {
+                    fields = Object.keys(records[0]);
+                }
+
+                return {
+                    ok: true,
+                    count: records.length,
+                    store_id: store.storeId || 'Top100description',
+                    fields: fields,
+                    records: records
+                };
+
+            } catch (e) {
+                return {
+                    ok: false,
+                    error: String(e),
+                    records: [],
+                    fields: []
+                };
             }
-
-            var records = [];
-
-            store.each(function(rec) {
-                records.push(rec.data);
-            });
-
-            return {
-                records: records,
-                count: store.getCount(),
-                fields: store.getModel().getFields().map(function(field) {
-                    return field.name;
-                })
-            };
         """)
 
-        if not raw_data or not raw_data.get("records"):
-            raise ValueError(
-                "ExtJS Store Top100description is empty or unavailable."
+        if not extraction_result:
+            raise RuntimeError(
+                "No JavaScript response was returned during ExtJS extraction."
+            )
+
+        if not extraction_result.get("ok"):
+            raise RuntimeError(
+                "ExtJS extraction failed: "
+                f"{extraction_result.get('error', 'Unknown error')}"
+            )
+
+        records = extraction_result.get("records") or []
+
+        if not records:
+            raise RuntimeError(
+                "Top100description Store was detected, "
+                "but no records were extracted."
             )
 
         logger.info(
-            "Successfully extracted %s records from ExtJS Store.",
-            len(raw_data["records"])
+            "Successfully extracted %s records from Store '%s'.",
+            len(records),
+            extraction_result.get("store_id", "Top100description"),
         )
 
         logger.info(
-            "Detected ExtJS fields: %s",
-            ", ".join(raw_data.get("fields", []))
+            "Detected source fields: %s",
+            ", ".join(extraction_result.get("fields", [])),
         )
 
-        return raw_data["records"]
+        logger.info(
+            "First raw record: %s",
+            safe_json_dumps(records[0]),
+        )
+
+        page_info = driver.execute_script("""
+            return {
+                title: document.title || '',
+                url: window.location.href || '',
+                text: (document.body && document.body.innerText)
+                    ? document.body.innerText.substring(0, 5000)
+                    : ''
+            };
+        """)
+
+        return records, page_info
+
+    except WebDriverException as exc:
+        logger.error("Selenium/WebDriver error: %s", exc)
+        raise
 
     except Exception as exc:
         logger.error("Error fetching Alphaliner data: %s", exc)
@@ -356,1016 +619,1069 @@ def fetch_alphaliner_data():
                 pass
 
 # =========================================================
-# 6. Record Normalization
+# 7. Record Normalization
 # =========================================================
-def normalize_records(records, snapshot_date, now_iso):
-    operators = []
 
-    for record in records:
-        rank = parse_int(
-            get_field_val(
-                record,
-                ["Rank", "rank", "Position", "position", "id"]
-            )
-        )
+def normalize_operator_record(
+    raw: Dict[str, Any],
+    fallback_rank: int,
+) -> Dict[str, Any]:
+    """
+    Alphaliner ExtJS Store의 필드명이 달라져도
+    주요 수치를 표준 DB 구조로 정규화한다.
+    """
 
-        if rank <= 0 or rank > 100:
+    rank = parse_int(
+        first_value(raw, [
+            "rank",
+            "ranking",
+            "position",
+            "no",
+            "number",
+        ]),
+        fallback_rank,
+    )
+
+    operator = first_value(raw, [
+        "operator",
+        "operatorname",
+        "company",
+        "name",
+        "liner",
+    ])
+
+    operator = str(operator).strip() if operator else f"Unknown Operator {rank}"
+
+    fleet_teu = parse_int(first_value(raw, [
+        "fleet_teu",
+        "fleet teu",
+        "total_teu",
+        "total teu",
+        "teu",
+        "capacity",
+        "totalcapacity",
+    ]))
+
+    fleet_ships = parse_int(first_value(raw, [
+        "fleet_ships",
+        "fleet ships",
+        "total_ships",
+        "total ships",
+        "ships",
+        "vessels",
+        "fleet",
+    ]))
+
+    owned_teu = parse_int(first_value(raw, [
+        "owned_teu",
+        "owned teu",
+        "ownedcapacity",
+        "owned",
+    ]))
+
+    owned_ships = parse_int(first_value(raw, [
+        "owned_ships",
+        "owned ships",
+        "ownedvessels",
+    ]))
+
+    chartered_teu = parse_int(first_value(raw, [
+        "chartered_teu",
+        "chartered teu",
+        "charter_teu",
+        "charteredcapacity",
+        "chartered",
+    ]))
+
+    chartered_ships = parse_int(first_value(raw, [
+        "chartered_ships",
+        "chartered ships",
+        "charter_ships",
+        "charteredvessels",
+    ]))
+
+    orderbook_teu = parse_int(first_value(raw, [
+        "orderbook_teu",
+        "orderbook teu",
+        "orderbook",
+        "order_book_teu",
+        "onorderteu",
+    ]))
+
+    orderbook_ships = parse_int(first_value(raw, [
+        "orderbook_ships",
+        "orderbook ships",
+        "order_book_ships",
+        "onorderships",
+    ]))
+
+    country = first_value(raw, [
+        "country",
+        "nationality",
+        "flag",
+        "headquarters",
+    ])
+
+    country = str(country).strip() if country else None
+
+    owned_share = (
+        round(owned_teu / fleet_teu * 100, 2)
+        if fleet_teu > 0 and owned_teu > 0
+        else 0.0
+    )
+
+    chartered_share = (
+        round(chartered_teu / fleet_teu * 100, 2)
+        if fleet_teu > 0 and chartered_teu > 0
+        else 0.0
+    )
+
+    orderbook_share = (
+        round(orderbook_teu / fleet_teu * 100, 2)
+        if fleet_teu > 0 and orderbook_teu > 0
+        else 0.0
+    )
+
+    return {
+        "rank": rank,
+        "operator": operator,
+        "fleet_teu": fleet_teu,
+        "fleet_ships": fleet_ships,
+        "owned_teu": owned_teu,
+        "owned_ships": owned_ships,
+        "owned_share": owned_share,
+        "chartered_teu": chartered_teu,
+        "chartered_ships": chartered_ships,
+        "chartered_share": chartered_share,
+        "orderbook_teu": orderbook_teu,
+        "orderbook_ships": orderbook_ships,
+        "orderbook_share": orderbook_share,
+        "country": country,
+
+        # 기존 JSON / DB 호환용 별칭
+        "teu": fleet_teu,
+        "ships": fleet_ships,
+        "teu_share": 0.0,
+        "orderbook_teu_share": orderbook_share,
+    }
+
+def normalize_records(
+    raw_records: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    normalized = []
+
+    for index, raw in enumerate(raw_records, start=1):
+        if not isinstance(raw, dict):
             continue
 
-        name = str(
-            get_field_val(
-                record,
-                ["Operator", "operator", "Name", "name", "Liner", "liner"],
-                "Unknown"
-            )
-        ).strip()
+        record = normalize_operator_record(raw, fallback_rank=index)
 
-        country = str(
-            get_field_val(
-                record,
-                ["Country", "country", "Flag", "flag"],
-                ""
-            )
-        ).strip()
+        if record["rank"] <= 0:
+            continue
 
-        teu = parse_int(
-            get_field_val(
-                record,
-                ["TotalTeu", "totalTeu", "TEU", "teu", "Capacity", "capacity"]
-            )
-        )
+        if record["fleet_teu"] <= 0:
+            continue
 
-        teu_share = parse_float(
-            get_field_val(
-                record,
-                [
-                    "TotalShare",
-                    "totalShare",
-                    "Share",
-                    "share",
-                    "MarketShare",
-                    "marketShare",
-                    "percent"
-                ]
-            )
-        )
+        normalized.append(record)
 
-        ships = parse_int(
-            get_field_val(
-                record,
-                [
-                    "TotalShips",
-                    "totalShips",
-                    "Ships",
-                    "ships",
-                    "NbShips",
-                    "nbShips"
-                ]
-            )
-        )
+    normalized.sort(key=lambda row: row["rank"])
 
-        chartered_teu = parse_int(
-            get_field_val(
-                record,
-                [
-                    "CharteredTeu",
-                    "charteredTeu",
-                    "CharterTeu",
-                    "charter_teu",
-                    "chartTeu"
-                ]
-            )
-        )
+    seen_ranks = set()
+    deduplicated = []
 
-        chartered_share = parse_float(
-            get_field_val(
-                record,
-                [
-                    "CharteredShare",
-                    "charteredShare",
-                    "CharterShare",
-                    "charter_share",
-                    "chartProcent"
-                ]
-            )
-        )
+    for record in normalized:
+        rank = record["rank"]
 
-        chartered_ships = parse_int(
-            get_field_val(
-                record,
-                [
-                    "CharteredShips",
-                    "charteredShips",
-                    "CharterShips",
-                    "charter_ships",
-                    "chartShips"
-                ]
-            )
-        )
+        if rank in seen_ranks:
+            continue
 
-        owned_teu = parse_int(
-            get_field_val(
-                record,
-                [
-                    "OwnedTeu",
-                    "ownedTeu",
-                    "OwnTeu",
-                    "own_teu"
-                ]
-            )
-        )
+        seen_ranks.add(rank)
+        deduplicated.append(record)
 
-        owned_share = parse_float(
-            get_field_val(
-                record,
-                [
-                    "OwnedShare",
-                    "ownedShare",
-                    "OwnShare",
-                    "own_share"
-                ]
-            )
-        )
+    return deduplicated
 
-        if owned_share == 0.0 and teu > 0 and owned_teu > 0:
-            owned_share = round((owned_teu / teu) * 100, 2)
+# =========================================================
+# 8. Metrics and Quality Validation
+# =========================================================
 
-        owned_ships = parse_int(
-            get_field_val(
-                record,
-                [
-                    "OwnedShips",
-                    "ownedShips",
-                    "OwnShips",
-                    "own_ships"
-                ]
-            )
-        )
+def calculate_metrics(
+    operators: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    total_teu = sum(row["fleet_teu"] for row in operators)
+    total_ships = sum(row["fleet_ships"] for row in operators)
 
-        orderbook_teu = parse_int(
-            get_field_val(
-                record,
-                [
-                    "TEUOrderbook",
-                    "TeuOrderbook",
-                    "teu_orderbook",
-                    "teuorderbook",
-                    "OrderbookTeu",
-                    "orderbookTeu",
-                    "OrderBookTEU",
-                    "OrderbookTEU",
-                    "orderbook_teu",
-                    "orderbookteu",
-                    "Orderbook_Teu",
-                    "OBTeu",
-                    "OBTEU",
-                    "orderTeu"
-                ]
-            )
-        )
+    top10 = sorted(
+        operators,
+        key=lambda row: row["fleet_teu"],
+        reverse=True,
+    )[:10]
 
-        orderbook_ships = parse_int(
-            get_field_val(
-                record,
-                [
-                    "ShipsOrderbook",
-                    "ShipOrderbook",
-                    "ships_orderbook",
-                    "shipsorderbook",
-                    "OrderbookShips",
-                    "orderbookShips",
-                    "OrderBookShips",
-                    "OrderBookNb",
-                    "OrderbookNb",
-                    "orderbook_ships",
-                    "orderbookships",
-                    "Orderbook_Ships",
-                    "OBShips",
-                    "OBNb",
-                    "orderShips"
-                ]
-            )
-        )
-
-        orderbook_teu_share = parse_float(
-            get_field_val(
-                record,
-                [
-                    "OrderbookShare",
-                    "orderbookShare",
-                    "OrderBookShare",
-                    "TEUOrderbookShare",
-                    "orderbook_share",
-                    "OBShare",
-                    "orderProcents"
-                ]
-            )
-        )
-
-        if orderbook_teu_share == 0.0 and teu > 0 and orderbook_teu > 0:
-            orderbook_teu_share = round((orderbook_teu / teu) * 100, 2)
-
-        operators.append({
-            "snapshot_date": snapshot_date,
-            "rank": rank,
-            "name": name,
-            "country": country,
-            "teu": teu,
-            "teu_share": teu_share,
-            "ships": ships,
-            "chartered_teu": chartered_teu,
-            "chartered_share": chartered_share,
-            "chartered_ships": chartered_ships,
-            "owned_teu": owned_teu,
-            "owned_share": owned_share,
-            "owned_ships": owned_ships,
-            "orderbook_teu": orderbook_teu,
-            "orderbook_teu_share": orderbook_teu_share,
-            "orderbook_ships": orderbook_ships,
-            "created_at": now_iso
-        })
-
-    operators.sort(key=lambda row: row["rank"])
-
-    return operators
-
-def build_snapshot_metrics(operators):
-    total_teu = sum(op["teu"] for op in operators)
-    total_ships = sum(op["ships"] for op in operators)
-
-    orderbook_teu = sum(op["orderbook_teu"] for op in operators)
-    orderbook_ships = sum(op["orderbook_ships"] for op in operators)
-
-    top10 = sorted(operators, key=lambda row: row["rank"])[:10]
-    top10_teu = sum(op["teu"] for op in top10)
+    top10_total_teu = sum(row["fleet_teu"] for row in top10)
+    orderbook_total_teu = sum(row["orderbook_teu"] for row in operators)
 
     top10_share = (
-        round((top10_teu / total_teu) * 100, 2)
+        round(top10_total_teu / total_teu * 100, 2)
         if total_teu > 0
         else 0.0
     )
 
-    nonzero_teu_rows = sum(1 for op in operators if op["teu"] > 0)
-    nonzero_ships_rows = sum(1 for op in operators if op["ships"] > 0)
-    nonzero_orderbook_rows = sum(
-        1 for op in operators if op["orderbook_teu"] > 0
-    )
-
     return {
-        "total_teu": total_teu,
-        "total_ships": total_ships,
+        "global_total_teu": total_teu,
+        "global_total_ships": total_ships,
+        "top100_total_teu": total_teu,
+        "top100_total_ships": total_ships,
+        "top10_total_teu": top10_total_teu,
+        "top10_share": top10_share,
+        "orderbook_total_teu": orderbook_total_teu,
+
+        # 기존 DB/JSON 호환 필드
+        "global_teu": total_teu,
+        "global_ships": total_ships,
         "top100_teu": total_teu,
         "top100_ships": total_ships,
-        "top100_share": 100.0,
-        "orderbook_teu": orderbook_teu,
-        "orderbook_ships": orderbook_ships,
-        "top10_teu": top10_teu,
-        "top10_share": top10_share,
-        "nonzero_teu_rows": nonzero_teu_rows,
-        "nonzero_ships_rows": nonzero_ships_rows,
-        "nonzero_orderbook_rows": nonzero_orderbook_rows
+        "total_teu": total_teu,
+        "total_ships": total_ships,
     }
 
-# =========================================================
-# 7. Snapshot Quality Validation
-# =========================================================
-def get_latest_valid_snapshot_metrics(conn, exclude_date=None):
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-
-    sql = """
-        SELECT
-            snapshot_date,
-            total_teu,
-            total_ships,
-            orderbook_teu,
-            orderbook_ships
-        FROM snapshot_meta
-        WHERE COALESCE(is_valid, 1) = 1
-    """
-
-    params = []
-
-    if exclude_date:
-        sql += " AND snapshot_date <> ?"
-        params.append(exclude_date)
-
-    sql += " ORDER BY snapshot_date DESC LIMIT 1"
-
-    cursor.execute(sql, params)
-    row = cursor.fetchone()
-
-    return dict(row) if row else None
-
-def validate_snapshot(operators, metrics, previous_metrics=None):
+def validate_snapshot(
+    operators: List[Dict[str, Any]],
+    metrics: Dict[str, Any],
+) -> Tuple[bool, List[str]]:
     errors = []
 
-    ranks = [op["rank"] for op in operators]
-    names = [op["name"].strip().lower() for op in operators if op["name"].strip()]
+    operator_count = len(operators)
 
-    unique_ranks = set(ranks)
-    unique_names = set(names)
-
-    missing_core_names = [
-        op["rank"]
-        for op in operators
-        if not op["name"] or op["name"].strip().lower() == "unknown"
-    ]
-
-    # 1. 행 수 / 순위 무결성
-    if len(operators) < MIN_OPERATOR_COUNT:
+    if operator_count < MIN_OPERATOR_COUNT:
         errors.append(
-            f"Operator row count too low: {len(operators)} "
+            f"Operator count too low: {operator_count} "
             f"(minimum: {MIN_OPERATOR_COUNT})"
         )
 
-    if len(unique_ranks) < MIN_OPERATOR_COUNT:
+    if operator_count > MAX_OPERATOR_COUNT:
         errors.append(
-            f"Unique rank count too low: {len(unique_ranks)} "
-            f"(minimum: {MIN_OPERATOR_COUNT})"
+            f"Operator count too high: {operator_count} "
+            f"(maximum: {MAX_OPERATOR_COUNT})"
         )
 
-    if len(unique_names) < MIN_UNIQUE_OPERATOR_COUNT:
+    if metrics["total_teu"] < MIN_TOTAL_FLEET_TEU:
         errors.append(
-            f"Unique operator name count too low: {len(unique_names)} "
-            f"(minimum: {MIN_UNIQUE_OPERATOR_COUNT})"
+            f"Total fleet TEU invalid: {metrics['total_teu']:,} "
+            f"(minimum: {MIN_TOTAL_FLEET_TEU:,})"
         )
 
-    if missing_core_names:
+    if metrics["total_ships"] < MIN_TOTAL_FLEET_SHIPS:
         errors.append(
-            f"Unknown or empty operator names found at ranks: "
-            f"{missing_core_names[:10]}"
+            f"Total fleet ships invalid: {metrics['total_ships']:,} "
+            f"(minimum: {MIN_TOTAL_FLEET_SHIPS:,})"
         )
 
-    expected_ranks = set(range(1, 101))
-    missing_ranks = sorted(expected_ranks - unique_ranks)
-
-    if missing_ranks and len(missing_ranks) > 5:
+    if metrics["top10_total_teu"] < MIN_TOP10_TEU:
         errors.append(
-            f"Too many missing ranks: {missing_ranks}"
-        )
-
-    # 2. Fleet Capacity 검증
-    if metrics["total_teu"] < MIN_TOTAL_TEU:
-        errors.append(
-            f"Total TEU invalid: {metrics['total_teu']:,} "
-            f"(minimum: {MIN_TOTAL_TEU:,})"
-        )
-
-    if metrics["total_ships"] < MIN_TOTAL_SHIPS:
-        errors.append(
-            f"Total ships invalid: {metrics['total_ships']:,} "
-            f"(minimum: {MIN_TOTAL_SHIPS:,})"
-        )
-
-    if metrics["nonzero_teu_rows"] < MIN_OPERATOR_COUNT:
-        errors.append(
-            f"Operators with nonzero TEU too low: "
-            f"{metrics['nonzero_teu_rows']}"
-        )
-
-    if metrics["nonzero_ships_rows"] < MIN_OPERATOR_COUNT:
-        errors.append(
-            f"Operators with nonzero ships too low: "
-            f"{metrics['nonzero_ships_rows']}"
-        )
-
-    # 3. CR10 검증
-    if metrics["top10_teu"] < MIN_TOP10_TEU:
-        errors.append(
-            f"Top 10 TEU invalid: {metrics['top10_teu']:,} "
+            f"Top 10 total TEU invalid: {metrics['top10_total_teu']:,} "
             f"(minimum: {MIN_TOP10_TEU:,})"
         )
 
-    if metrics["top10_share"] < MIN_TOP10_SHARE:
+    if metrics["orderbook_total_teu"] < MIN_ORDERBOOK_TEU:
         errors.append(
-            f"Top 10 concentration invalid: "
-            f"{metrics['top10_share']:.2f}% "
-            f"(minimum: {MIN_TOP10_SHARE:.2f}%)"
-        )
-
-    # 4. Orderbook 검증
-    # 이번 장애의 직접 원인이므로 0 또는 전체 누락을 명확히 차단한다.
-    if metrics["orderbook_teu"] < MIN_ORDERBOOK_TEU:
-        errors.append(
-            f"Orderbook TEU invalid: {metrics['orderbook_teu']:,} "
+            f"Orderbook TEU invalid: {metrics['orderbook_total_teu']:,} "
             f"(minimum: {MIN_ORDERBOOK_TEU:,})"
         )
 
-    if metrics["orderbook_ships"] < MIN_ORDERBOOK_SHIPS:
+    if metrics["top10_share"] <= 0 or metrics["top10_share"] > MAX_TOP10_SHARE * 100:
         errors.append(
-            f"Orderbook ships invalid: {metrics['orderbook_ships']:,} "
-            f"(minimum: {MIN_ORDERBOOK_SHIPS:,})"
+            f"Top 10 concentration invalid: "
+            f"{metrics['top10_share']:.2f}%"
         )
 
-    if metrics["nonzero_orderbook_rows"] < MIN_NONZERO_ORDERBOOK_OPERATORS:
+    positive_teu_rows = [
+        row for row in operators
+        if row["fleet_teu"] > 0
+    ]
+
+    if len(positive_teu_rows) < MIN_OPERATOR_COUNT:
         errors.append(
-            f"Operators with nonzero orderbook too low: "
-            f"{metrics['nonzero_orderbook_rows']} "
-            f"(minimum: {MIN_NONZERO_ORDERBOOK_OPERATORS})"
+            "Too few operators contain positive fleet TEU values."
         )
 
-    # 5. 직전 정상 스냅샷 대비 급격한 이상 변동 검증
-    if previous_metrics:
-        teu_change = percent_change(
-            metrics["total_teu"],
-            previous_metrics["total_teu"]
+    unique_operators = {
+        row["operator"].strip().lower()
+        for row in operators
+        if row["operator"]
+    }
+
+    if len(unique_operators) < MIN_OPERATOR_COUNT:
+        errors.append(
+            "Too few unique operator names were extracted."
         )
 
-        ships_change = percent_change(
-            metrics["total_ships"],
-            previous_metrics["total_ships"]
-        )
+    return len(errors) == 0, errors
 
-        ob_change = percent_change(
-            metrics["orderbook_teu"],
-            previous_metrics["orderbook_teu"]
-        )
+# =========================================================
+# 9. Persistence
+# =========================================================
 
-        if teu_change is not None and abs(teu_change) > MAX_TOTAL_TEU_CHANGE_RATIO:
-            errors.append(
-                "Total TEU change versus prior valid snapshot is abnormal: "
-                f"{teu_change:.2%}"
-            )
-
-        if ships_change is not None and abs(ships_change) > MAX_TOTAL_SHIPS_CHANGE_RATIO:
-            errors.append(
-                "Total ships change versus prior valid snapshot is abnormal: "
-                f"{ships_change:.2%}"
-            )
-
-        if ob_change is not None and abs(ob_change) > MAX_ORDERBOOK_TEU_CHANGE_RATIO:
-            errors.append(
-                "Orderbook TEU change versus prior valid snapshot is abnormal: "
-                f"{ob_change:.2%}"
-            )
-
-    if errors:
-        raise SnapshotValidationError(
-            "Snapshot quality validation failed. "
-            "No database write was performed.\n- "
-            + "\n- ".join(errors)
-        )
-
-def is_snapshot_valid_for_export(meta, operators):
-    """
-    과거에 is_valid 컬럼 없이 저장된 레코드도 방어적으로 재검증한다.
-    따라서 이미 저장된 0 KPI 스냅샷도 JSON 최신값으로 노출되지 않는다.
-    """
-    if not meta:
-        return False
-
-    if meta.get("is_valid") == 0:
-        return False
+def persist_snapshot(
+    snapshot_date: str,
+    operators: List[Dict[str, Any]],
+    metrics: Dict[str, Any],
+    source_url: str,
+    raw_hash: str,
+) -> None:
+    conn = get_connection()
 
     try:
-        metrics = build_snapshot_metrics(operators)
-        validate_snapshot(
-            operators=operators,
-            metrics=metrics,
-            previous_metrics=None
-        )
-        return True
+        extracted_at = now_iso()
 
-    except SnapshotValidationError as exc:
-        logger.warning(
-            "Excluding invalid historical snapshot %s from export: %s",
-            meta.get("snapshot_date"),
-            str(exc).replace("\n", " | ")
-        )
-        return False
+        conn.execute("BEGIN")
 
-# =========================================================
-# 8. Atomic Persistence
-# =========================================================
-def persist_snapshot(snapshot_date, now_iso, operators, metrics):
-    """
-    검증이 통과한 데이터만 이 함수로 전달된다.
-
-    동일 날짜 재실행 시에는 기존 해당 날짜 데이터를 트랜잭션 내에서
-    완전 교체한다. 중간 오류가 발생하면 rollback되어 기존 데이터가 유지된다.
-    """
-    with db_lock, sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-
-        try:
-            cursor.execute("BEGIN IMMEDIATE")
-
-            cursor.execute("""
-                DELETE FROM operator_snapshots
-                WHERE snapshot_date = ?
-            """, (snapshot_date,))
-
-            cursor.execute("""
-                DELETE FROM snapshot_meta
-                WHERE snapshot_date = ?
-            """, (snapshot_date,))
-
-            cursor.execute("""
-                INSERT INTO snapshot_meta (
-                    snapshot_date,
-                    updated_at,
-                    total_teu,
-                    total_ships,
-                    top100_teu,
-                    top100_ships,
-                    top100_share,
-                    orderbook_teu,
-                    orderbook_ships,
-                    is_valid,
-                    validation_error
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
+        conn.execute("""
+            INSERT INTO snapshot_meta (
                 snapshot_date,
-                now_iso,
-                metrics["total_teu"],
-                metrics["total_ships"],
-                metrics["top100_teu"],
-                metrics["top100_ships"],
-                metrics["top100_share"],
-                metrics["orderbook_teu"],
-                metrics["orderbook_ships"],
-                1,
-                None
+                global_total_teu,
+                global_total_ships,
+                top100_total_teu,
+                top100_total_ships,
+                top10_total_teu,
+                top10_share,
+                orderbook_total_teu,
+                extracted_at,
+                source_url,
+                raw_hash,
+                global_teu,
+                global_ships,
+                top100_teu,
+                top100_ships,
+                total_teu,
+                total_ships,
+                created_at,
+                updated_at,
+                notes,
+                is_valid,
+                validation_error
+            )
+            VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+            ON CONFLICT(snapshot_date) DO UPDATE SET
+                global_total_teu = excluded.global_total_teu,
+                global_total_ships = excluded.global_total_ships,
+                top100_total_teu = excluded.top100_total_teu,
+                top100_total_ships = excluded.top100_total_ships,
+                top10_total_teu = excluded.top10_total_teu,
+                top10_share = excluded.top10_share,
+                orderbook_total_teu = excluded.orderbook_total_teu,
+                extracted_at = excluded.extracted_at,
+                source_url = excluded.source_url,
+                raw_hash = excluded.raw_hash,
+                global_teu = excluded.global_teu,
+                global_ships = excluded.global_ships,
+                top100_teu = excluded.top100_teu,
+                top100_ships = excluded.top100_ships,
+                total_teu = excluded.total_teu,
+                total_ships = excluded.total_ships,
+                updated_at = excluded.updated_at,
+                notes = excluded.notes,
+                is_valid = excluded.is_valid,
+                validation_error = excluded.validation_error
+        """, (
+            snapshot_date,
+            metrics["global_total_teu"],
+            metrics["global_total_ships"],
+            metrics["top100_total_teu"],
+            metrics["top100_total_ships"],
+            metrics["top10_total_teu"],
+            metrics["top10_share"],
+            metrics["orderbook_total_teu"],
+            extracted_at,
+            source_url,
+            raw_hash,
+            metrics["global_teu"],
+            metrics["global_ships"],
+            metrics["top100_teu"],
+            metrics["top100_ships"],
+            metrics["total_teu"],
+            metrics["total_ships"],
+            extracted_at,
+            extracted_at,
+            "Validated Alphaliner Top 100 snapshot",
+            1,
+            None,
+        ))
+
+        conn.execute(
+            "DELETE FROM operator_snapshots WHERE snapshot_date = ?",
+            (snapshot_date,),
+        )
+
+        rows = []
+
+        for operator in operators:
+            rows.append((
+                snapshot_date,
+                operator["rank"],
+                operator["operator"],
+                operator["fleet_teu"],
+                operator["fleet_ships"],
+                operator["owned_teu"],
+                operator["owned_ships"],
+                operator["owned_share"],
+                operator["chartered_teu"],
+                operator["chartered_ships"],
+                operator["chartered_share"],
+                operator["orderbook_teu"],
+                operator["orderbook_ships"],
+                operator["orderbook_share"],
+                operator["country"],
+                operator["teu"],
+                operator["teu_share"],
+                operator["ships"],
+                operator["orderbook_teu_share"],
+                extracted_at,
             ))
 
-            cursor.executemany("""
-                INSERT INTO operator_snapshots (
-                    snapshot_date,
-                    rank,
-                    name,
-                    country,
-                    teu,
-                    teu_share,
-                    ships,
-                    chartered_teu,
-                    chartered_share,
-                    chartered_ships,
-                    owned_teu,
-                    owned_share,
-                    owned_ships,
-                    orderbook_teu,
-                    orderbook_teu_share,
-                    orderbook_ships,
-                    created_at
-                ) VALUES (
-                    :snapshot_date,
-                    :rank,
-                    :name,
-                    :country,
-                    :teu,
-                    :teu_share,
-                    :ships,
-                    :chartered_teu,
-                    :chartered_share,
-                    :chartered_ships,
-                    :owned_teu,
-                    :owned_share,
-                    :owned_ships,
-                    :orderbook_teu,
-                    :orderbook_teu_share,
-                    :orderbook_ships,
-                    :created_at
-                )
-            """, operators)
+        conn.executemany("""
+            INSERT INTO operator_snapshots (
+                snapshot_date,
+                rank,
+                operator,
+                fleet_teu,
+                fleet_ships,
+                owned_teu,
+                owned_ships,
+                owned_share,
+                chartered_teu,
+                chartered_ships,
+                chartered_share,
+                orderbook_teu,
+                orderbook_ships,
+                orderbook_share,
+                country,
+                teu,
+                teu_share,
+                ships,
+                orderbook_teu_share,
+                created_at
+            )
+            VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+        """, rows)
 
-            conn.commit()
+        conn.commit()
 
-        except Exception:
-            conn.rollback()
-            raise
-
-def process_and_persist(records):
-    init_db()
-
-    snapshot_date = datetime.now().strftime("%Y-%m-%d")
-    now_iso = datetime.now().isoformat()
-
-    operators = normalize_records(
-        records=records,
-        snapshot_date=snapshot_date,
-        now_iso=now_iso
-    )
-
-    metrics = build_snapshot_metrics(operators)
-
-    with db_lock, sqlite3.connect(DB_PATH) as conn:
-        previous_metrics = get_latest_valid_snapshot_metrics(
-            conn=conn,
-            exclude_date=snapshot_date
+        logger.info(
+            "Persisted VALID snapshot %s | operators=%s | fleet_teu=%s | fleet_ships=%s",
+            snapshot_date,
+            len(operators),
+            f"{metrics['total_teu']:,}",
+            f"{metrics['total_ships']:,}",
         )
 
-    logger.info(
-        "Candidate snapshot metrics | "
-        "operators=%s | total_teu=%s | total_ships=%s | "
-        "top10_teu=%s | top10_share=%.2f%% | "
-        "orderbook_teu=%s | orderbook_ships=%s | "
-        "nonzero_orderbook_operators=%s",
-        len(operators),
-        f"{metrics['total_teu']:,}",
-        f"{metrics['total_ships']:,}",
-        f"{metrics['top10_teu']:,}",
-        metrics["top10_share"],
-        f"{metrics['orderbook_teu']:,}",
-        f"{metrics['orderbook_ships']:,}",
-        metrics["nonzero_orderbook_rows"]
-    )
+    except Exception:
+        conn.rollback()
+        raise
 
-    # 가장 중요:
-    # 검증 실패 시 persist_snapshot()까지 도달하지 않으므로
-    # 기존 정상 DB/JSON 스냅샷이 절대로 덮어써지지 않는다.
-    validate_snapshot(
-        operators=operators,
-        metrics=metrics,
-        previous_metrics=previous_metrics
-    )
-
-    persist_snapshot(
-        snapshot_date=snapshot_date,
-        now_iso=now_iso,
-        operators=operators,
-        metrics=metrics
-    )
-
-    logger.info(
-        "Persisted VALID snapshot %s: %s operators "
-        "(TEU: %s | Ships: %s | Orderbook: %s TEU / %s ships).",
-        snapshot_date,
-        len(operators),
-        f"{metrics['total_teu']:,}",
-        f"{metrics['total_ships']:,}",
-        f"{metrics['orderbook_teu']:,}",
-        f"{metrics['orderbook_ships']:,}"
-    )
-
-    return snapshot_date
+    finally:
+        conn.close()
 
 # =========================================================
-# 9. Invalid Historical Snapshot Cleanup
+# 10. JSON Export
 # =========================================================
-def purge_invalid_snapshots(dry_run=False):
-    init_db()
 
-    invalid_dates = []
+def row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    return {key: row[key] for key in row.keys()}
 
-    with db_lock, sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+def export_json() -> bool:
+    conn = get_connection()
 
-        cursor.execute("""
+    try:
+        snapshot_rows = conn.execute("""
             SELECT *
             FROM snapshot_meta
-            ORDER BY snapshot_date ASC
-        """)
-
-        meta_rows = cursor.fetchall()
-
-        for meta_row in meta_rows:
-            meta = dict(meta_row)
-            snapshot_date = meta["snapshot_date"]
-
-            cursor.execute("""
-                SELECT *
-                FROM operator_snapshots
-                WHERE snapshot_date = ?
-                ORDER BY rank ASC
-            """, (snapshot_date,))
-
-            operators = [dict(row) for row in cursor.fetchall()]
-
-            if not is_snapshot_valid_for_export(meta, operators):
-                invalid_dates.append(snapshot_date)
-
-        if not invalid_dates:
-            logger.info("No invalid snapshots found.")
-            return []
-
-        logger.warning(
-            "Invalid snapshots identified: %s",
-            ", ".join(invalid_dates)
-        )
-
-        if dry_run:
-            logger.info("Dry-run mode enabled. No records were deleted.")
-            return invalid_dates
-
-        try:
-            cursor.execute("BEGIN IMMEDIATE")
-
-            for snapshot_date in invalid_dates:
-                cursor.execute("""
-                    DELETE FROM operator_snapshots
-                    WHERE snapshot_date = ?
-                """, (snapshot_date,))
-
-                cursor.execute("""
-                    DELETE FROM snapshot_meta
-                    WHERE snapshot_date = ?
-                """, (snapshot_date,))
-
-            conn.commit()
-
-        except Exception:
-            conn.rollback()
-            raise
-
-    logger.info(
-        "Deleted %s invalid snapshot(s): %s",
-        len(invalid_dates),
-        ", ".join(invalid_dates)
-    )
-
-    return invalid_dates
-
-# =========================================================
-# 10. Static Export & Contract Serialization
-# =========================================================
-def export_json_and_html():
-    init_db()
-
-    snapshots = {}
-    valid_dates = []
-
-    with db_lock, sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT *
-            FROM snapshot_meta
+            WHERE COALESCE(is_valid, 1) = 1
+              AND COALESCE(total_teu, global_total_teu, 0) > 0
             ORDER BY snapshot_date DESC
-        """)
+        """).fetchall()
 
-        meta_rows = cursor.fetchall()
+        if not snapshot_rows:
+            logger.warning(
+                "No valid snapshots are available. "
+                "Existing JSON file will not be overwritten."
+            )
+            return False
 
-        for meta_row in meta_rows:
-            meta = dict(meta_row)
-            snapshot_date = meta["snapshot_date"]
+        snapshots: Dict[str, Any] = {}
+        dates: List[str] = []
 
-            cursor.execute("""
+        for snapshot_row in snapshot_rows:
+            snapshot = row_to_dict(snapshot_row)
+            snapshot_date = snapshot["snapshot_date"]
+
+            operator_rows = conn.execute("""
                 SELECT *
                 FROM operator_snapshots
                 WHERE snapshot_date = ?
                 ORDER BY rank ASC
-            """, (snapshot_date,))
+            """, (snapshot_date,)).fetchall()
 
-            operators = [dict(row) for row in cursor.fetchall()]
+            operators = [
+                row_to_dict(operator_row)
+                for operator_row in operator_rows
+            ]
 
-            # 기존에 잘못 저장된 0 / null / incomplete snapshot도 제외
-            if not is_snapshot_valid_for_export(meta, operators):
+            if len(operators) < MIN_OPERATOR_COUNT:
+                logger.warning(
+                    "Skipping snapshot %s from JSON export because operator count is only %s.",
+                    snapshot_date,
+                    len(operators),
+                )
                 continue
 
-            valid_dates.append(snapshot_date)
-
             snapshots[snapshot_date] = {
-                "meta": meta,
-                "operators": operators
+                "meta": snapshot,
+                "operators": operators,
             }
 
-    if not valid_dates:
-        logger.warning(
-            "No valid snapshots found. Existing JSON file will not be overwritten."
-        )
-        return
+            dates.append(snapshot_date)
 
-    data_payload = {
-        "generated_at": datetime.now().isoformat(),
-        "dates": valid_dates,
-        "latest_date": valid_dates[0],
-        "snapshots": snapshots
+        if not dates:
+            logger.warning(
+                "No usable valid snapshots remain after operator validation. "
+                "Existing JSON file will not be overwritten."
+            )
+            return False
+
+        payload = {
+            "generated_at": now_iso(),
+            "latest_date": dates[0],
+            "dates": dates,
+            "snapshots": snapshots,
+        }
+
+        temporary_path = JSON_PATH.with_suffix(".json.tmp")
+
+        with open(temporary_path, "w", encoding="utf-8") as file:
+            json.dump(
+                payload,
+                file,
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        temporary_path.replace(JSON_PATH)
+
+        logger.info(
+            "Exported valid JSON contract: %s",
+            JSON_PATH,
+        )
+
+        return True
+
+    finally:
+        conn.close()
+
+# =========================================================
+# 11. Static HTML Dashboard
+# =========================================================
+
+def generate_html() -> None:
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alphaliner Top 100 | MI Terminal</title>
+<style>
+:root {
+    --bg: #07111f;
+    --panel: #0d1b2a;
+    --panel2: #10243a;
+    --line: #203852;
+    --text: #e6edf5;
+    --muted: #89a0b8;
+    --blue: #42a5f5;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #fbbf24;
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: Arial, Helvetica, sans-serif;
+}
+header {
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--line);
+    background: #081522;
+}
+h1 {
+    margin: 0;
+    font-size: 22px;
+    letter-spacing: .5px;
+}
+.subtitle {
+    color: var(--muted);
+    margin-top: 6px;
+    font-size: 13px;
+}
+.container {
+    padding: 22px 28px 40px;
+}
+.toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 18px;
+    gap: 12px;
+}
+select {
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 9px 12px;
+}
+.status {
+    color: var(--muted);
+    font-size: 12px;
+}
+.kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(180px, 1fr));
+    gap: 14px;
+    margin-bottom: 20px;
+}
+.card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 16px;
+}
+.card-label {
+    color: var(--muted);
+    font-size: 12px;
+    text-transform: uppercase;
+}
+.card-value {
+    margin-top: 10px;
+    font-size: 25px;
+    font-weight: bold;
+}
+.card-delta {
+    margin-top: 8px;
+    font-size: 12px;
+}
+.up { color: var(--green); }
+.down { color: var(--red); }
+.flat { color: var(--muted); }
+.table-wrap {
+    overflow-x: auto;
+    background: var(--panel);
+    border: 1px solid var(--line);
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 1100px;
+}
+th {
+    text-align: right;
+    color: #9eb4cc;
+    background: var(--panel2);
+    font-size: 11px;
+    padding: 11px 10px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+}
+td {
+    text-align: right;
+    padding: 10px;
+    border-bottom: 1px solid #162c43;
+    font-size: 12px;
+}
+th:nth-child(1), td:nth-child(1),
+th:nth-child(2), td:nth-child(2),
+th:nth-child(3), td:nth-child(3) {
+    text-align: left;
+}
+tr:hover { background: #122940; }
+.rank {
+    color: var(--blue);
+    font-weight: bold;
+}
+.operator {
+    font-weight: bold;
+}
+.error {
+    color: #fecaca;
+    background: #450a0a;
+    border: 1px solid #7f1d1d;
+    padding: 16px;
+}
+@media (max-width: 900px) {
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .container { padding: 18px 14px; }
+}
+</style>
+</head>
+<body>
+<header>
+    <h1>ALPHALINER TOP 100 LINER OPERATORS</h1>
+    <div class="subtitle">Maritime Intelligence Terminal · Fleet Capacity, Concentration and Orderbook</div>
+</header>
+
+<div class="container">
+    <div class="toolbar">
+        <select id="dateSelect"></select>
+        <div class="status" id="status">Loading data...</div>
+    </div>
+
+    <div class="kpis">
+        <div class="card">
+            <div class="card-label">Total Ships</div>
+            <div class="card-value" id="totalShips">-</div>
+            <div class="card-delta" id="totalShipsDelta">-</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Total Fleet TEU</div>
+            <div class="card-value" id="totalTeu">-</div>
+            <div class="card-delta" id="totalTeuDelta">-</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Top 10 Concentration</div>
+            <div class="card-value" id="top10Share">-</div>
+            <div class="card-delta" id="top10ShareDelta">-</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Orderbook</div>
+            <div class="card-value" id="orderbook">-</div>
+            <div class="card-delta" id="orderbookDelta">-</div>
+        </div>
+    </div>
+
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Operator</th>
+                    <th>Fleet TEU</th>
+                    <th>Ships</th>
+                    <th>Owned TEU</th>
+                    <th>Chartered TEU</th>
+                    <th>Orderbook TEU</th>
+                    <th>Orderbook / Fleet</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+const nf = new Intl.NumberFormat('en-US');
+
+function number(value) {
+    return Number(value || 0);
+}
+
+function fmt(value) {
+    return nf.format(Math.round(number(value)));
+}
+
+function fmtPct(value) {
+    return number(value).toFixed(2) + '%';
+}
+
+function deltaText(current, previous, suffix = '') {
+    if (previous === null || previous === undefined) {
+        return '<span class="flat">No prior snapshot</span>';
     }
 
-    with open(JSON_PATH, "w", encoding="utf-8") as file:
-        json.dump(
-            data_payload,
-            file,
-            ensure_ascii=False,
-            indent=2
-        )
+    const diff = number(current) - number(previous);
+
+    if (diff === 0) {
+        return '<span class="flat">0' + suffix + ' vs prior snapshot</span>';
+    }
+
+    const cls = diff > 0 ? 'up' : 'down';
+    const sign = diff > 0 ? '+' : '';
+
+    return '<span class="' + cls + '">' +
+        sign + fmt(diff) + suffix + ' vs prior snapshot</span>';
+}
+
+function getMeta(snapshot) {
+    return snapshot && snapshot.meta ? snapshot.meta : {};
+}
+
+function renderSnapshot(data, selectedDate) {
+    const snapshot = data.snapshots[selectedDate];
+    const meta = getMeta(snapshot);
+    const dates = data.dates || [];
+    const currentIndex = dates.indexOf(selectedDate);
+    const priorDate = currentIndex >= 0 ? dates[currentIndex + 1] : null;
+    const priorMeta = priorDate ? getMeta(data.snapshots[priorDate]) : null;
+
+    document.getElementById('totalShips').textContent =
+        fmt(meta.total_ships || meta.global_total_ships);
+
+    document.getElementById('totalTeu').textContent =
+        fmt(meta.total_teu || meta.global_total_teu);
+
+    document.getElementById('top10Share').textContent =
+        fmtPct(meta.top10_share);
+
+    document.getElementById('orderbook').textContent =
+        fmt(meta.orderbook_total_teu);
+
+    document.getElementById('totalShipsDelta').innerHTML = deltaText(
+        meta.total_ships || meta.global_total_ships,
+        priorMeta ? (priorMeta.total_ships || priorMeta.global_total_ships) : null
+    );
+
+    document.getElementById('totalTeuDelta').innerHTML = deltaText(
+        meta.total_teu || meta.global_total_teu,
+        priorMeta ? (priorMeta.total_teu || priorMeta.global_total_teu) : null
+    );
+
+    document.getElementById('top10ShareDelta').innerHTML = deltaText(
+        meta.top10_share,
+        priorMeta ? priorMeta.top10_share : null,
+        ' bps'
+    );
+
+    document.getElementById('orderbookDelta').innerHTML = deltaText(
+        meta.orderbook_total_teu,
+        priorMeta ? priorMeta.orderbook_total_teu : null
+    );
+
+    const body = document.getElementById('tableBody');
+    body.innerHTML = '';
+
+    (snapshot.operators || []).forEach(row => {
+        const tr = document.createElement('tr');
+
+        tr.innerHTML = `
+            <td class="rank">${row.rank ?? ''}</td>
+            <td class="operator">${row.operator ?? ''}</td>
+            <td>${fmt(row.fleet_teu || row.teu)}</td>
+            <td>${fmt(row.fleet_ships || row.ships)}</td>
+            <td>${fmt(row.owned_teu)}</td>
+            <td>${fmt(row.chartered_teu)}</td>
+            <td>${fmt(row.orderbook_teu)}</td>
+            <td>${fmtPct(row.orderbook_share || row.orderbook_teu_share)}</td>
+        `;
+
+        body.appendChild(tr);
+    });
+
+    document.getElementById('status').textContent =
+        'Snapshot: ' + selectedDate +
+        ' · Operators: ' + (snapshot.operators || []).length +
+        ' · Updated: ' + (meta.extracted_at || '-');
+}
+
+async function init() {
+    try {
+        const response = await fetch('./alphaliner_data.json?ts=' + Date.now());
+
+        if (!response.ok) {
+            throw new Error('Could not load alphaliner_data.json');
+        }
+
+        const data = await response.json();
+        const dates = data.dates || [];
+
+        if (!dates.length) {
+            throw new Error('No valid snapshots available.');
+        }
+
+        const select = document.getElementById('dateSelect');
+
+        dates.forEach(date => {
+            const option = document.createElement('option');
+            option.value = date;
+            option.textContent = date;
+
+            if (date === data.latest_date) {
+                option.selected = true;
+            }
+
+            select.appendChild(option);
+        });
+
+        renderSnapshot(data, select.value);
+
+        select.addEventListener('change', function() {
+            renderSnapshot(data, this.value);
+        });
+
+    } catch (error) {
+        document.querySelector('.container').innerHTML =
+            '<div class="error">Dashboard data could not be loaded: ' +
+            error.message +
+            '</div>';
+    }
+}
+
+init();
+</script>
+</body>
+</html>
+"""
+
+    with open(HTML_PATH, "w", encoding="utf-8") as file:
+        file.write(html)
+
+    logger.info("Generated dashboard HTML: %s", HTML_PATH)
+
+# =========================================================
+# 12. Main Processing Flow
+# =========================================================
+
+def process_and_persist() -> bool:
+    raw_records, page_info = fetch_alphaliner_data()
+
+    operators = normalize_records(raw_records)
+    metrics = calculate_metrics(operators)
 
     logger.info(
-        "Exported valid contract JSON to %s "
-        "(snapshots: %s, latest: %s)",
-        JSON_PATH,
-        len(valid_dates),
-        valid_dates[0]
+        "Candidate snapshot metrics | operators=%s | total_teu=%s | total_ships=%s | top10_share=%.2f%% | orderbook_teu=%s",
+        len(operators),
+        f"{metrics['total_teu']:,}",
+        f"{metrics['total_ships']:,}",
+        metrics["top10_share"],
+        f"{metrics['orderbook_total_teu']:,}",
     )
 
-    generate_static_html(data_payload)
-
-def generate_static_html(payload):
-    """
-    중요:
-    사용자가 올려주신 기존 generate_static_html(payload) 함수 전체를
-    이 위치에 그대로 유지하면 됩니다.
-
-    UI HTML/CSS/JavaScript는 데이터 계약인 아래 구조를 그대로 사용하므로
-    품질 검증 로직 추가와 충돌하지 않습니다.
-
-    payload = {
-        "generated_at": "...",
-        "dates": [...],
-        "latest_date": "...",
-        "snapshots": {
-            "YYYY-MM-DD": {
-                "meta": {...},
-                "operators": [...]
-            }
-        }
-    }
-    """
-
-    # -----------------------------------------------------
-    # 여기에는 기존 파일의 generate_static_html(payload)
-    # 함수 내용을 그대로 붙여 넣으세요.
-    # -----------------------------------------------------
-    #
-    # 기존 UI 생성 함수를 변경하지 않아도 됩니다.
-    #
-    # 단, 아래처럼 빈 파일을 만들면 안 됩니다.
-    # 현재 사용 중인 html_template = f"""...""" 전체를 유지해야 합니다.
-    #
-    raise NotImplementedError(
-        "기존 generate_static_html(payload) 함수의 HTML 템플릿을 "
-        "이 위치에 유지해야 합니다."
+    is_valid, validation_errors = validate_snapshot(
+        operators,
+        metrics,
     )
 
+    if not is_valid:
+        logger.error("Snapshot quality validation failed.")
+
+        for error in validation_errors:
+            logger.error("- %s", error)
+
+        logger.error(
+            "Scrape rejected. No invalid data has been written to the database."
+        )
+
+        return False
+
+    raw_hash = hashlib.sha256(
+        json.dumps(
+            raw_records,
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        ).encode("utf-8")
+    ).hexdigest()
+
+    persist_snapshot(
+        snapshot_date=today_str(),
+        operators=operators,
+        metrics=metrics,
+        source_url=page_info.get("url") or TARGET_URL,
+        raw_hash=raw_hash,
+    )
+
+    return True
+
+def export_json_and_html() -> None:
+    json_exported = export_json()
+
+    if json_exported:
+        generate_html()
+    else:
+        logger.warning(
+            "JSON export skipped. Existing dashboard files were retained."
+        )
+
 # =========================================================
-# 11. Flask Web Server
+# 13. Flask Routes
 # =========================================================
-app = Flask(__name__, static_folder=str(BASE_DIR))
 
 @app.route("/")
-def index():
-    if not HTML_PATH.exists():
-        export_json_and_html()
-
+def index() -> Response:
     return send_from_directory(BASE_DIR, "index.html")
 
 @app.route("/alphaliner_data.json")
-def get_data_json():
-    if not JSON_PATH.exists():
-        export_json_and_html()
-
-    return send_from_directory(
-        BASE_DIR,
-        "alphaliner_data.json",
-        mimetype="application/json"
-    )
-
-@app.route("/api/scrape", methods=["POST", "GET"])
-def trigger_scrape():
-    try:
-        records = fetch_alphaliner_data()
-        snapshot_date = process_and_persist(records)
-        export_json_and_html()
-
-        return {
-            "status": "success",
-            "date": snapshot_date,
-            "count": len(records)
-        }
-
-    except SnapshotValidationError as exc:
-        logger.error("Snapshot rejected by quality gate: %s", exc)
-
-        return {
-            "status": "rejected",
-            "message": str(exc)
-        }, 422
-
-    except Exception as exc:
-        logger.error("API scrape error: %s", exc)
-
-        return {
-            "status": "error",
-            "message": str(exc)
-        }, 500
+def data_json() -> Response:
+    return send_from_directory(BASE_DIR, "alphaliner_data.json")
 
 # =========================================================
-# 12. Main Entry Point
+# 14. Main
 # =========================================================
-def main():
+
+def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Alphaliner TOP 100 Scraper & MI Terminal Dashboard"
-    )
-
-    parser.add_argument(
-        "--scrape-only",
-        action="store_true",
-        help="Scrape, validate, persist and export; then exit."
+        description="Alphaliner Top 100 crawler and static dashboard generator."
     )
 
     parser.add_argument(
         "--cron",
         action="store_true",
-        help="Headless cron mode: scrape, validate, persist and export."
-    )
-
-    parser.add_argument(
-        "--export-only",
-        action="store_true",
-        help="Export JSON/HTML from valid DB snapshots without scraping."
-    )
-
-    parser.add_argument(
-        "--purge-invalid",
-        action="store_true",
-        help="Delete historical invalid snapshots, then regenerate JSON/HTML."
-    )
-
-    parser.add_argument(
-        "--purge-invalid-dry-run",
-        action="store_true",
-        help="List historical invalid snapshots without deleting them."
+        help="Run crawler once, export files, and exit.",
     )
 
     parser.add_argument(
         "--host",
         default="0.0.0.0",
-        help="Flask host."
+        help="Flask server host.",
     )
 
     parser.add_argument(
         "--port",
         type=int,
-        default=8080,
-        help="Flask port."
+        default=5000,
+        help="Flask server port.",
     )
 
-    args, unknown = parser.parse_known_args()
+    args = parser.parse_args()
 
-    if unknown:
-        logger.info("Ignored unknown CLI arguments: %s", unknown)
-
-    init_db()
-
-    if args.purge_invalid_dry_run:
-        purge_invalid_snapshots(dry_run=True)
-        sys.exit(0)
-
-    if args.purge_invalid:
-        purge_invalid_snapshots(dry_run=False)
-        export_json_and_html()
-        sys.exit(0)
-
-    if args.export_only:
-        export_json_and_html()
-        sys.exit(0)
-
-    if args.scrape_only or args.cron:
-        try:
-            records = fetch_alphaliner_data()
-            process_and_persist(records)
-            export_json_and_html()
-
-            logger.info("Scrape, validation and export completed successfully.")
-            sys.exit(0)
-
-        except SnapshotValidationError as exc:
-            logger.error("Scrape rejected. Existing valid snapshot was retained.")
-            logger.error(str(exc))
-            sys.exit(1)
-
-        except Exception as exc:
-            logger.error("Scrape failed: %s", exc)
-            sys.exit(1)
+    init_database()
 
     try:
-        with sqlite3.connect(DB_PATH) as conn:
-            snapshot_count = conn.cursor().execute("""
-                SELECT COUNT(*)
-                FROM snapshot_meta
-                WHERE COALESCE(is_valid, 1) = 1
-            """).fetchone()[0]
+        success = process_and_persist()
 
-        if snapshot_count == 0:
-            logger.info("No valid snapshots exist. Starting initial scrape.")
-
-            records = fetch_alphaliner_data()
-            process_and_persist(records)
-
-    except SnapshotValidationError as exc:
-        logger.warning(
-            "Initial scrape rejected by validation: %s",
-            exc
-        )
+        if not success:
+            logger.warning(
+                "Crawler did not produce a valid new snapshot. "
+                "Existing valid dashboard data will be retained."
+            )
 
     except Exception as exc:
-        logger.warning("Initial scrape attempt warning: %s", exc)
+        logger.exception(
+            "Alphaliner crawler execution failed: %s",
+            exc,
+        )
+
+        # 기존 정상 JSON/HTML이 있으면 그것을 유지한다.
+        export_json_and_html()
+
+        if args.cron:
+            sys.exit(1)
 
     export_json_and_html()
+
+    if args.cron:
+        logger.info("Cron execution completed.")
+        return
 
     logger.info(
         "Starting Alphaliner Web Server on http://%s:%s",
         args.host,
-        args.port
+        args.port,
     )
 
     app.run(
         host=args.host,
         port=args.port,
-        debug=False
+        debug=False,
     )
 
 if __name__ == "__main__":
