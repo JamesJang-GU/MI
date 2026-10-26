@@ -1,344 +1,275 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Alphaliner Top 100 | MI Terminal</title>
-<style>
-:root {
-    --bg: #07111f;
-    --panel: #0d1b2a;
-    --panel2: #10243a;
-    --line: #203852;
-    --text: #e6edf5;
-    --muted: #89a0b8;
-    --blue: #42a5f5;
-    --green: #22c55e;
-    --red: #ef4444;
-    --yellow: #fbbf24;
-}
-* { box-sizing: border-box; }
-body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: Arial, Helvetica, sans-serif;
-}
-header {
-    padding: 20px 28px;
-    border-bottom: 1px solid var(--line);
-    background: #081522;
-}
-h1 {
-    margin: 0;
-    font-size: 22px;
-    letter-spacing: .5px;
-}
-.subtitle {
-    color: var(--muted);
-    margin-top: 6px;
-    font-size: 13px;
-}
-.container {
-    padding: 22px 28px 40px;
-}
-.toolbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 18px;
-    gap: 12px;
-}
-select {
-    color: var(--text);
-    background: var(--panel);
-    border: 1px solid var(--line);
-    padding: 9px 12px;
-}
-.status {
-    color: var(--muted);
-    font-size: 12px;
-}
-.kpis {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(180px, 1fr));
-    gap: 14px;
-    margin-bottom: 20px;
-}
-.card {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    padding: 16px;
-}
-.card-label {
-    color: var(--muted);
-    font-size: 12px;
-    text-transform: uppercase;
-}
-.card-value {
-    margin-top: 10px;
-    font-size: 25px;
-    font-weight: bold;
-}
-.card-delta {
-    margin-top: 8px;
-    font-size: 12px;
-}
-.up { color: var(--green); }
-.down { color: var(--red); }
-.flat { color: var(--muted); }
-.table-wrap {
-    overflow-x: auto;
-    background: var(--panel);
-    border: 1px solid var(--line);
-}
-table {
-    width: 100%;
-    border-collapse: collapse;
-    min-width: 1100px;
-}
-th {
-    text-align: right;
-    color: #9eb4cc;
-    background: var(--panel2);
-    font-size: 11px;
-    padding: 11px 10px;
-    border-bottom: 1px solid var(--line);
-    white-space: nowrap;
-}
-td {
-    text-align: right;
-    padding: 10px;
-    border-bottom: 1px solid #162c43;
-    font-size: 12px;
-}
-th:nth-child(1), td:nth-child(1),
-th:nth-child(2), td:nth-child(2),
-th:nth-child(3), td:nth-child(3) {
-    text-align: left;
-}
-tr:hover { background: #122940; }
-.rank {
-    color: var(--blue);
-    font-weight: bold;
-}
-.operator {
-    font-weight: bold;
-}
-.error {
-    color: #fecaca;
-    background: #450a0a;
-    border: 1px solid #7f1d1d;
-    padding: 16px;
-}
-@media (max-width: 900px) {
-    .kpis { grid-template-columns: repeat(2, 1fr); }
-    .container { padding: 18px 14px; }
-}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alphaliner TOP 100 Liner Operators</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --primary: #58a6ff;
+      --accent: #f0883e;
+      --success: #3fb950;
+      --danger: #f85149;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif;
+      padding: 16px;
+      font-size: 13px;
+    }
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 16px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 16px;
+    }
+    .title { font-size: 16px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }
+    .kpi-container {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .kpi-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px;
+    }
+    .kpi-title { font-size: 11px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+    .kpi-value { font-size: 20px; font-weight: 700; color: #fff; font-family: monospace; }
+    .kpi-delta { font-size: 11px; margin-top: 4px; font-weight: 600; }
+    .up { color: var(--success); }
+    .down { color: var(--danger); }
+    .flat { color: var(--text-muted); }
+    .controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    select, input, button {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    button { cursor: pointer; background: #21262d; }
+    button:hover { background: #30363d; }
+    .table-container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow-x: auto;
+      max-height: 70vh;
+    }
+    table { width: 100%; border-collapse: collapse; text-align: right; }
+    th, td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-family: monospace; font-size: 12px; }
+    th { background: #21262d; color: var(--text-muted); font-size: 11px; text-transform: uppercase; position: sticky; top: 0; z-index: 10; }
+    tr:hover { background: #1c2128; }
+    .text-left { text-align: left; }
+    .text-center { text-align: center; }
+    .op-name { font-weight: 600; color: #fff; }
+  </style>
 </head>
 <body>
-<header>
-    <h1>ALPHALINER TOP 100 LINER OPERATORS</h1>
-    <div class="subtitle">Maritime Intelligence Terminal · Fleet Capacity, Concentration and Orderbook</div>
-</header>
+  <div class="header-bar">
+    <div class="title">ALPHALINER TOP 100 LINER OPERATORS</div>
+    <div id="last-updated" style="color: var(--text-muted); font-size: 11px;"></div>
+  </div>
 
-<div class="container">
-    <div class="toolbar">
-        <select id="dateSelect"></select>
-        <div class="status" id="status">Loading data...</div>
+  <div class="kpi-container">
+    <div class="kpi-card">
+      <div class="kpi-title">1. Total Ships</div>
+      <div class="kpi-value" id="kpi-ships">-</div>
+      <div class="kpi-delta" id="delta-ships"></div>
     </div>
-
-    <div class="kpis">
-        <div class="card">
-            <div class="card-label">Total Ships</div>
-            <div class="card-value" id="totalShips">-</div>
-            <div class="card-delta" id="totalShipsDelta">-</div>
-        </div>
-        <div class="card">
-            <div class="card-label">Total Fleet TEU</div>
-            <div class="card-value" id="totalTeu">-</div>
-            <div class="card-delta" id="totalTeuDelta">-</div>
-        </div>
-        <div class="card">
-            <div class="card-label">Top 10 Concentration</div>
-            <div class="card-value" id="top10Share">-</div>
-            <div class="card-delta" id="top10ShareDelta">-</div>
-        </div>
-        <div class="card">
-            <div class="card-label">Orderbook</div>
-            <div class="card-value" id="orderbook">-</div>
-            <div class="card-delta" id="orderbookDelta">-</div>
-        </div>
+    <div class="kpi-card">
+      <div class="kpi-title">2. Total Fleet TEU</div>
+      <div class="kpi-value" id="kpi-teu">-</div>
+      <div class="kpi-delta" id="delta-teu"></div>
     </div>
-
-    <div class="table-wrap">
-        <table>
-            <thead>
-                <tr>
-                    <th>Rank</th>
-                    <th>Operator</th>
-                    <th>Fleet TEU</th>
-                    <th>Ships</th>
-                    <th>Owned TEU</th>
-                    <th>Chartered TEU</th>
-                    <th>Orderbook TEU</th>
-                    <th>Orderbook / Fleet</th>
-                </tr>
-            </thead>
-            <tbody id="tableBody"></tbody>
-        </table>
+    <div class="kpi-card">
+      <div class="kpi-title">3. Top 10 Concentration</div>
+      <div class="kpi-value" id="kpi-top10">-</div>
+      <div class="kpi-delta" id="delta-top10"></div>
     </div>
-</div>
+    <div class="kpi-card">
+      <div class="kpi-title">4. Orderbook TEU</div>
+      <div class="kpi-value" id="kpi-orderbook">-</div>
+      <div class="kpi-delta" id="delta-orderbook"></div>
+    </div>
+  </div>
 
-<script>
-const nf = new Intl.NumberFormat('en-US');
+  <div class="controls">
+    <label style="color: var(--text-muted); font-size: 12px;">Snapshot:</label>
+    <select id="date-select"></select>
+    <label style="color: var(--text-muted); font-size: 12px; margin-left: 10px;">Compare with:</label>
+    <select id="compare-select"></select>
+    <input type="text" id="search-box" placeholder="Filter operator..." style="margin-left: auto; width: 200px;">
+    <button id="btn-export">Export CSV (BOM)</button>
+  </div>
 
-function number(value) {
-    return Number(value || 0);
-}
+  <div class="table-container">
+    <table id="operator-table">
+      <thead>
+        <tr>
+          <th class="text-center">Rank</th>
+          <th class="text-left">Operator</th>
+          <th>Total TEU</th>
+          <th>Total Ships</th>
+          <th>Share (%)</th>
+          <th>Owned TEU</th>
+          <th>Owned Ships</th>
+          <th>Chart TEU</th>
+          <th>Chart Ships</th>
+          <th>Orderbook TEU</th>
+          <th>Orderbook Ships</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
 
-function fmt(value) {
-    return nf.format(Math.round(number(value)));
-}
+  <script>
+    let appData = null;
 
-function fmtPct(value) {
-    return number(value).toFixed(2) + '%';
-}
+    async function init() {
+      try {
+        const res = await fetch('alphaliner_data.json?v=' + Date.now());
+        appData = await res.json();
 
-function deltaText(current, previous, suffix = '') {
-    if (previous === null || previous === undefined) {
-        return '<span class="flat">No prior snapshot</span>';
+        const dateSelect = document.getElementById('date-select');
+        const compareSelect = document.getElementById('compare-select');
+
+        dateSelect.innerHTML = '';
+        compareSelect.innerHTML = '<option value="">None</option>';
+
+        appData.dates.forEach((d, idx) => {
+          dateSelect.innerHTML += `<option value="${d}">${d}</option>`;
+          compareSelect.innerHTML += `<option value="${d}" ${idx===1?'selected':''}>${d}</option>`;
+        });
+
+        dateSelect.addEventListener('change', render);
+        compareSelect.addEventListener('change', render);
+        document.getElementById('search-box').addEventListener('input', renderTable);
+        document.getElementById('btn-export').addEventListener('click', exportCSV);
+
+        render();
+      } catch (e) {
+        console.error("Failed to load dashboard data:", e);
+      }
     }
 
-    const diff = number(current) - number(previous);
-
-    if (diff === 0) {
-        return '<span class="flat">0' + suffix + ' vs prior snapshot</span>';
+    function formatNumber(num) {
+      if (!num && num !== 0) return "-";
+      return Number(num).toLocaleString();
     }
 
-    const cls = diff > 0 ? 'up' : 'down';
-    const sign = diff > 0 ? '+' : '';
+    function renderDelta(curr, prev, isPercent=false) {
+      if (prev === null || prev === undefined || !curr) return `<span class="flat">-</span>`;
+      const diff = curr - prev;
+      if (diff === 0) return `<span class="flat">0.00 (0%)</span>`;
+      const cls = diff > 0 ? "up" : "down";
+      const sign = diff > 0 ? "+" : "";
+      const pDiff = prev > 0 ? ((diff / prev) * 100).toFixed(2) : "0.00";
+      return `<span class="${cls}">${sign}${isPercent ? diff.toFixed(2) + '%' : formatNumber(diff)} (${sign}${pDiff}%)</span>`;
+    }
 
-    return '<span class="' + cls + '">' +
-        sign + fmt(diff) + suffix + ' vs prior snapshot</span>';
-}
+    function render() {
+      const curDate = document.getElementById('date-select').value;
+      const compDate = document.getElementById('compare-select').value;
 
-function getMeta(snapshot) {
-    return snapshot && snapshot.meta ? snapshot.meta : {};
-}
+      const curSnap = appData.snapshots[curDate];
+      const compSnap = compDate ? appData.snapshots[compDate] : null;
 
-function renderSnapshot(data, selectedDate) {
-    const snapshot = data.snapshots[selectedDate];
-    const meta = getMeta(snapshot);
-    const dates = data.dates || [];
-    const currentIndex = dates.indexOf(selectedDate);
-    const priorDate = currentIndex >= 0 ? dates[currentIndex + 1] : null;
-    const priorMeta = priorDate ? getMeta(data.snapshots[priorDate]) : null;
+      if (!curSnap) return;
 
-    document.getElementById('totalShips').textContent =
-        fmt(meta.total_ships || meta.global_total_ships);
+      document.getElementById('last-updated').innerText = 'Generated: ' + appData.generated_at.replace('T', ' ').substring(0, 19);
 
-    document.getElementById('totalTeu').textContent =
-        fmt(meta.total_teu || meta.global_total_teu);
+      const m = curSnap.meta;
+      const cm = compSnap ? compSnap.meta : null;
 
-    document.getElementById('top10Share').textContent =
-        fmtPct(meta.top10_share);
+      document.getElementById('kpi-ships').innerText = formatNumber(m.top100_ships);
+      document.getElementById('delta-ships').innerHTML = renderDelta(m.top100_ships, cm ? cm.top100_ships : null);
 
-    document.getElementById('orderbook').textContent =
-        fmt(meta.orderbook_total_teu);
+      document.getElementById('kpi-teu').innerText = formatNumber(m.top100_teu);
+      document.getElementById('delta-teu').innerHTML = renderDelta(m.top100_teu, cm ? cm.top100_teu : null);
 
-    document.getElementById('totalShipsDelta').innerHTML = deltaText(
-        meta.total_ships || meta.global_total_ships,
-        priorMeta ? (priorMeta.total_ships || priorMeta.global_total_ships) : null
-    );
+      document.getElementById('kpi-top10').innerText = (m.top10_share || 0).toFixed(2) + '%';
+      document.getElementById('delta-top10').innerHTML = renderDelta(m.top10_share, cm ? cm.top10_share : null, true);
 
-    document.getElementById('totalTeuDelta').innerHTML = deltaText(
-        meta.total_teu || meta.global_total_teu,
-        priorMeta ? (priorMeta.total_teu || priorMeta.global_total_teu) : null
-    );
+      document.getElementById('kpi-orderbook').innerText = formatNumber(m.orderbook_teu);
+      document.getElementById('delta-orderbook').innerHTML = renderDelta(m.orderbook_teu, cm ? cm.orderbook_teu : null);
 
-    document.getElementById('top10ShareDelta').innerHTML = deltaText(
-        meta.top10_share,
-        priorMeta ? priorMeta.top10_share : null,
-        ' bps'
-    );
+      renderTable();
+    }
 
-    document.getElementById('orderbookDelta').innerHTML = deltaText(
-        meta.orderbook_total_teu,
-        priorMeta ? priorMeta.orderbook_total_teu : null
-    );
+    function renderTable() {
+      const curDate = document.getElementById('date-select').value;
+      const curSnap = appData.snapshots[curDate];
+      if (!curSnap) return;
 
-    const body = document.getElementById('tableBody');
-    body.innerHTML = '';
+      const filter = document.getElementById('search-box').value.toLowerCase();
+      const tbody = document.querySelector('#operator-table tbody');
+      tbody.innerHTML = '';
 
-    (snapshot.operators || []).forEach(row => {
-        const tr = document.createElement('tr');
+      curSnap.operators.forEach(op => {
+        const name = op.operator_name || op.operator || '';
+        if (filter && !name.toLowerCase().includes(filter)) return;
 
-        tr.innerHTML = `
-            <td class="rank">${row.rank ?? ''}</td>
-            <td class="operator">${row.operator ?? ''}</td>
-            <td>${fmt(row.fleet_teu || row.teu)}</td>
-            <td>${fmt(row.fleet_ships || row.ships)}</td>
-            <td>${fmt(row.owned_teu)}</td>
-            <td>${fmt(row.chartered_teu)}</td>
-            <td>${fmt(row.orderbook_teu)}</td>
-            <td>${fmtPct(row.orderbook_share || row.orderbook_teu_share)}</td>
+        const row = `
+          <tr>
+            <td class="text-center">${op.rank}</td>
+            <td class="text-left op-name">${name}</td>
+            <td>${formatNumber(op.total_teu)}</td>
+            <td>${formatNumber(op.total_ships)}</td>
+            <td>${(op.market_share || 0).toFixed(1)}%</td>
+            <td>${formatNumber(op.owned_teu)}</td>
+            <td>${formatNumber(op.owned_ships)}</td>
+            <td>${formatNumber(op.chartered_teu)}</td>
+            <td>${formatNumber(op.chartered_ships)}</td>
+            <td>${formatNumber(op.orderbook_teu)}</td>
+            <td>${formatNumber(op.orderbook_ships)}</td>
+          </tr>
         `;
-
-        body.appendChild(tr);
-    });
-
-    document.getElementById('status').textContent =
-        'Snapshot: ' + selectedDate +
-        ' · Operators: ' + (snapshot.operators || []).length +
-        ' · Updated: ' + (meta.extracted_at || '-');
-}
-
-async function init() {
-    try {
-        const response = await fetch('./alphaliner_data.json?ts=' + Date.now());
-
-        if (!response.ok) {
-            throw new Error('Could not load alphaliner_data.json');
-        }
-
-        const data = await response.json();
-        const dates = data.dates || [];
-
-        if (!dates.length) {
-            throw new Error('No valid snapshots available.');
-        }
-
-        const select = document.getElementById('dateSelect');
-
-        dates.forEach(date => {
-            const option = document.createElement('option');
-            option.value = date;
-            option.textContent = date;
-
-            if (date === data.latest_date) {
-                option.selected = true;
-            }
-
-            select.appendChild(option);
-        });
-
-        renderSnapshot(data, select.value);
-
-        select.addEventListener('change', function() {
-            renderSnapshot(data, this.value);
-        });
-
-    } catch (error) {
-        document.querySelector('.container').innerHTML =
-            '<div class="error">Dashboard data could not be loaded: ' +
-            error.message +
-            '</div>';
+        tbody.innerHTML += row;
+      });
     }
-}
 
-init();
-</script>
+    function exportCSV() {
+      const curDate = document.getElementById('date-select').value;
+      const curSnap = appData.snapshots[curDate];
+      if (!curSnap) return;
+
+      let csv = "﻿Rank,Operator,Total TEU,Total Ships,Market Share (%),Owned TEU,Owned Ships,Chartered TEU,Chartered Ships,Orderbook TEU,Orderbook Ships\n";
+      curSnap.operators.forEach(op => {
+        const name = `"${(op.operator_name || op.operator || '').replace(/"/g, '""')}"`;
+        csv += `${op.rank},${name},${op.total_teu},${op.total_ships},${op.market_share},${op.owned_teu},${op.owned_ships},${op.chartered_teu},${op.chartered_ships},${op.orderbook_teu},${op.orderbook_ships}\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Alphaliner_TOP100_${curDate}.csv`;
+      a.click();
+    }
+
+    window.onload = init;
+  </script>
 </body>
 </html>
