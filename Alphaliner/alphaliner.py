@@ -5,8 +5,8 @@ Alphaliner TOP 100 Liner Operators Static Dashboard Crawler (GitHub Optimized)
 - Official Global Figures + TOP 100 Capacity Separation
 - Historical snapshot comparison & Full Time-travel Delta analysis
 - Authentic Alphaliner 2-tier Grouped Table & UTF-8 BOM CSV Export
-- Bloomberg MI Terminal Look & Feel
-- Auto DB schema migration & robust column mapping
+- Bloomberg MI Terminal Look & Feel (Aligned with Shipping Index / BunkerPrice)
+- Dynamic SQLite Schema Migration & Strict Pre-persist Quality Gate
 
 Output files:
 - alphaliner_history.db
@@ -42,7 +42,7 @@ except Exception:
     HAS_WEBDRIVER_MANAGER = False
 
 # =========================================================
-# 1. Basic Configuration
+# 1. Configuration & Constants
 # =========================================================
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "alphaliner_history.db"
@@ -61,7 +61,7 @@ app = Flask(__name__, static_folder=str(BASE_DIR))
 db_lock = Lock()
 
 # =========================================================
-# 2. Database Initialization & Dynamic Schema Adaptation
+# 2. Database Layer & Auto-Migration
 # =========================================================
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
@@ -81,7 +81,7 @@ def init_db():
         with get_db_connection() as conn:
             cur = conn.cursor()
 
-            # 1. snapshot_meta table
+            # Snapshot Meta Table
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS snapshot_meta (
                     snapshot_date TEXT PRIMARY KEY,
@@ -99,7 +99,7 @@ def init_db():
                 )
             """)
 
-            # 2. operator_snapshots table
+            # Operator Snapshots Table
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS operator_snapshots (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,26 +124,29 @@ def init_db():
                 )
             """)
 
-            # Schema Migration if existing DB has different column names
+            # Safe Schema Migration for existing DB variants
             op_cols = get_table_columns(conn, "operator_snapshots")
-            if "operator_name" not in op_cols and "operator" in op_cols:
-                try:
-                    cur.execute("ALTER TABLE operator_snapshots ADD COLUMN operator_name TEXT")
-                    cur.execute("UPDATE operator_snapshots SET operator_name = operator WHERE operator_name IS NULL")
-                except Exception as e:
-                    logger.warning(f"Schema migration warning (operator_name): {e}")
+            if op_cols:
+                if "operator_name" not in op_cols and "operator" in op_cols:
+                    try:
+                        cur.execute("ALTER TABLE operator_snapshots ADD COLUMN operator_name TEXT")
+                        cur.execute("UPDATE operator_snapshots SET operator_name = operator WHERE operator_name IS NULL")
+                        logger.info("Migrated schema: Added operator_name column and populated from operator.")
+                    except Exception as e:
+                        logger.warning(f"Schema migration warning (operator_name): {e}")
 
-            if "operator" not in op_cols and "operator_name" in op_cols:
-                try:
-                    cur.execute("ALTER TABLE operator_snapshots ADD COLUMN operator TEXT")
-                    cur.execute("UPDATE operator_snapshots SET operator = operator_name WHERE operator IS NULL")
-                except Exception as e:
-                    logger.warning(f"Schema migration warning (operator): {e}")
+                if "operator" not in op_cols and "operator_name" in op_cols:
+                    try:
+                        cur.execute("ALTER TABLE operator_snapshots ADD COLUMN operator TEXT")
+                        cur.execute("UPDATE operator_snapshots SET operator = operator_name WHERE operator IS NULL")
+                        logger.info("Migrated schema: Added operator column and populated from operator_name.")
+                    except Exception as e:
+                        logger.warning(f"Schema migration warning (operator): {e}")
 
             conn.commit()
 
 # =========================================================
-# 3. Selenium Web Crawler
+# 3. Selenium Extractor
 # =========================================================
 def build_chrome_options():
     options = Options()
@@ -176,15 +179,15 @@ def get_driver():
     return webdriver.Chrome(options=options)
 
 def fetch_alphaliner_data():
-    logger.info(f"Navigating to {TARGET_URL}")
+    logger.info(f"Connecting to target: {TARGET_URL}")
     driver = None
     try:
         driver = get_driver()
         driver.set_page_load_timeout(60)
         driver.get(TARGET_URL)
 
-        # Wait for ExtJS Ext.data.StoreManager to load Top100description
-        WebDriverWait(driver, 40).until(
+        # Wait for ExtJS Store 'Top100description'
+        WebDriverWait(driver, 45).until(
             lambda d: d.execute_script("""
                 return typeof Ext !== 'undefined' &&
                        Ext.data &&
@@ -206,15 +209,11 @@ def fetch_alphaliner_data():
             return data;
         """)
 
-        logger.info(f"Successfully extracted {len(records)} records from Store 'Top100description'.")
-        if records:
-            keys = list(records[0].keys())
-            logger.info(f"Detected source fields: {', '.join(keys)}")
-            logger.info(f"First raw record: {json.dumps(records[0])}")
+        logger.info(f"Extracted {len(records)} raw records from ExtJS Store.")
         return records
 
     except Exception as e:
-        logger.error(f"Error fetching data from Alphaliner: {e}")
+        logger.error(f"Failed to fetch data from Alphaliner: {e}")
         raise
     finally:
         if driver:
@@ -224,7 +223,7 @@ def fetch_alphaliner_data():
                 pass
 
 # =========================================================
-# 4. Data Parsing & Quality Validation
+# 4. Parsing, Cleaning & Quality Gate
 # =========================================================
 def clean_int(val, default=0):
     if val is None:
@@ -290,8 +289,8 @@ def parse_records(raw_records):
 
         parsed.append({
             "rank": rank_idx,
-            "operator_name": operator,
-            "operator": operator,
+            "operator_name": str(operator).strip(),
+            "operator": str(operator).strip(),
             "total_teu": total_teu,
             "total_ships": total_ships,
             "market_share": market_share,
@@ -311,25 +310,25 @@ def parse_records(raw_records):
 def validate_candidate_metrics(parsed_ops):
     """
     엄격한 품질 검증:
-    - 선사 수 90개 이상
-    - 총 TEU 2,000만 이상
-    - 총 척수 3,000척 이상
+    1. 선사 수 최소 90개 이상
+    2. 총 TEU 최소 2,000만 TEU 이상
+    3. 총 척수 최소 3,000척 이상
     """
     if len(parsed_ops) < 90:
-        return False, f"Operator count too low: {len(parsed_ops)}"
+        return False, f"Operator count too low: {len(parsed_ops)} (minimum 90 required)"
 
     total_teu = sum(o["total_teu"] for o in parsed_ops)
     total_ships = sum(o["total_ships"] for o in parsed_ops)
 
     if total_teu < 20_000_000:
-        return False, f"Total TEU too low: {total_teu:,}"
+        return False, f"Total TEU too low: {total_teu:,} (minimum 20,000,000 required)"
     if total_ships < 3_000:
-        return False, f"Total Ships too low: {total_ships:,}"
+        return False, f"Total Ships too low: {total_ships:,} (minimum 3,000 required)"
 
-    return True, "Valid snapshot"
+    return True, "Quality validation passed."
 
 # =========================================================
-# 5. Persistence & Schema Safe Insertion
+# 5. Database Persistence
 # =========================================================
 def persist_snapshot(snapshot_date, parsed_ops, raw_records):
     raw_json_str = json.dumps(raw_records, sort_keys=True)
@@ -346,7 +345,7 @@ def persist_snapshot(snapshot_date, parsed_ops, raw_records):
         with get_db_connection() as conn:
             cur = conn.cursor()
 
-            # Upsert meta
+            # Upsert Snapshot Meta
             cur.execute("""
                 INSERT INTO snapshot_meta (
                     snapshot_date, global_teu, global_ships,
@@ -370,14 +369,12 @@ def persist_snapshot(snapshot_date, parsed_ops, raw_records):
                 now_str, TARGET_URL, raw_hash, now_str
             ))
 
-            # Delete existing records for this date
+            # Clear older rows for the same snapshot_date to prevent duplicates
             cur.execute("DELETE FROM operator_snapshots WHERE snapshot_date = ?", (snapshot_date,))
 
-            # Detect available columns in operator_snapshots
+            # Build query matching existing column names safely
             op_cols = get_table_columns(conn, "operator_snapshots")
-
-            # Build insert query dynamically based on existing columns
-            cols_to_insert = [
+            cols = [
                 "snapshot_date", "rank", "total_teu", "total_ships", "market_share",
                 "owned_teu", "owned_ships", "owned_share",
                 "chartered_teu", "chartered_ships", "chartered_share",
@@ -386,18 +383,18 @@ def persist_snapshot(snapshot_date, parsed_ops, raw_records):
             ]
 
             if "operator_name" in op_cols:
-                cols_to_insert.append("operator_name")
+                cols.append("operator_name")
             if "operator" in op_cols:
-                cols_to_insert.append("operator")
+                cols.append("operator")
 
-            placeholders = ", ".join(["?"] * len(cols_to_insert))
-            col_names = ", ".join(cols_to_insert)
+            placeholders = ", ".join(["?"] * len(cols))
+            col_names = ", ".join(cols)
             insert_sql = f"INSERT INTO operator_snapshots ({col_names}) VALUES ({placeholders})"
 
-            rows_data = []
+            rows_to_insert = []
             for op in parsed_ops:
                 row = []
-                for c in cols_to_insert:
+                for c in cols:
                     if c == "snapshot_date":
                         row.append(snapshot_date)
                     elif c == "created_at":
@@ -406,11 +403,11 @@ def persist_snapshot(snapshot_date, parsed_ops, raw_records):
                         row.append(op["operator_name"])
                     else:
                         row.append(op.get(c))
-                rows_data.append(tuple(row))
+                rows_to_insert.append(tuple(row))
 
-            cur.executemany(insert_sql, rows_data)
+            cur.executemany(insert_sql, rows_to_insert)
             conn.commit()
-            logger.info(f"Persisted VALID snapshot {snapshot_date} with {len(parsed_ops)} operators to DB.")
+            logger.info(f"Successfully persisted snapshot {snapshot_date} ({len(parsed_ops)} operators).")
 
 def process_and_persist():
     raw_records = fetch_alphaliner_data()
@@ -423,14 +420,14 @@ def process_and_persist():
     orderbook_teu = sum(o["orderbook_teu"] for o in parsed_ops)
 
     logger.info(
-        f"Candidate snapshot metrics | operators={len(parsed_ops)} | "
-        f"total_teu={top100_teu:,} | total_ships={top100_ships:,} | "
-        f"top10_share={top10_share}% | orderbook_teu={orderbook_teu:,}"
+        f"Parsed candidate snapshot | Count: {len(parsed_ops)} | "
+        f"TEU: {top100_teu:,} | Ships: {top100_ships:,} | "
+        f"Top10 Share: {top10_share}% | Orderbook TEU: {orderbook_teu:,}"
     )
 
-    is_valid, reason = validate_candidate_metrics(parsed_ops)
+    is_valid, message = validate_candidate_metrics(parsed_ops)
     if not is_valid:
-        logger.error(f"Scrape validation rejected: {reason}. No corrupt data written to DB.")
+        logger.error(f"Quality gate rejected data: {message}. Snapshot aborted.")
         return False
 
     today_str = datetime.now().strftime("%Y-%m-%d")
@@ -438,21 +435,21 @@ def process_and_persist():
     return True
 
 # =========================================================
-# 6. JSON Export & Dashboard Contract Generation
+# 6. JSON Export & Rich Dashboard Generator
 # =========================================================
 def export_json_and_html():
     with get_db_connection() as conn:
         cur = conn.cursor()
 
-        # Meta dates
+        # Query only valid snapshots
         meta_rows = cur.execute("""
             SELECT * FROM snapshot_meta
-            WHERE top100_teu > 20000000 AND top100_ships > 3000
+            WHERE top100_teu >= 20000000 AND top100_ships >= 3000
             ORDER BY snapshot_date DESC
         """).fetchall()
 
         if not meta_rows:
-            logger.warning("No valid snapshots found in DB to export.")
+            logger.warning("No valid snapshots available in DB for JSON export.")
             return
 
         dates = [r["snapshot_date"] for r in meta_rows]
@@ -498,309 +495,633 @@ def export_json_and_html():
 
     with open(JSON_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
-    logger.info(f"Exported valid JSON contract: {JSON_PATH}")
+    logger.info(f"Serialized JSON data to {JSON_PATH}")
 
     generate_static_html()
 
 def generate_static_html():
-    """Generates the static Bloomberg-style HTML viewer matching the Shipping Index visual language."""
+    """Generates the static Bloomberg-style HTML terminal with 2-tier headers, flags, and sortable columns."""
     html_content = """<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Alphaliner TOP 100 Liner Operators</title>
+  <title>Alphaliner TOP 100 Liner Operators | MI Terminal</title>
   <style>
     :root {
-      --bg: #0d1117;
-      --card-bg: #161b22;
-      --border: #30363d;
-      --text-main: #c9d1d9;
-      --text-muted: #8b949e;
-      --primary: #58a6ff;
-      --accent: #f0883e;
-      --success: #3fb950;
-      --danger: #f85149;
+      --bg-base: #0a0e14;
+      --bg-panel: #111822;
+      --bg-card: #151d28;
+      --bg-hover: #1c2636;
+      --border-subtle: #212e3f;
+      --border-accent: #33445c;
+      --text-main: #e2e8f0;
+      --text-muted: #8292a2;
+      --text-dim: #556577;
+      --accent-blue: #3b82f6;
+      --accent-cyan: #06b6d4;
+      --accent-green: #10b981;
+      --accent-red: #ef4444;
+      --accent-amber: #f59e0b;
+      --mono-font: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", monospace;
     }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background-color: var(--bg);
+      background-color: var(--bg-base);
       color: var(--text-main);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif;
+      font-family: var(--mono-font);
+      font-size: 12px;
+      line-height: 1.4;
       padding: 16px;
-      font-size: 13px;
+      -webkit-font-smoothing: antialiased;
     }
-    .header-bar {
+
+    /* Terminal Header Bar */
+    .terminal-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 10px 16px;
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      margin-bottom: 16px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      padding: 12px 18px;
+      margin-bottom: 14px;
     }
-    .title { font-size: 16px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }
-    .kpi-container {
+    .terminal-title {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .terminal-badge {
+      font-size: 10px;
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--accent-blue);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .terminal-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: monospace;
+    }
+
+    /* Top KPI 4-Grid */
+    .kpi-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 12px;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }
     .kpi-card {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 14px;
-    }
-    .kpi-title { font-size: 11px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
-    .kpi-value { font-size: 20px; font-weight: 700; color: #fff; font-family: monospace; }
-    .kpi-delta { font-size: 11px; margin-top: 4px; font-weight: 600; }
-    .up { color: var(--success); }
-    .down { color: var(--danger); }
-    .flat { color: var(--text-muted); }
-    .controls {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      margin-bottom: 12px;
-    }
-    select, input, button {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      color: var(--text-main);
-      padding: 6px 12px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
       border-radius: 4px;
-      font-size: 12px;
+      padding: 12px 16px;
+      position: relative;
+      overflow: hidden;
     }
-    button { cursor: pointer; background: #21262d; }
-    button:hover { background: #30363d; }
-    .table-container {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      overflow-x: auto;
-      max-height: 70vh;
+    .kpi-card::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; width: 3px; height: 100%;
+      background: var(--border-accent);
     }
-    table { width: 100%; border-collapse: collapse; text-align: right; }
-    th, td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-family: monospace; font-size: 12px; }
-    th { background: #21262d; color: var(--text-muted); font-size: 11px; text-transform: uppercase; position: sticky; top: 0; z-index: 10; }
-    tr:hover { background: #1c2128; }
-    .text-left { text-align: left; }
-    .text-center { text-align: center; }
-    .op-name { font-weight: 600; color: #fff; }
+    .kpi-card.kpi-blue::before { background: var(--accent-blue); }
+    .kpi-card.kpi-cyan::before { background: var(--accent-cyan); }
+    .kpi-card.kpi-amber::before { background: var(--accent-amber); }
+    .kpi-card.kpi-green::before { background: var(--accent-green); }
+
+    .kpi-label {
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      letter-spacing: 0.5px;
+    }
+    .kpi-value {
+      font-size: 22px;
+      font-weight: 700;
+      color: #ffffff;
+      font-family: monospace;
+      letter-spacing: -0.5px;
+    }
+    .kpi-sub {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: monospace;
+    }
+    .delta-up { color: var(--accent-green); }
+    .delta-down { color: var(--accent-red); }
+    .delta-flat { color: var(--text-dim); }
+
+    /* Controls Bar */
+    .controls-panel {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      gap: 12px;
+    }
+    .controls-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .control-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    select, input, .btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border-accent);
+      color: var(--text-main);
+      padding: 6px 10px;
+      border-radius: 3px;
+      font-family: var(--mono-font);
+      font-size: 11.5px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    select:focus, input:focus {
+      border-color: var(--accent-blue);
+    }
+    .btn {
+      cursor: pointer;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #1e293b;
+    }
+    .btn:hover {
+      background: #334155;
+      border-color: var(--text-muted);
+      color: #fff;
+    }
+
+    /* Authentic 2-Tier Table Container */
+    .table-viewport {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      overflow: auto;
+      max-height: calc(100vh - 270px);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: right;
+      font-size: 11.5px;
+      white-space: nowrap;
+    }
+    thead th {
+      background: #131c28;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.5px;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border-subtle);
+      border-right: 1px solid var(--border-subtle);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      user-select: none;
+      cursor: pointer;
+    }
+    thead tr:first-child th {
+      text-align: center;
+      background: #172232;
+      color: #cbd5e1;
+      font-size: 10.5px;
+      font-weight: 700;
+      border-bottom: 1px solid #2d3f58;
+    }
+    thead tr:nth-child(2) th {
+      top: 27px;
+    }
+    th:hover {
+      color: #ffffff;
+      background: #1e2c40;
+    }
+    th.sort-active {
+      color: var(--accent-blue);
+      border-bottom: 2px solid var(--accent-blue);
+    }
+
+    tbody tr {
+      border-bottom: 1px solid rgba(33, 46, 63, 0.6);
+      transition: background 0.15s;
+    }
+    tbody tr:hover {
+      background: var(--bg-hover) !important;
+    }
+    tbody tr:nth-child(even) {
+      background: rgba(21, 29, 40, 0.4);
+    }
+    tbody td {
+      padding: 6px 10px;
+      border-right: 1px solid rgba(33, 46, 63, 0.4);
+      font-family: monospace;
+      color: #cbd5e1;
+    }
+
+    /* Custom Column Formats */
+    .col-center { text-align: center; }
+    .col-left { text-align: left; }
+    .rank-cell { font-weight: 700; color: var(--text-muted); width: 44px; }
+    .op-cell {
+      font-family: var(--mono-font);
+      font-weight: 600;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .flag-icon {
+      width: 16px;
+      height: 11px;
+      border-radius: 1px;
+      object-fit: cover;
+      display: inline-block;
+      vertical-align: middle;
+      background: #2b384c;
+    }
+    .flag-fallback {
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--text-dim);
+      background: #1c2636;
+      padding: 1px 3px;
+      border-radius: 2px;
+      border: 1px solid #2d3b4e;
+    }
+    .total-col { font-weight: 700; color: #f8fafc; }
+    .share-col { color: var(--accent-cyan); font-weight: 600; }
   </style>
 </head>
 <body>
-  <div class="header-bar">
-    <div class="title">ALPHALINER TOP 100 LINER OPERATORS</div>
-    <div id="last-updated" style="color: var(--text-muted); font-size: 11px;"></div>
+
+  <!-- 1. Header Bar -->
+  <div class="terminal-header">
+    <div class="terminal-title">
+      <span>ALPHALINER TOP 100 LINER OPERATORS</span>
+      <span class="terminal-badge">GLOBAL FLEET & ORDERBOOK</span>
+    </div>
+    <div class="terminal-meta" id="header-meta">INITIALIZING FEED...</div>
   </div>
 
-  <div class="kpi-container">
-    <div class="kpi-card">
-      <div class="kpi-title">1. Total Ships</div>
+  <!-- 2. KPI Section (Top 4 Ordered Cards) -->
+  <div class="kpi-grid">
+    <div class="kpi-card kpi-blue">
+      <div class="kpi-label">1. Total Ships</div>
       <div class="kpi-value" id="kpi-ships">-</div>
-      <div class="kpi-delta" id="delta-ships"></div>
+      <div class="kpi-sub" id="delta-ships"><span class="delta-flat">-</span></div>
     </div>
-    <div class="kpi-card">
-      <div class="kpi-title">2. Total Fleet TEU</div>
+    <div class="kpi-card kpi-cyan">
+      <div class="kpi-label">2. Total Fleet TEU</div>
       <div class="kpi-value" id="kpi-teu">-</div>
-      <div class="kpi-delta" id="delta-teu"></div>
+      <div class="kpi-sub" id="delta-teu"><span class="delta-flat">-</span></div>
     </div>
-    <div class="kpi-card">
-      <div class="kpi-title">3. Top 10 Concentration</div>
+    <div class="kpi-card kpi-amber">
+      <div class="kpi-label">3. Top 10 Concentration</div>
       <div class="kpi-value" id="kpi-top10">-</div>
-      <div class="kpi-delta" id="delta-top10"></div>
+      <div class="kpi-sub" id="delta-top10"><span class="delta-flat">-</span></div>
     </div>
-    <div class="kpi-card">
-      <div class="kpi-title">4. Orderbook TEU</div>
+    <div class="kpi-card kpi-green">
+      <div class="kpi-label">4. Orderbook TEU</div>
       <div class="kpi-value" id="kpi-orderbook">-</div>
-      <div class="kpi-delta" id="delta-orderbook"></div>
+      <div class="kpi-sub" id="delta-orderbook"><span class="delta-flat">-</span></div>
     </div>
   </div>
 
-  <div class="controls">
-    <label style="color: var(--text-muted); font-size: 12px;">Snapshot:</label>
-    <select id="date-select"></select>
-    <label style="color: var(--text-muted); font-size: 12px; margin-left: 10px;">Compare with:</label>
-    <select id="compare-select"></select>
-    <input type="text" id="search-box" placeholder="Filter operator..." style="margin-left: auto; width: 200px;">
-    <button id="btn-export">Export CSV (BOM)</button>
+  <!-- 3. Controls & Filter Bar -->
+  <div class="controls-panel">
+    <div class="controls-group">
+      <span class="control-label">Snapshot:</span>
+      <select id="sel-date"></select>
+
+      <span class="control-label" style="margin-left: 10px;">Compare Vs:</span>
+      <select id="sel-compare"></select>
+    </div>
+
+    <div class="controls-group">
+      <input type="text" id="filter-input" placeholder="Filter operator name / country..." style="width: 220px;">
+      <button class="btn" id="btn-export">
+        <svg width="12" height="12" fill="currentColor" viewBox="0 0 16 16">
+          <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+          <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+        </svg>
+        EXPORT CSV (BOM)
+      </button>
+    </div>
   </div>
 
-  <div class="table-container">
-    <table id="operator-table">
+  <!-- 4. Authentic 2-Tier Grouped Table -->
+  <div class="table-viewport">
+    <table id="main-table">
       <thead>
+        <!-- Tier 1 Group Header -->
         <tr>
-          <th class="text-center">Rank</th>
-          <th class="text-left">Operator</th>
-          <th>Total TEU</th>
-          <th>Total Ships</th>
-          <th>Share (%)</th>
-          <th>Owned TEU</th>
-          <th>Owned Ships</th>
-          <th>Chart TEU</th>
-          <th>Chart Ships</th>
-          <th>Orderbook TEU</th>
-          <th>Orderbook Ships</th>
+          <th colspan="2">OPERATOR PROFILE</th>
+          <th colspan="3">TOTAL CAPACITY</th>
+          <th colspan="3">OWNED FLEET</th>
+          <th colspan="3">CHARTERED FLEET</th>
+          <th colspan="3">ORDERBOOK</th>
+        </tr>
+        <!-- Tier 2 Column Headers -->
+        <tr>
+          <th class="col-center" data-col="rank" style="width: 44px;">#</th>
+          <th class="col-left" data-col="operator_name">OPERATOR</th>
+          <th data-col="total_teu">TEU</th>
+          <th data-col="total_ships">SHIPS</th>
+          <th data-col="market_share">SHARE</th>
+          <th data-col="owned_teu">TEU</th>
+          <th data-col="owned_ships">SHIPS</th>
+          <th data-col="owned_share">%</th>
+          <th data-col="chartered_teu">TEU</th>
+          <th data-col="chartered_ships">SHIPS</th>
+          <th data-col="chartered_share">%</th>
+          <th data-col="orderbook_teu">TEU</th>
+          <th data-col="orderbook_ships">SHIPS</th>
+          <th data-col="orderbook_share">%</th>
         </tr>
       </thead>
-      <tbody></tbody>
+      <tbody id="table-body">
+        <!-- Rendered dynamically -->
+      </tbody>
     </table>
   </div>
 
   <script>
-    let appData = null;
+    let rawPayload = null;
+    let currentSort = { col: 'rank', asc: true };
 
-    async function init() {
+    async function initTerminal() {
       try {
-        const res = await fetch('alphaliner_data.json?v=' + Date.now());
-        appData = await res.json();
+        const res = await fetch('alphaliner_data.json?t=' + Date.now());
+        rawPayload = await res.json();
 
-        const dateSelect = document.getElementById('date-select');
-        const compareSelect = document.getElementById('compare-select');
-
-        dateSelect.innerHTML = '';
-        compareSelect.innerHTML = '<option value="">None</option>';
-
-        appData.dates.forEach((d, idx) => {
-          dateSelect.innerHTML += `<option value="${d}">${d}</option>`;
-          compareSelect.innerHTML += `<option value="${d}" ${idx===1?'selected':''}>${d}</option>`;
-        });
-
-        dateSelect.addEventListener('change', render);
-        compareSelect.addEventListener('change', render);
-        document.getElementById('search-box').addEventListener('input', renderTable);
-        document.getElementById('btn-export').addEventListener('click', exportCSV);
-
-        render();
-      } catch (e) {
-        console.error("Failed to load dashboard data:", e);
+        populateDateDropdowns();
+        bindEvents();
+        refreshDashboard();
+      } catch (err) {
+        console.error("Fatal: failed to load feed:", err);
+        document.getElementById('header-meta').innerText = 'FEED ERROR: Check alphaliner_data.json';
       }
     }
 
+    function populateDateDropdowns() {
+      const selDate = document.getElementById('sel-date');
+      const selCompare = document.getElementById('sel-compare');
+      selDate.innerHTML = '';
+      selCompare.innerHTML = '<option value="">None (Baseline)</option>';
+
+      if (!rawPayload.dates || rawPayload.dates.length === 0) return;
+
+      rawPayload.dates.forEach((d, idx) => {
+        selDate.innerHTML += `<option value="${d}">${d}</option>`;
+        selCompare.innerHTML += `<option value="${d}" ${idx === 1 ? 'selected' : ''}>${d}</option>`;
+      });
+    }
+
+    function bindEvents() {
+      document.getElementById('sel-date').addEventListener('change', refreshDashboard);
+      document.getElementById('sel-compare').addEventListener('change', updateKpisOnly);
+      document.getElementById('filter-input').addEventListener('input', renderTableRows);
+      document.getElementById('btn-export').addEventListener('click', exportToCsv);
+
+      document.querySelectorAll('thead tr:nth-child(2) th').forEach(th => {
+        th.addEventListener('click', () => {
+          const col = th.getAttribute('data-col');
+          if (!col) return;
+          if (currentSort.col === col) {
+            currentSort.asc = !currentSort.asc;
+          } else {
+            currentSort.col = col;
+            currentSort.asc = (col === 'operator_name' || col === 'rank');
+          }
+          updateSortHeaderUI();
+          renderTableRows();
+        });
+      });
+    }
+
+    function updateSortHeaderUI() {
+      document.querySelectorAll('thead tr:nth-child(2) th').forEach(th => {
+        th.classList.remove('sort-active');
+        if (th.getAttribute('data-col') === currentSort.col) {
+          th.classList.add('sort-active');
+        }
+      });
+    }
+
     function formatNumber(num) {
-      if (!num && num !== 0) return "-";
-      return Number(num).toLocaleString();
+      if (num === null || num === undefined) return "-";
+      return Number(num).toLocaleString('en-US');
     }
 
-    function renderDelta(curr, prev, isPercent=false) {
-      if (prev === null || prev === undefined || !curr) return `<span class="flat">-</span>`;
+    function calculateDeltaBadge(curr, prev, isPercent = false) {
+      if (prev === null || prev === undefined || curr === null || curr === undefined) {
+        return `<span class="delta-flat">-</span>`;
+      }
       const diff = curr - prev;
-      if (diff === 0) return `<span class="flat">0.00 (0%)</span>`;
-      const cls = diff > 0 ? "up" : "down";
-      const sign = diff > 0 ? "+" : "";
-      const pDiff = prev > 0 ? ((diff / prev) * 100).toFixed(2) : "0.00";
-      return `<span class="${cls}">${sign}${isPercent ? diff.toFixed(2) + '%' : formatNumber(diff)} (${sign}${pDiff}%)</span>`;
+      if (Math.abs(diff) < 0.0001) {
+        return `<span class="delta-flat">0.0 (0.0%)</span>`;
+      }
+
+      const isUp = diff > 0;
+      const sign = isUp ? "+" : "";
+      const cls = isUp ? "delta-up" : "delta-down";
+      const pct = prev > 0 ? ((diff / prev) * 100).toFixed(2) : "0.00";
+
+      const valStr = isPercent ? `${sign}${diff.toFixed(2)}%` : `${sign}${formatNumber(diff)}`;
+      return `<span class="${cls}">${valStr} (${sign}${pct}%)</span>`;
     }
 
-    function render() {
-      const curDate = document.getElementById('date-select').value;
-      const compDate = document.getElementById('compare-select').value;
+    function updateKpisOnly() {
+      const curDate = document.getElementById('sel-date').value;
+      const compDate = document.getElementById('sel-compare').value;
 
-      const curSnap = appData.snapshots[curDate];
-      const compSnap = compDate ? appData.snapshots[compDate] : null;
+      const curSnap = rawPayload.snapshots[curDate];
+      const compSnap = compDate ? rawPayload.snapshots[compDate] : null;
 
       if (!curSnap) return;
-
-      document.getElementById('last-updated').innerText = 'Generated: ' + appData.generated_at.replace('T', ' ').substring(0, 19);
-
       const m = curSnap.meta;
       const cm = compSnap ? compSnap.meta : null;
 
       document.getElementById('kpi-ships').innerText = formatNumber(m.top100_ships);
-      document.getElementById('delta-ships').innerHTML = renderDelta(m.top100_ships, cm ? cm.top100_ships : null);
+      document.getElementById('delta-ships').innerHTML = calculateDeltaBadge(m.top100_ships, cm ? cm.top100_ships : null);
 
       document.getElementById('kpi-teu').innerText = formatNumber(m.top100_teu);
-      document.getElementById('delta-teu').innerHTML = renderDelta(m.top100_teu, cm ? cm.top100_teu : null);
+      document.getElementById('delta-teu').innerHTML = calculateDeltaBadge(m.top100_teu, cm ? cm.top100_teu : null);
 
-      document.getElementById('kpi-top10').innerText = (m.top10_share || 0).toFixed(2) + '%';
-      document.getElementById('delta-top10').innerHTML = renderDelta(m.top10_share, cm ? cm.top10_share : null, true);
+      document.getElementById('kpi-top10').innerText = (m.top10_share || 0).toFixed(2) + "%";
+      document.getElementById('delta-top10').innerHTML = calculateDeltaBadge(m.top10_share, cm ? cm.top10_share : null, true);
 
       document.getElementById('kpi-orderbook').innerText = formatNumber(m.orderbook_teu);
-      document.getElementById('delta-orderbook').innerHTML = renderDelta(m.orderbook_teu, cm ? cm.orderbook_teu : null);
-
-      renderTable();
+      document.getElementById('delta-orderbook').innerHTML = calculateDeltaBadge(m.orderbook_teu, cm ? cm.orderbook_teu : null);
     }
 
-    function renderTable() {
-      const curDate = document.getElementById('date-select').value;
-      const curSnap = appData.snapshots[curDate];
-      if (!curSnap) return;
+    function refreshDashboard() {
+      const curDate = document.getElementById('sel-date').value;
+      if (!rawPayload || !rawPayload.snapshots[curDate]) return;
 
-      const filter = document.getElementById('search-box').value.toLowerCase();
-      const tbody = document.querySelector('#operator-table tbody');
+      const genTime = rawPayload.generated_at ? rawPayload.generated_at.replace("T", " ").substring(0, 19) + " UTC" : "";
+      document.getElementById('header-meta').innerText = `FEED UPDATED: ${genTime}`;
+
+      updateKpisOnly();
+      updateSortHeaderUI();
+      renderTableRows();
+    }
+
+    function renderFlag(countryCode) {
+      if (!countryCode || countryCode === "" || countryCode === "UNKNOWN") {
+        return `<span class="flag-fallback">N/A</span>`;
+      }
+      const cc = countryCode.toLowerCase();
+      return `<img class="flag-icon" src="https://flagcdn.com/20x15/${cc}.png" onerror="this.outerHTML='<span class=\\'flag-fallback\\'>${countryCode}</span>'" alt="${countryCode}">`;
+    }
+
+    function renderTableRows() {
+      const curDate = document.getElementById('sel-date').value;
+      const curSnap = rawPayload.snapshots[curDate];
+      if (!curSnap || !curSnap.operators) return;
+
+      const query = document.getElementById('filter-input').value.toLowerCase().trim();
+      let list = curSnap.operators.filter(op => {
+        const name = (op.operator_name || op.operator || "").toLowerCase();
+        const cntry = (op.country || "").toLowerCase();
+        return name.includes(query) || cntry.includes(query);
+      });
+
+      // Sorting Logic
+      list.sort((a, b) => {
+        let va = a[currentSort.col];
+        let vb = b[currentSort.col];
+        if (currentSort.col === 'operator_name') {
+          va = (a.operator_name || a.operator || "").toLowerCase();
+          vb = (b.operator_name || b.operator || "").toLowerCase();
+        }
+        if (va === null || va === undefined) va = (typeof vb === 'string') ? "" : -1;
+        if (vb === null || vb === undefined) vb = (typeof va === 'string') ? "" : -1;
+
+        if (va < vb) return currentSort.asc ? -1 : 1;
+        if (va > vb) return currentSort.asc ? 1 : -1;
+        return 0;
+      });
+
+      const tbody = document.getElementById('table-body');
       tbody.innerHTML = '';
 
-      curSnap.operators.forEach(op => {
-        const name = op.operator_name || op.operator || '';
-        if (filter && !name.toLowerCase().includes(filter)) return;
+      const rowsHtml = list.map(op => {
+        const opName = op.operator_name || op.operator || 'Unknown';
+        const flagHtml = renderFlag(op.country);
 
-        const row = `
+        return `
           <tr>
-            <td class="text-center">${op.rank}</td>
-            <td class="text-left op-name">${name}</td>
-            <td>${formatNumber(op.total_teu)}</td>
+            <td class="col-center rank-cell">${op.rank}</td>
+            <td class="col-left">
+              <div class="op-cell">
+                ${flagHtml}
+                <span>${opName}</span>
+              </div>
+            </td>
+            <td class="total-col">${formatNumber(op.total_teu)}</td>
             <td>${formatNumber(op.total_ships)}</td>
-            <td>${(op.market_share || 0).toFixed(1)}%</td>
+            <td class="share-col">${(op.market_share || 0).toFixed(1)}%</td>
             <td>${formatNumber(op.owned_teu)}</td>
             <td>${formatNumber(op.owned_ships)}</td>
+            <td style="color: var(--text-muted);">${(op.owned_share || 0).toFixed(1)}%</td>
             <td>${formatNumber(op.chartered_teu)}</td>
             <td>${formatNumber(op.chartered_ships)}</td>
-            <td>${formatNumber(op.orderbook_teu)}</td>
+            <td style="color: var(--text-muted);">${(op.chartered_share || 0).toFixed(1)}%</td>
+            <td style="color: var(--accent-amber);">${formatNumber(op.orderbook_teu)}</td>
             <td>${formatNumber(op.orderbook_ships)}</td>
+            <td style="color: var(--text-muted);">${(op.orderbook_share || 0).toFixed(1)}%</td>
           </tr>
         `;
-        tbody.innerHTML += row;
-      });
+      }).join('');
+
+      tbody.innerHTML = rowsHtml;
     }
 
-    function exportCSV() {
-      const curDate = document.getElementById('date-select').value;
-      const curSnap = appData.snapshots[curDate];
+    function exportToCsv() {
+      const curDate = document.getElementById('sel-date').value;
+      const curSnap = rawPayload.snapshots[curDate];
       if (!curSnap) return;
 
-      let csv = "\uFEFFRank,Operator,Total TEU,Total Ships,Market Share (%),Owned TEU,Owned Ships,Chartered TEU,Chartered Ships,Orderbook TEU,Orderbook Ships\\n";
-      curSnap.operators.forEach(op => {
+      const query = document.getElementById('filter-input').value.toLowerCase().trim();
+      let list = curSnap.operators.filter(op => {
+        const name = (op.operator_name || op.operator || "").toLowerCase();
+        const cntry = (op.country || "").toLowerCase();
+        return name.includes(query) || cntry.includes(query);
+      });
+
+      let csv = "\\uFEFFRank,Operator,Country,Total TEU,Total Ships,Market Share (%),Owned TEU,Owned Ships,Owned Share (%),Chartered TEU,Chartered Ships,Chartered Share (%),Orderbook TEU,Orderbook Ships,Orderbook Share (%)\\r\\n";
+
+      list.forEach(op => {
         const name = `"${(op.operator_name || op.operator || '').replace(/"/g, '""')}"`;
-        csv += `${op.rank},${name},${op.total_teu},${op.total_ships},${op.market_share},${op.owned_teu},${op.owned_ships},${op.chartered_teu},${op.chartered_ships},${op.orderbook_teu},${op.orderbook_ships}\\n`;
+        const c = op.country || "";
+        csv += `${op.rank},${name},${c},${op.total_teu || 0},${op.total_ships || 0},${op.market_share || 0},${op.owned_teu || 0},${op.owned_ships || 0},${op.owned_share || 0},${op.chartered_teu || 0},${op.chartered_ships || 0},${op.chartered_share || 0},${op.orderbook_teu || 0},${op.orderbook_ships || 0},${op.orderbook_share || 0}\\r\\n`;
       });
 
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Alphaliner_TOP100_${curDate}.csv`;
-      a.click();
+      link.setAttribute("href", url);
+      link.setAttribute("download", `Alphaliner_TOP100_${curDate}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
 
-    window.onload = init;
+    window.onload = initTerminal;
   </script>
 </body>
 </html>
 """
     with open(HTML_PATH, "w", encoding="utf-8") as f:
         f.write(html_content)
-    logger.info(f"Generated dashboard HTML: {HTML_PATH}")
+    logger.info(f"Generated Bloomberg-style HTML viewer: {HTML_PATH}")
 
 # =========================================================
-# 7. Web Server Routing
+# 7. Flask Server Routing
 # =========================================================
 @app.route("/")
-def index():
+def serve_index():
     return send_from_directory(str(BASE_DIR), "index.html")
 
 @app.route("/alphaliner_data.json")
-def data_json():
+def serve_json():
     return send_from_directory(str(BASE_DIR), "alphaliner_data.json")
 
 # =========================================================
-# 8. Main Entrypoint
+# 8. Main Entry Point
 # =========================================================
 def main():
     parser = argparse.ArgumentParser(description="Alphaliner Static Terminal Crawler")
-    parser.add_argument("--cron", action="store_true", help="Run once to crawl and export without starting the web server")
+    parser.add_argument("--cron", action="store_true", help="Run in GitHub Actions cron batch mode")
     parser.add_argument("--port", type=int, default=5000)
     parser.add_argument("--host", default="0.0.0.0")
     args = parser.parse_args()
@@ -808,25 +1129,25 @@ def main():
     init_db()
 
     if args.cron:
-        logger.info("Executing Alphaliner Cron Task...")
+        logger.info("Starting Alphaliner batch cron execution...")
         success = process_and_persist()
         export_json_and_html()
         if not success:
-            logger.warning("Cron run completed without saving a new snapshot (rejected or unchanged).")
+            logger.warning("Cron executed: No new valid snapshot persisted.")
         sys.exit(0)
 
-    # Server mode
+    # Standalone Server mode
     try:
         with get_db_connection() as conn:
             cnt = conn.cursor().execute("SELECT count(*) FROM snapshot_meta").fetchone()[0]
             if cnt == 0:
-                logger.info("Database is empty. Initiating initial scrape...")
+                logger.info("Database empty on boot. Executing initial scrape...")
                 process_and_persist()
     except Exception as e:
-        logger.warning(f"Initial scrape attempt warning: {e}")
+        logger.warning(f"Initial boot scrape skipped: {e}")
 
     export_json_and_html()
-    logger.info(f"Starting Alphaliner Web Server on http://{args.host}:{args.port}")
+    logger.info(f"Starting Alphaliner Web Terminal at http://{args.host}:{args.port}")
     app.run(host=args.host, port=args.port, debug=False)
 
 if __name__ == "__main__":
