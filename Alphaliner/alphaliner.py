@@ -1,28 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Alphaliner TOP 100 Liner Operators Static Dashboard Crawler
+Alphaliner TOP 100 Liner Operators Static Dashboard Crawler (GitHub Optimized)
+- Direct ExtJS Store extraction (Top100description)
+- Official Global Figures + TOP 100 Capacity Separation
+- Historical snapshot comparison & Full Time-travel Delta analysis
+- Authentic Alphaliner 2-tier Grouped Table & UTF-8 BOM CSV Export
+- Bloomberg MI Terminal Look & Feel
+- Auto DB schema migration & robust column mapping
 
-Features
---------
-- ExtJS Store directly extraction: Top100description
-- Does not use store.getModel()
-- GitHub Actions Chrome / ChromeDriver compatible
-- Explicit Alphaliner field mapping:
-  totalTeu, totalShips, ownedTeu, ownedShips,
-  chartTeu, chartShips, orderTeu, orderShips
-- Quality validation before persistence
-- Invalid / incomplete snapshots are never persisted
-- JSON exports only valid historical snapshots
-- SQLite-based historical storage
-- Bloomberg / MI Terminal static dashboard
-- Date selector, search, grouped table, UTF-8 BOM CSV export
-- --cron execution and Flask local server mode
-
-Output files
-------------
-- Alphaliner/alphaliner_history.db
-- Alphaliner/alphaliner_data.json
-- Alphaliner/index.html
+Output files:
+- alphaliner_history.db
+- alphaliner_data.json
+- index.html
 """
 
 import argparse
@@ -36,8 +25,9 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from threading import Lock
 
+import pandas as pd
 from flask import Flask, Response, send_from_directory
 from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
@@ -54,530 +44,178 @@ except Exception:
 # =========================================================
 # 1. Basic Configuration
 # =========================================================
-
 BASE_DIR = Path(__file__).resolve().parent
-
 DB_PATH = BASE_DIR / "alphaliner_history.db"
 JSON_PATH = BASE_DIR / "alphaliner_data.json"
 HTML_PATH = BASE_DIR / "index.html"
-
 TARGET_URL = "https://alphaliner.axsmarine.com/PublicTop100/"
-
-LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
 
 logging.basicConfig(
     level=logging.INFO,
-    format=LOG_FORMAT,
-    handlers=[logging.StreamHandler(sys.stdout)],
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
+logger = logging.getLogger("Alphaliner")
 
-logger = logging.getLogger("alphaliner")
-
-app = Flask(__name__)
-
-# =========================================================
-# 2. Data Quality Thresholds
-# =========================================================
-
-MIN_OPERATOR_COUNT = 80
-MAX_OPERATOR_COUNT = 150
-
-MIN_TOTAL_FLEET_TEU = 10_000_000
-MIN_TOTAL_FLEET_SHIPS = 500
-MIN_TOP10_TEU = 3_000_000
-MIN_ORDERBOOK_TEU = 500_000
-
-MAX_TOP10_SHARE = 0.95
+app = Flask(__name__, static_folder=str(BASE_DIR))
+db_lock = Lock()
 
 # =========================================================
-# 3. Utility Functions
+# 2. Database Initialization & Dynamic Schema Adaptation
 # =========================================================
-
-def now_iso() -> str:
-    return datetime.now().isoformat(timespec="seconds")
-
-def today_str() -> str:
-    return datetime.now().strftime("%Y-%m-%d")
-
-def normalize_key(value: Any) -> str:
-    """필드명을 비교 가능한 소문자 영숫자 형태로 정규화한다."""
-    if value is None:
-        return ""
-
-    return re.sub(
-        r"[^a-z0-9]",
-        "",
-        str(value).strip().lower(),
-    )
-
-def parse_number(value: Any) -> Optional[float]:
-    """문자열 또는 숫자를 float으로 안전하게 변환한다."""
-    if value is None:
-        return None
-
-    if isinstance(value, bool):
-        return float(value)
-
-    if isinstance(value, (int, float)):
-        return float(value)
-
-    text = str(value).strip()
-
-    if not text:
-        return None
-
-    text = (
-        text.replace(",", "")
-        .replace(" ", "")
-        .replace("\xa0", "")
-        .replace("TEU", "")
-        .replace("teu", "")
-        .replace("Ships", "")
-        .replace("ships", "")
-        .replace("%", "")
-    )
-
-    if text in {"-", "–", "—", "N/A", "n/a", "null", "None", ""}:
-        return None
-
-    match = re.search(r"-?\d+(?:\.\d+)?", text)
-
-    if not match:
-        return None
-
-    try:
-        return float(match.group(0))
-    except Exception:
-        return None
-
-def parse_int(value: Any, default: int = 0) -> int:
-    parsed = parse_number(value)
-    return int(round(parsed)) if parsed is not None else default
-
-def parse_float(value: Any, default: float = 0.0) -> float:
-    parsed = parse_number(value)
-    return float(parsed) if parsed is not None else default
-
-def first_value(
-    record: Dict[str, Any],
-    aliases: List[str],
-    default: Any = None,
-) -> Any:
-    """
-    별칭 기준으로 정확히 일치하는 필드를 찾는다.
-
-    중요:
-    - 부분 문자열 매칭을 하지 않는다.
-    - 예: 'teu'가 'chartTeu'에 잘못 매칭되는 문제를 방지한다.
-    """
-    normalized_record = {
-        normalize_key(key): value
-        for key, value in record.items()
-    }
-
-    for alias in aliases:
-        normalized_alias = normalize_key(alias)
-
-        if normalized_alias in normalized_record:
-            return normalized_record[normalized_alias]
-
-    return default
-
-def safe_json_dumps(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, default=str)
-
-# =========================================================
-# 4. Database Functions
-# =========================================================
-
-def get_connection() -> sqlite3.Connection:
+def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
-def column_exists(
-    conn: sqlite3.Connection,
-    table_name: str,
-    column_name: str,
-) -> bool:
-    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
-    return any(row["name"] == column_name for row in rows)
-
-def add_column_if_missing(
-    conn: sqlite3.Connection,
-    table_name: str,
-    column_definition: str,
-) -> None:
-    column_name = column_definition.split()[0]
-
-    if not column_exists(conn, table_name, column_name):
-        logger.info(
-            "[DB MIGRATE] Adding missing column '%s' to '%s'",
-            column_name,
-            table_name,
-        )
-        conn.execute(
-            f"ALTER TABLE {table_name} ADD COLUMN {column_definition}"
-        )
-
-def init_database() -> None:
-    conn = get_connection()
-
+def get_table_columns(conn, table_name: str) -> set:
     try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS snapshot_meta (
-                snapshot_date TEXT PRIMARY KEY,
-                global_total_teu INTEGER,
-                global_total_ships INTEGER,
-                top100_total_teu INTEGER,
-                top100_total_ships INTEGER,
-                top10_total_teu INTEGER,
-                top10_share REAL,
-                orderbook_total_teu INTEGER,
-                extracted_at TEXT,
-                source_url TEXT,
-                raw_hash TEXT,
-                global_teu INTEGER,
-                global_ships INTEGER,
-                top100_teu INTEGER,
-                top100_ships INTEGER,
-                total_teu INTEGER,
-                total_ships INTEGER,
-                created_at TEXT,
-                updated_at TEXT,
-                notes TEXT,
-                is_valid INTEGER DEFAULT 1,
-                validation_error TEXT
-            )
-        """)
+        cur = conn.cursor()
+        cur.execute(f"PRAGMA table_info({table_name})")
+        return {row["name"] for row in cur.fetchall()}
+    except Exception:
+        return set()
 
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS operator_snapshots (
-                snapshot_date TEXT NOT NULL,
-                rank INTEGER NOT NULL,
-                operator TEXT,
-                fleet_teu INTEGER,
-                fleet_ships INTEGER,
-                owned_teu INTEGER,
-                owned_ships INTEGER,
-                owned_share REAL,
-                chartered_teu INTEGER,
-                chartered_ships INTEGER,
-                chartered_share REAL,
-                orderbook_teu INTEGER,
-                orderbook_ships INTEGER,
-                orderbook_share REAL,
-                country TEXT,
-                teu INTEGER,
-                teu_share REAL,
-                ships INTEGER,
-                orderbook_teu_share REAL,
-                created_at TEXT,
-                PRIMARY KEY (snapshot_date, rank)
-            )
-        """)
+def init_db():
+    with db_lock:
+        with get_db_connection() as conn:
+            cur = conn.cursor()
 
-        meta_columns = [
-            "global_total_teu INTEGER",
-            "global_total_ships INTEGER",
-            "top100_total_teu INTEGER",
-            "top100_total_ships INTEGER",
-            "top10_total_teu INTEGER",
-            "top10_share REAL",
-            "orderbook_total_teu INTEGER",
-            "extracted_at TEXT",
-            "source_url TEXT",
-            "raw_hash TEXT",
-            "global_teu INTEGER",
-            "global_ships INTEGER",
-            "top100_teu INTEGER",
-            "top100_ships INTEGER",
-            "total_teu INTEGER",
-            "total_ships INTEGER",
-            "created_at TEXT",
-            "updated_at TEXT",
-            "notes TEXT",
-            "is_valid INTEGER DEFAULT 1",
-            "validation_error TEXT",
-        ]
+            # 1. snapshot_meta table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS snapshot_meta (
+                    snapshot_date TEXT PRIMARY KEY,
+                    global_teu INTEGER,
+                    global_ships INTEGER,
+                    top100_teu INTEGER,
+                    top100_ships INTEGER,
+                    top10_share REAL,
+                    orderbook_teu INTEGER,
+                    extracted_at TEXT,
+                    source_url TEXT,
+                    raw_hash TEXT,
+                    notes TEXT,
+                    updated_at TEXT
+                )
+            """)
 
-        for definition in meta_columns:
-            add_column_if_missing(conn, "snapshot_meta", definition)
+            # 2. operator_snapshots table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS operator_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    snapshot_date TEXT,
+                    rank INTEGER,
+                    operator_name TEXT,
+                    total_teu INTEGER,
+                    total_ships INTEGER,
+                    market_share REAL,
+                    owned_teu INTEGER,
+                    owned_ships INTEGER,
+                    owned_share REAL,
+                    chartered_teu INTEGER,
+                    chartered_ships INTEGER,
+                    chartered_share REAL,
+                    orderbook_teu INTEGER,
+                    orderbook_ships INTEGER,
+                    orderbook_share REAL,
+                    country TEXT,
+                    created_at TEXT,
+                    UNIQUE(snapshot_date, rank)
+                )
+            """)
 
-        operator_columns = [
-            "fleet_teu INTEGER",
-            "fleet_ships INTEGER",
-            "owned_teu INTEGER",
-            "owned_ships INTEGER",
-            "owned_share REAL",
-            "chartered_teu INTEGER",
-            "chartered_ships INTEGER",
-            "chartered_share REAL",
-            "orderbook_teu INTEGER",
-            "orderbook_ships INTEGER",
-            "orderbook_share REAL",
-            "country TEXT",
-            "teu INTEGER",
-            "teu_share REAL",
-            "ships INTEGER",
-            "orderbook_teu_share REAL",
-            "created_at TEXT",
-        ]
+            # Schema Migration if existing DB has different column names
+            op_cols = get_table_columns(conn, "operator_snapshots")
+            if "operator_name" not in op_cols and "operator" in op_cols:
+                try:
+                    cur.execute("ALTER TABLE operator_snapshots ADD COLUMN operator_name TEXT")
+                    cur.execute("UPDATE operator_snapshots SET operator_name = operator WHERE operator_name IS NULL")
+                except Exception as e:
+                    logger.warning(f"Schema migration warning (operator_name): {e}")
 
-        for definition in operator_columns:
-            add_column_if_missing(conn, "operator_snapshots", definition)
+            if "operator" not in op_cols and "operator_name" in op_cols:
+                try:
+                    cur.execute("ALTER TABLE operator_snapshots ADD COLUMN operator TEXT")
+                    cur.execute("UPDATE operator_snapshots SET operator = operator_name WHERE operator IS NULL")
+                except Exception as e:
+                    logger.warning(f"Schema migration warning (operator): {e}")
 
-        conn.commit()
-
-    finally:
-        conn.close()
+            conn.commit()
 
 # =========================================================
-# 5. Chrome / Selenium Functions
+# 3. Selenium Web Crawler
 # =========================================================
-
-def get_chrome_binary() -> Optional[str]:
-    candidates = [
-        os.getenv("CHROME_BINARY"),
-        os.getenv("GOOGLE_CHROME_BIN"),
-        "/usr/bin/google-chrome",
-        "/usr/bin/google-chrome-stable",
-        "/usr/bin/chromium",
-        "/usr/bin/chromium-browser",
-    ]
-
-    for candidate in candidates:
-        if candidate and os.path.exists(candidate):
-            return candidate
-
-    return None
-
-def get_chrome_driver() -> webdriver.Chrome:
+def build_chrome_options():
     options = Options()
-
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    options.add_argument("--disable-notifications")
-    options.add_argument("--disable-popup-blocking")
-    options.add_argument("--window-size=1920,2200")
-    options.add_argument("--lang=en-US")
-    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-    options.add_experimental_option(
-        "excludeSwitches",
-        ["enable-automation"],
-    )
-    options.add_experimental_option(
-        "useAutomationExtension",
-        False,
-    )
+    chrome_bin = os.environ.get("CHROME_BINARY") or os.environ.get("GOOGLE_CHROME_BIN")
+    if chrome_bin and os.path.exists(chrome_bin):
+        options.binary_location = chrome_bin
+    return options
 
-    chrome_binary = get_chrome_binary()
+def get_driver():
+    options = build_chrome_options()
+    chromedriver_bin = os.environ.get("CHROMEDRIVER_PATH")
 
-    if chrome_binary:
-        logger.info("Using Chrome binary: %s", chrome_binary)
-        options.binary_location = chrome_binary
-    else:
-        logger.warning("Chrome binary was not explicitly found.")
+    if chromedriver_bin and os.path.exists(chromedriver_bin):
+        service = Service(executable_path=chromedriver_bin)
+        return webdriver.Chrome(service=service, options=options)
 
-    chromedriver_path = os.getenv("CHROMEDRIVER_PATH")
+    if HAS_WEBDRIVER_MANAGER:
+        try:
+            return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        except Exception:
+            pass
 
-    if chromedriver_path and os.path.exists(chromedriver_path):
-        logger.info("Using CHROMEDRIVER_PATH: %s", chromedriver_path)
-        driver = webdriver.Chrome(
-            service=Service(chromedriver_path),
-            options=options,
-        )
+    return webdriver.Chrome(options=options)
 
-    elif HAS_WEBDRIVER_MANAGER:
-        logger.info("Using webdriver-manager fallback.")
-        driver_path = ChromeDriverManager().install()
-
-        driver = webdriver.Chrome(
-            service=Service(driver_path),
-            options=options,
-        )
-
-    else:
-        logger.info("Using Selenium default ChromeDriver resolution.")
-        driver = webdriver.Chrome(options=options)
-
-    driver.execute_cdp_cmd(
-        "Page.addScriptToEvaluateOnNewDocument",
-        {
-            "source": """
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined
-                });
-            """
-        },
-    )
-
-    return driver
-
-# =========================================================
-# 6. ExtJS Data Extraction
-# =========================================================
-
-def fetch_alphaliner_data() -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """
-    ExtJS Store 'Top100description'에서 데이터를 추출한다.
-
-    store.getModel()은 사용하지 않는다.
-    """
-    logger.info("Navigating to %s", TARGET_URL)
-
+def fetch_alphaliner_data():
+    logger.info(f"Navigating to {TARGET_URL}")
     driver = None
-
     try:
-        driver = get_chrome_driver()
-        driver.set_page_load_timeout(90)
+        driver = get_driver()
+        driver.set_page_load_timeout(60)
         driver.get(TARGET_URL)
 
-        wait = WebDriverWait(driver, 45)
-
-        wait.until(
+        # Wait for ExtJS Ext.data.StoreManager to load Top100description
+        WebDriverWait(driver, 40).until(
             lambda d: d.execute_script("""
-                try {
-                    if (typeof Ext === 'undefined') return false;
-                    if (!Ext.data || !Ext.data.StoreManager) return false;
-
-                    var store =
-                        Ext.data.StoreManager.lookup('Top100description');
-
-                    if (!store) return false;
-
-                    if (typeof store.getCount === 'function') {
-                        return store.getCount() > 0;
-                    }
-
-                    return !!(
-                        store.data &&
-                        store.data.items &&
-                        store.data.items.length > 0
-                    );
-
-                } catch (e) {
-                    return false;
-                }
+                return typeof Ext !== 'undefined' &&
+                       Ext.data &&
+                       Ext.data.StoreManager &&
+                       Ext.data.StoreManager.lookup('Top100description') &&
+                       Ext.data.StoreManager.lookup('Top100description').getCount() > 0;
             """)
         )
 
         time.sleep(2)
 
-        extraction_result = driver.execute_script("""
-            try {
-                var store =
-                    Ext.data.StoreManager.lookup('Top100description');
-
-                if (!store) {
-                    return {
-                        ok: false,
-                        error: 'Top100description Store was not found.',
-                        records: [],
-                        fields: []
-                    };
-                }
-
-                var records = [];
-
-                if (typeof store.each === 'function') {
-                    store.each(function(rec) {
-                        if (rec && rec.data) {
-                            records.push(rec.data);
-                        }
-                    });
-                } else if (
-                    store.data &&
-                    store.data.items &&
-                    Array.isArray(store.data.items)
-                ) {
-                    store.data.items.forEach(function(rec) {
-                        if (rec && rec.data) {
-                            records.push(rec.data);
-                        }
-                    });
-                }
-
-                var fields = records.length && records[0]
-                    ? Object.keys(records[0])
-                    : [];
-
-                return {
-                    ok: true,
-                    count: records.length,
-                    store_id: store.storeId || 'Top100description',
-                    fields: fields,
-                    records: records
-                };
-
-            } catch (e) {
-                return {
-                    ok: false,
-                    error: String(e),
-                    records: [],
-                    fields: []
-                };
-            }
+        records = driver.execute_script("""
+            var store = Ext.data.StoreManager.lookup('Top100description');
+            if (!store) return [];
+            var data = [];
+            store.each(function(rec) {
+                data.push(rec.data);
+            });
+            return data;
         """)
 
-        if not extraction_result:
-            raise RuntimeError(
-                "No JavaScript response was returned during ExtJS extraction."
-            )
+        logger.info(f"Successfully extracted {len(records)} records from Store 'Top100description'.")
+        if records:
+            keys = list(records[0].keys())
+            logger.info(f"Detected source fields: {', '.join(keys)}")
+            logger.info(f"First raw record: {json.dumps(records[0])}")
+        return records
 
-        if not extraction_result.get("ok"):
-            raise RuntimeError(
-                "ExtJS extraction failed: "
-                f"{extraction_result.get('error', 'Unknown error')}"
-            )
-
-        records = extraction_result.get("records") or []
-
-        if not records:
-            raise RuntimeError(
-                "Top100description Store was detected, "
-                "but no records were extracted."
-            )
-
-        logger.info(
-            "Successfully extracted %s records from Store '%s'.",
-            len(records),
-            extraction_result.get("store_id", "Top100description"),
-        )
-
-        logger.info(
-            "Detected source fields: %s",
-            ", ".join(extraction_result.get("fields", [])),
-        )
-
-        logger.info(
-            "First raw record: %s",
-            safe_json_dumps(records[0]),
-        )
-
-        page_info = driver.execute_script("""
-            return {
-                title: document.title || '',
-                url: window.location.href || '',
-                text: document.body && document.body.innerText
-                    ? document.body.innerText.substring(0, 5000)
-                    : ''
-            };
-        """)
-
-        return records, page_info
-
-    except WebDriverException as exc:
-        logger.error("Selenium/WebDriver error: %s", exc)
+    except Exception as e:
+        logger.error(f"Error fetching data from Alphaliner: {e}")
         raise
-
-    except Exception as exc:
-        logger.error("Error fetching Alphaliner data: %s", exc)
-        raise
-
     finally:
         if driver:
             try:
@@ -586,1336 +224,610 @@ def fetch_alphaliner_data() -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
                 pass
 
 # =========================================================
-# 7. Record Normalization
+# 4. Data Parsing & Quality Validation
 # =========================================================
-
-def normalize_operator_record(
-    raw: Dict[str, Any],
-    fallback_rank: int,
-) -> Dict[str, Any]:
-    """
-    Alphaliner Top100description 레코드를 표준 구조로 변환한다.
-
-    우선순위:
-    1. totalTeu / totalShips
-    2. ownedTeu + chartTeu / ownedShips + chartShips
-    """
-
-    rank = parse_int(
-        first_value(raw, [
-            "rank",
-            "ranking",
-            "position",
-            "no",
-            "number",
-        ]),
-        fallback_rank,
-    )
-
-    operator = first_value(raw, [
-        "operator",
-        "operatorName",
-        "company",
-        "name",
-        "liner",
-        "line",
-    ])
-
-    operator = (
-        str(operator).strip()
-        if operator
-        else f"Unknown Operator {rank}"
-    )
-
-    owned_teu = parse_int(first_value(raw, [
-        "ownedTeu",
-        "owned_teu",
-        "ownedCapacity",
-    ]))
-
-    owned_ships = parse_int(first_value(raw, [
-        "ownedShips",
-        "owned_ships",
-        "ownedVessels",
-    ]))
-
-    # Alphaliner 실제 원본 필드: chartTeu / chartShips
-    chartered_teu = parse_int(first_value(raw, [
-        "chartTeu",
-        "charteredTeu",
-        "charterTeu",
-        "chartered_teu",
-    ]))
-
-    chartered_ships = parse_int(first_value(raw, [
-        "chartShips",
-        "charteredShips",
-        "charterShips",
-        "chartered_ships",
-    ]))
-
-    # Alphaliner 실제 원본 필드: totalTeu / totalShips
-    direct_fleet_teu = parse_int(first_value(raw, [
-        "totalTeu",
-        "fleetTeu",
-        "fleet_teu",
-        "total_teu",
-        "totalCapacity",
-        "capacity",
-    ]))
-
-    direct_fleet_ships = parse_int(first_value(raw, [
-        "totalShips",
-        "fleetShips",
-        "fleet_ships",
-        "total_ships",
-        "vessels",
-    ]))
-
-    fleet_teu = (
-        direct_fleet_teu
-        if direct_fleet_teu > 0
-        else owned_teu + chartered_teu
-    )
-
-    fleet_ships = (
-        direct_fleet_ships
-        if direct_fleet_ships > 0
-        else owned_ships + chartered_ships
-    )
-
-    # Alphaliner 실제 원본 필드: orderTeu / orderShips
-    orderbook_teu = parse_int(first_value(raw, [
-        "orderTeu",
-        "orderbookTeu",
-        "orderbook_teu",
-        "onOrderTeu",
-    ]))
-
-    orderbook_ships = parse_int(first_value(raw, [
-        "orderShips",
-        "orderbookShips",
-        "orderbook_ships",
-        "onOrderShips",
-    ]))
-
-    country = first_value(raw, [
-        "country",
-        "nationality",
-        "flag",
-        "headquarters",
-    ])
-
-    country = str(country).strip() if country else None
-
-    owned_share = (
-        round(owned_teu / fleet_teu * 100, 2)
-        if fleet_teu > 0
-        else 0.0
-    )
-
-    chartered_share = (
-        round(chartered_teu / fleet_teu * 100, 2)
-        if fleet_teu > 0
-        else 0.0
-    )
-
-    orderbook_share = (
-        round(orderbook_teu / fleet_teu * 100, 2)
-        if fleet_teu > 0
-        else 0.0
-    )
-
-    return {
-        "rank": rank,
-        "operator": operator,
-        "fleet_teu": fleet_teu,
-        "fleet_ships": fleet_ships,
-        "owned_teu": owned_teu,
-        "owned_ships": owned_ships,
-        "owned_share": owned_share,
-        "chartered_teu": chartered_teu,
-        "chartered_ships": chartered_ships,
-        "chartered_share": chartered_share,
-        "orderbook_teu": orderbook_teu,
-        "orderbook_ships": orderbook_ships,
-        "orderbook_share": orderbook_share,
-        "country": country,
-
-        # 기존 DB/JSON 호환 필드
-        "teu": fleet_teu,
-        "ships": fleet_ships,
-        "teu_share": 0.0,
-        "orderbook_teu_share": orderbook_share,
-    }
-
-def normalize_records(
-    raw_records: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
-    """
-    중복 Rank가 있을 경우 Fleet TEU가 큰 행을 유지한다.
-    """
-    best_by_rank: Dict[int, Dict[str, Any]] = {}
-
-    for index, raw in enumerate(raw_records, start=1):
-        if not isinstance(raw, dict):
-            continue
-
-        record = normalize_operator_record(raw, fallback_rank=index)
-
-        if record["rank"] <= 0:
-            continue
-
-        if record["fleet_teu"] <= 0:
-            logger.warning(
-                "Skipping invalid row: rank=%s operator=%s fleet_teu=%s",
-                record["rank"],
-                record["operator"],
-                record["fleet_teu"],
-            )
-            continue
-
-        existing = best_by_rank.get(record["rank"])
-
-        if existing is None or record["fleet_teu"] > existing["fleet_teu"]:
-            best_by_rank[record["rank"]] = record
-
-    return sorted(
-        best_by_rank.values(),
-        key=lambda row: row["rank"],
-    )
-
-# =========================================================
-# 8. Metrics and Quality Validation
-# =========================================================
-
-def calculate_metrics(
-    operators: List[Dict[str, Any]],
-) -> Dict[str, Any]:
-    total_teu = sum(row["fleet_teu"] for row in operators)
-    total_ships = sum(row["fleet_ships"] for row in operators)
-
-    top10 = sorted(
-        operators,
-        key=lambda row: row["fleet_teu"],
-        reverse=True,
-    )[:10]
-
-    top10_total_teu = sum(row["fleet_teu"] for row in top10)
-    orderbook_total_teu = sum(row["orderbook_teu"] for row in operators)
-
-    top10_share = (
-        round(top10_total_teu / total_teu * 100, 2)
-        if total_teu > 0
-        else 0.0
-    )
-
-    return {
-        "global_total_teu": total_teu,
-        "global_total_ships": total_ships,
-        "top100_total_teu": total_teu,
-        "top100_total_ships": total_ships,
-        "top10_total_teu": top10_total_teu,
-        "top10_share": top10_share,
-        "orderbook_total_teu": orderbook_total_teu,
-
-        # 기존 DB / JSON 호환
-        "global_teu": total_teu,
-        "global_ships": total_ships,
-        "top100_teu": total_teu,
-        "top100_ships": total_ships,
-        "total_teu": total_teu,
-        "total_ships": total_ships,
-    }
-
-def validate_snapshot(
-    operators: List[Dict[str, Any]],
-    metrics: Dict[str, Any],
-) -> Tuple[bool, List[str]]:
-    errors = []
-
-    operator_count = len(operators)
-
-    if operator_count < MIN_OPERATOR_COUNT:
-        errors.append(
-            f"Operator count too low: {operator_count} "
-            f"(minimum: {MIN_OPERATOR_COUNT})"
-        )
-
-    if operator_count > MAX_OPERATOR_COUNT:
-        errors.append(
-            f"Operator count too high: {operator_count} "
-            f"(maximum: {MAX_OPERATOR_COUNT})"
-        )
-
-    if metrics["total_teu"] < MIN_TOTAL_FLEET_TEU:
-        errors.append(
-            f"Total fleet TEU invalid: {metrics['total_teu']:,} "
-            f"(minimum: {MIN_TOTAL_FLEET_TEU:,})"
-        )
-
-    if metrics["total_ships"] < MIN_TOTAL_FLEET_SHIPS:
-        errors.append(
-            f"Total fleet ships invalid: {metrics['total_ships']:,} "
-            f"(minimum: {MIN_TOTAL_FLEET_SHIPS:,})"
-        )
-
-    if metrics["top10_total_teu"] < MIN_TOP10_TEU:
-        errors.append(
-            f"Top 10 total TEU invalid: {metrics['top10_total_teu']:,} "
-            f"(minimum: {MIN_TOP10_TEU:,})"
-        )
-
-    if metrics["orderbook_total_teu"] < MIN_ORDERBOOK_TEU:
-        errors.append(
-            f"Orderbook TEU invalid: {metrics['orderbook_total_teu']:,} "
-            f"(minimum: {MIN_ORDERBOOK_TEU:,})"
-        )
-
-    if (
-        metrics["top10_share"] <= 0
-        or metrics["top10_share"] > MAX_TOP10_SHARE * 100
-    ):
-        errors.append(
-            f"Top 10 concentration invalid: "
-            f"{metrics['top10_share']:.2f}%"
-        )
-
-    unique_operators = {
-        row["operator"].strip().lower()
-        for row in operators
-        if row["operator"]
-    }
-
-    if len(unique_operators) < MIN_OPERATOR_COUNT:
-        errors.append(
-            "Too few unique operator names were extracted."
-        )
-
-    return len(errors) == 0, errors
-
-# =========================================================
-# 9. Persistence
-# =========================================================
-
-def persist_snapshot(
-    snapshot_date: str,
-    operators: List[Dict[str, Any]],
-    metrics: Dict[str, Any],
-    source_url: str,
-    raw_hash: str,
-) -> None:
-    conn = get_connection()
-
+def clean_int(val, default=0):
+    if val is None:
+        return default
     try:
-        extracted_at = now_iso()
-
-        conn.execute("BEGIN")
-
-        conn.execute("""
-            INSERT INTO snapshot_meta (
-                snapshot_date,
-                global_total_teu,
-                global_total_ships,
-                top100_total_teu,
-                top100_total_ships,
-                top10_total_teu,
-                top10_share,
-                orderbook_total_teu,
-                extracted_at,
-                source_url,
-                raw_hash,
-                global_teu,
-                global_ships,
-                top100_teu,
-                top100_ships,
-                total_teu,
-                total_ships,
-                created_at,
-                updated_at,
-                notes,
-                is_valid,
-                validation_error
-            )
-            VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-            )
-            ON CONFLICT(snapshot_date) DO UPDATE SET
-                global_total_teu = excluded.global_total_teu,
-                global_total_ships = excluded.global_total_ships,
-                top100_total_teu = excluded.top100_total_teu,
-                top100_total_ships = excluded.top100_total_ships,
-                top10_total_teu = excluded.top10_total_teu,
-                top10_share = excluded.top10_share,
-                orderbook_total_teu = excluded.orderbook_total_teu,
-                extracted_at = excluded.extracted_at,
-                source_url = excluded.source_url,
-                raw_hash = excluded.raw_hash,
-                global_teu = excluded.global_teu,
-                global_ships = excluded.global_ships,
-                top100_teu = excluded.top100_teu,
-                top100_ships = excluded.top100_ships,
-                total_teu = excluded.total_teu,
-                total_ships = excluded.total_ships,
-                updated_at = excluded.updated_at,
-                notes = excluded.notes,
-                is_valid = excluded.is_valid,
-                validation_error = excluded.validation_error
-        """, (
-            snapshot_date,
-            metrics["global_total_teu"],
-            metrics["global_total_ships"],
-            metrics["top100_total_teu"],
-            metrics["top100_total_ships"],
-            metrics["top10_total_teu"],
-            metrics["top10_share"],
-            metrics["orderbook_total_teu"],
-            extracted_at,
-            source_url,
-            raw_hash,
-            metrics["global_teu"],
-            metrics["global_ships"],
-            metrics["top100_teu"],
-            metrics["top100_ships"],
-            metrics["total_teu"],
-            metrics["total_ships"],
-            extracted_at,
-            extracted_at,
-            "Validated Alphaliner Top 100 snapshot",
-            1,
-            None,
-        ))
-
-        conn.execute(
-            "DELETE FROM operator_snapshots WHERE snapshot_date = ?",
-            (snapshot_date,),
-        )
-
-        rows = [
-            (
-                snapshot_date,
-                operator["rank"],
-                operator["operator"],
-                operator["fleet_teu"],
-                operator["fleet_ships"],
-                operator["owned_teu"],
-                operator["owned_ships"],
-                operator["owned_share"],
-                operator["chartered_teu"],
-                operator["chartered_ships"],
-                operator["chartered_share"],
-                operator["orderbook_teu"],
-                operator["orderbook_ships"],
-                operator["orderbook_share"],
-                operator["country"],
-                operator["teu"],
-                operator["teu_share"],
-                operator["ships"],
-                operator["orderbook_teu_share"],
-                extracted_at,
-            )
-            for operator in operators
-        ]
-
-        conn.executemany("""
-            INSERT INTO operator_snapshots (
-                snapshot_date,
-                rank,
-                operator,
-                fleet_teu,
-                fleet_ships,
-                owned_teu,
-                owned_ships,
-                owned_share,
-                chartered_teu,
-                chartered_ships,
-                chartered_share,
-                orderbook_teu,
-                orderbook_ships,
-                orderbook_share,
-                country,
-                teu,
-                teu_share,
-                ships,
-                orderbook_teu_share,
-                created_at
-            )
-            VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-            )
-        """, rows)
-
-        conn.commit()
-
-        logger.info(
-            "Persisted VALID snapshot %s | operators=%s | fleet_teu=%s | fleet_ships=%s",
-            snapshot_date,
-            len(operators),
-            f"{metrics['total_teu']:,}",
-            f"{metrics['total_ships']:,}",
-        )
-
+        if isinstance(val, (int, float)):
+            return int(val)
+        s = str(val).replace(",", "").strip()
+        if not s or s == "-":
+            return default
+        return int(float(s))
     except Exception:
-        conn.rollback()
-        raise
+        return default
 
-    finally:
-        conn.close()
-
-# =========================================================
-# 10. JSON Export
-# =========================================================
-
-def row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
-    return {key: row[key] for key in row.keys()}
-
-def export_json() -> bool:
-    conn = get_connection()
-
+def clean_float(val, default=0.0):
+    if val is None:
+        return default
     try:
-        snapshot_rows = conn.execute("""
-            SELECT *
-            FROM snapshot_meta
-            WHERE COALESCE(is_valid, 1) = 1
-              AND COALESCE(total_teu, global_total_teu, 0) >= ?
-              AND COALESCE(total_ships, global_total_ships, 0) >= ?
+        if isinstance(val, (int, float)):
+            return float(val)
+        s = str(val).replace(",", "").replace("%", "").strip()
+        if not s or s == "-":
+            return default
+        return float(s)
+    except Exception:
+        return default
+
+def parse_records(raw_records):
+    parsed = []
+    for rank_idx, r in enumerate(raw_records, start=1):
+        operator = r.get("operator") or r.get("comp_name") or r.get("comp_cle_oper") or f"Operator {rank_idx}"
+
+        owned_teu = clean_int(r.get("ownedTeu") or r.get("owned_teu"))
+        owned_ships = clean_int(r.get("ownedShips") or r.get("owned_ships"))
+
+        chartered_teu = clean_int(r.get("chartTeu") or r.get("chartered_teu"))
+        chartered_ships = clean_int(r.get("chartShips") or r.get("chartered_ships"))
+
+        total_teu = clean_int(r.get("totalTeu") or r.get("total_teu"))
+        if total_teu == 0 and (owned_teu > 0 or chartered_teu > 0):
+            total_teu = owned_teu + chartered_teu
+
+        total_ships = clean_int(r.get("totalShips") or r.get("total_ships"))
+        if total_ships == 0 and (owned_ships > 0 or chartered_ships > 0):
+            total_ships = owned_ships + chartered_ships
+
+        market_share = clean_float(r.get("percent") or r.get("market_share"))
+        owned_share = clean_float(r.get("ownedProcents") or r.get("owned_share"))
+        if owned_share == 0.0 and total_teu > 0:
+            owned_share = round((owned_teu / total_teu) * 100, 2)
+
+        chartered_share = clean_float(r.get("chartProcent") or r.get("chartered_share"))
+        if chartered_share == 0.0 and total_teu > 0:
+            chartered_share = round((chartered_teu / total_teu) * 100, 2)
+
+        order_teu = clean_int(r.get("orderTeu") or r.get("orderbook_teu"))
+        order_ships = clean_int(r.get("orderShips") or r.get("orderbook_ships"))
+        order_share = clean_float(r.get("orderProcents") or r.get("orderbook_share"))
+
+        country = r.get("carrier_flag", "")
+        if country and "/" in country:
+            country = country.split("/")[-1].replace(".png", "").upper()
+
+        parsed.append({
+            "rank": rank_idx,
+            "operator_name": operator,
+            "operator": operator,
+            "total_teu": total_teu,
+            "total_ships": total_ships,
+            "market_share": market_share,
+            "owned_teu": owned_teu,
+            "owned_ships": owned_ships,
+            "owned_share": owned_share,
+            "chartered_teu": chartered_teu,
+            "chartered_ships": chartered_ships,
+            "chartered_share": chartered_share,
+            "orderbook_teu": order_teu,
+            "orderbook_ships": order_ships,
+            "orderbook_share": order_share,
+            "country": country
+        })
+    return parsed
+
+def validate_candidate_metrics(parsed_ops):
+    """
+    엄격한 품질 검증:
+    - 선사 수 90개 이상
+    - 총 TEU 2,000만 이상
+    - 총 척수 3,000척 이상
+    """
+    if len(parsed_ops) < 90:
+        return False, f"Operator count too low: {len(parsed_ops)}"
+
+    total_teu = sum(o["total_teu"] for o in parsed_ops)
+    total_ships = sum(o["total_ships"] for o in parsed_ops)
+
+    if total_teu < 20_000_000:
+        return False, f"Total TEU too low: {total_teu:,}"
+    if total_ships < 3_000:
+        return False, f"Total Ships too low: {total_ships:,}"
+
+    return True, "Valid snapshot"
+
+# =========================================================
+# 5. Persistence & Schema Safe Insertion
+# =========================================================
+def persist_snapshot(snapshot_date, parsed_ops, raw_records):
+    raw_json_str = json.dumps(raw_records, sort_keys=True)
+    raw_hash = hashlib.sha256(raw_json_str.encode("utf-8")).hexdigest()
+    now_str = datetime.now().isoformat()
+
+    top100_teu = sum(o["total_teu"] for o in parsed_ops)
+    top100_ships = sum(o["total_ships"] for o in parsed_ops)
+    top10_teu = sum(o["total_teu"] for o in parsed_ops[:10])
+    top10_share = round((top10_teu / top100_teu * 100), 2) if top100_teu > 0 else 0.0
+    orderbook_teu = sum(o["orderbook_teu"] for o in parsed_ops)
+
+    with db_lock:
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+
+            # Upsert meta
+            cur.execute("""
+                INSERT INTO snapshot_meta (
+                    snapshot_date, global_teu, global_ships,
+                    top100_teu, top100_ships, top10_share, orderbook_teu,
+                    extracted_at, source_url, raw_hash, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(snapshot_date) DO UPDATE SET
+                    global_teu=excluded.global_teu,
+                    global_ships=excluded.global_ships,
+                    top100_teu=excluded.top100_teu,
+                    top100_ships=excluded.top100_ships,
+                    top10_share=excluded.top10_share,
+                    orderbook_teu=excluded.orderbook_teu,
+                    extracted_at=excluded.extracted_at,
+                    source_url=excluded.source_url,
+                    raw_hash=excluded.raw_hash,
+                    updated_at=excluded.updated_at
+            """, (
+                snapshot_date, top100_teu, top100_ships,
+                top100_teu, top100_ships, top10_share, orderbook_teu,
+                now_str, TARGET_URL, raw_hash, now_str
+            ))
+
+            # Delete existing records for this date
+            cur.execute("DELETE FROM operator_snapshots WHERE snapshot_date = ?", (snapshot_date,))
+
+            # Detect available columns in operator_snapshots
+            op_cols = get_table_columns(conn, "operator_snapshots")
+
+            # Build insert query dynamically based on existing columns
+            cols_to_insert = [
+                "snapshot_date", "rank", "total_teu", "total_ships", "market_share",
+                "owned_teu", "owned_ships", "owned_share",
+                "chartered_teu", "chartered_ships", "chartered_share",
+                "orderbook_teu", "orderbook_ships", "orderbook_share",
+                "country", "created_at"
+            ]
+
+            if "operator_name" in op_cols:
+                cols_to_insert.append("operator_name")
+            if "operator" in op_cols:
+                cols_to_insert.append("operator")
+
+            placeholders = ", ".join(["?"] * len(cols_to_insert))
+            col_names = ", ".join(cols_to_insert)
+            insert_sql = f"INSERT INTO operator_snapshots ({col_names}) VALUES ({placeholders})"
+
+            rows_data = []
+            for op in parsed_ops:
+                row = []
+                for c in cols_to_insert:
+                    if c == "snapshot_date":
+                        row.append(snapshot_date)
+                    elif c == "created_at":
+                        row.append(now_str)
+                    elif c in ("operator_name", "operator"):
+                        row.append(op["operator_name"])
+                    else:
+                        row.append(op.get(c))
+                rows_data.append(tuple(row))
+
+            cur.executemany(insert_sql, rows_data)
+            conn.commit()
+            logger.info(f"Persisted VALID snapshot {snapshot_date} with {len(parsed_ops)} operators to DB.")
+
+def process_and_persist():
+    raw_records = fetch_alphaliner_data()
+    parsed_ops = parse_records(raw_records)
+
+    top100_teu = sum(o["total_teu"] for o in parsed_ops)
+    top100_ships = sum(o["total_ships"] for o in parsed_ops)
+    top10_teu = sum(o["total_teu"] for o in parsed_ops[:10])
+    top10_share = round((top10_teu / top100_teu * 100), 2) if top100_teu > 0 else 0.0
+    orderbook_teu = sum(o["orderbook_teu"] for o in parsed_ops)
+
+    logger.info(
+        f"Candidate snapshot metrics | operators={len(parsed_ops)} | "
+        f"total_teu={top100_teu:,} | total_ships={top100_ships:,} | "
+        f"top10_share={top10_share}% | orderbook_teu={orderbook_teu:,}"
+    )
+
+    is_valid, reason = validate_candidate_metrics(parsed_ops)
+    if not is_valid:
+        logger.error(f"Scrape validation rejected: {reason}. No corrupt data written to DB.")
+        return False
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    persist_snapshot(today_str, parsed_ops, raw_records)
+    return True
+
+# =========================================================
+# 6. JSON Export & Dashboard Contract Generation
+# =========================================================
+def export_json_and_html():
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+
+        # Meta dates
+        meta_rows = cur.execute("""
+            SELECT * FROM snapshot_meta
+            WHERE top100_teu > 20000000 AND top100_ships > 3000
             ORDER BY snapshot_date DESC
-        """, (
-            MIN_TOTAL_FLEET_TEU,
-            MIN_TOTAL_FLEET_SHIPS,
-        )).fetchall()
+        """).fetchall()
 
-        if not snapshot_rows:
-            logger.warning(
-                "No valid snapshots are available. "
-                "Existing JSON file will not be overwritten."
-            )
-            return False
+        if not meta_rows:
+            logger.warning("No valid snapshots found in DB to export.")
+            return
 
-        snapshots: Dict[str, Any] = {}
-        dates: List[str] = []
+        dates = [r["snapshot_date"] for r in meta_rows]
+        snapshots = {}
 
-        for snapshot_row in snapshot_rows:
-            snapshot = row_to_dict(snapshot_row)
-            snapshot_date = snapshot["snapshot_date"]
+        op_cols = get_table_columns(conn, "operator_snapshots")
+        name_field = "operator_name" if "operator_name" in op_cols else "operator"
 
-            operator_rows = conn.execute("""
-                SELECT *
+        for m in meta_rows:
+            d = m["snapshot_date"]
+            cur.execute(f"""
+                SELECT rank, {name_field} AS operator_name, total_teu, total_ships, market_share,
+                       owned_teu, owned_ships, owned_share,
+                       chartered_teu, chartered_ships, chartered_share,
+                       orderbook_teu, orderbook_ships, orderbook_share,
+                       country
                 FROM operator_snapshots
                 WHERE snapshot_date = ?
                 ORDER BY rank ASC
-            """, (snapshot_date,)).fetchall()
+            """, (d,))
+            ops = [dict(row) for row in cur.fetchall()]
 
-            operators = [
-                row_to_dict(operator_row)
-                for operator_row in operator_rows
-            ]
-
-            if len(operators) < MIN_OPERATOR_COUNT:
-                logger.warning(
-                    "Skipping snapshot %s from JSON export: operators=%s",
-                    snapshot_date,
-                    len(operators),
-                )
-                continue
-
-            snapshots[snapshot_date] = {
-                "meta": snapshot,
-                "operators": operators,
+            snapshots[d] = {
+                "meta": {
+                    "snapshot_date": d,
+                    "global_teu": m["global_teu"] or m["top100_teu"],
+                    "global_ships": m["global_ships"] or m["top100_ships"],
+                    "top100_teu": m["top100_teu"],
+                    "top100_ships": m["top100_ships"],
+                    "top10_share": m["top10_share"],
+                    "orderbook_teu": m["orderbook_teu"],
+                    "extracted_at": m["extracted_at"]
+                },
+                "operators": ops
             }
-            dates.append(snapshot_date)
 
-        if not dates:
-            logger.warning(
-                "No usable valid snapshots remain. "
-                "Existing JSON will not be overwritten."
-            )
-            return False
+    data = {
+        "generated_at": datetime.now().isoformat(),
+        "dates": dates,
+        "latest_date": dates[0] if dates else None,
+        "snapshots": snapshots
+    }
 
-        payload = {
-            "generated_at": now_iso(),
-            "latest_date": dates[0],
-            "dates": dates,
-            "snapshots": snapshots,
-        }
+    with open(JSON_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    logger.info(f"Exported valid JSON contract: {JSON_PATH}")
 
-        temporary_path = JSON_PATH.with_suffix(".json.tmp")
+    generate_static_html()
 
-        with open(temporary_path, "w", encoding="utf-8") as file:
-            json.dump(
-                payload,
-                file,
-                ensure_ascii=False,
-                indent=2,
-            )
-
-        temporary_path.replace(JSON_PATH)
-
-        logger.info("Exported valid JSON contract: %s", JSON_PATH)
-        return True
-
-    finally:
-        conn.close()
-
-# =========================================================
-# 11. Static HTML Dashboard
-# =========================================================
-
-def generate_html() -> None:
-    html = r"""<!DOCTYPE html>
-<html lang="en">
+def generate_static_html():
+    """Generates the static Bloomberg-style HTML viewer matching the Shipping Index visual language."""
+    html_content = """<!DOCTYPE html>
+<html lang="ko">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Alphaliner TOP 100 | MI Terminal</title>
-<style>
-:root {
-    --bg: #090d12;
-    --surface: #10161e;
-    --surface-2: #151e29;
-    --surface-3: #1a2532;
-    --border: #263443;
-    --border-soft: #1d2935;
-    --text: #e7edf4;
-    --muted: #8190a0;
-    --dim: #5f6d7b;
-    --amber: #ff9f1c;
-    --cyan: #42c8e8;
-    --blue: #5faeff;
-    --green: #3ddc97;
-    --red: #ff6875;
-}
-* { box-sizing: border-box; }
-body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: Arial, Helvetica, sans-serif;
-}
-.header {
-    border-bottom: 1px solid var(--border);
-    background: #0c1118;
-    padding: 18px 26px 16px;
-}
-.terminal-label {
-    color: var(--amber);
-    font-family: Consolas, Monaco, monospace;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 1.5px;
-}
-h1 {
-    margin: 7px 0 4px;
-    font-size: 22px;
-    line-height: 1.2;
-    letter-spacing: .5px;
-}
-.subtitle {
-    color: var(--muted);
-    font-size: 12px;
-    letter-spacing: .2px;
-}
-.container {
-    padding: 20px 26px 36px;
-    max-width: 1800px;
-    margin: 0 auto;
-}
-.toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 16px;
-}
-.control-group {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-select, input, button {
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text);
-    font-size: 12px;
-    height: 34px;
-    padding: 0 10px;
-}
-select:focus, input:focus {
-    outline: 1px solid var(--cyan);
-    border-color: var(--cyan);
-}
-input { width: 230px; }
-button {
-    cursor: pointer;
-    color: var(--amber);
-    font-weight: 700;
-    letter-spacing: .5px;
-}
-button:hover {
-    background: var(--surface-3);
-    border-color: var(--amber);
-}
-.status {
-    font-family: Consolas, Monaco, monospace;
-    color: var(--muted);
-    font-size: 11px;
-    text-align: right;
-}
-.kpis {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(180px, 1fr));
-    gap: 12px;
-    margin-bottom: 16px;
-}
-.card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-top: 2px solid var(--amber);
-    min-height: 126px;
-    padding: 14px 16px;
-}
-.card-label {
-    color: var(--muted);
-    font-family: Consolas, Monaco, monospace;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: .7px;
-    text-transform: uppercase;
-}
-.card-value {
-    margin-top: 14px;
-    color: var(--text);
-    font-family: Consolas, Monaco, monospace;
-    font-size: 25px;
-    font-weight: 700;
-}
-.card-subvalue {
-    margin-top: 5px;
-    color: var(--cyan);
-    font-family: Consolas, Monaco, monospace;
-    font-size: 11px;
-}
-.card-delta {
-    margin-top: 8px;
-    font-family: Consolas, Monaco, monospace;
-    font-size: 11px;
-}
-.up { color: var(--green); }
-.down { color: var(--red); }
-.flat { color: var(--muted); }
-.table-shell {
-    border: 1px solid var(--border);
-    background: var(--surface);
-    overflow-x: auto;
-}
-table {
-    width: 100%;
-    min-width: 1380px;
-    border-collapse: collapse;
-}
-thead tr:first-child th {
-    background: #0c131b;
-    color: var(--amber);
-    border-bottom: 1px solid var(--border);
-    font-family: Consolas, Monaco, monospace;
-    font-size: 10px;
-    letter-spacing: .7px;
-    text-transform: uppercase;
-}
-thead tr:nth-child(2) th {
-    background: var(--surface-2);
-    color: #aebdcc;
-    border-bottom: 1px solid var(--border);
-    font-family: Consolas, Monaco, monospace;
-    font-size: 10px;
-}
-th, td {
-    padding: 10px 10px;
-    border-bottom: 1px solid var(--border-soft);
-    text-align: right;
-    white-space: nowrap;
-}
-th { font-weight: 700; }
-td {
-    color: #d9e1e9;
-    font-family: Consolas, Monaco, monospace;
-    font-size: 11px;
-}
-th.left, td.left { text-align: left; }
-tbody tr:hover { background: var(--surface-3); }
-.rank { color: var(--amber); font-weight: 700; }
-.operator {
-    color: var(--text);
-    font-family: Arial, Helvetica, sans-serif;
-    font-size: 12px;
-    font-weight: 700;
-}
-.dim { color: var(--dim); }
-.error {
-    padding: 16px;
-    color: #ffd0d4;
-    background: #35151b;
-    border: 1px solid #73303a;
-}
-@media (max-width: 950px) {
-    .container { padding: 16px 12px 28px; }
-    .header { padding: 16px 12px; }
-    .toolbar { align-items: flex-start; flex-direction: column; }
-    .status { text-align: left; }
-    .kpis { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
-    input { width: 190px; }
-}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alphaliner TOP 100 Liner Operators</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --primary: #58a6ff;
+      --accent: #f0883e;
+      --success: #3fb950;
+      --danger: #f85149;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif;
+      padding: 16px;
+      font-size: 13px;
+    }
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 16px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 16px;
+    }
+    .title { font-size: 16px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }
+    .kpi-container {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .kpi-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px;
+    }
+    .kpi-title { font-size: 11px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+    .kpi-value { font-size: 20px; font-weight: 700; color: #fff; font-family: monospace; }
+    .kpi-delta { font-size: 11px; margin-top: 4px; font-weight: 600; }
+    .up { color: var(--success); }
+    .down { color: var(--danger); }
+    .flat { color: var(--text-muted); }
+    .controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    select, input, button {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    button { cursor: pointer; background: #21262d; }
+    button:hover { background: #30363d; }
+    .table-container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow-x: auto;
+      max-height: 70vh;
+    }
+    table { width: 100%; border-collapse: collapse; text-align: right; }
+    th, td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-family: monospace; font-size: 12px; }
+    th { background: #21262d; color: var(--text-muted); font-size: 11px; text-transform: uppercase; position: sticky; top: 0; z-index: 10; }
+    tr:hover { background: #1c2128; }
+    .text-left { text-align: left; }
+    .text-center { text-align: center; }
+    .op-name { font-weight: 600; color: #fff; }
+  </style>
 </head>
 <body>
-<header class="header">
-    <div class="terminal-label">MI TERMINAL // SHIPPING INTELLIGENCE</div>
-    <h1>ALPHALINER TOP 100 LINER OPERATORS</h1>
-    <div class="subtitle">Fleet capacity, ownership structure, charter exposure and orderbook monitoring</div>
-</header>
+  <div class="header-bar">
+    <div class="title">ALPHALINER TOP 100 LINER OPERATORS</div>
+    <div id="last-updated" style="color: var(--text-muted); font-size: 11px;"></div>
+  </div>
 
-<main class="container">
-    <div class="toolbar">
-        <div class="control-group">
-            <select id="dateSelect" aria-label="Snapshot date"></select>
-            <input id="searchInput" type="search" placeholder="Search operator..." autocomplete="off">
-            <button id="csvButton" type="button">CSV EXPORT</button>
-        </div>
-        <div class="status" id="status">LOADING DATA...</div>
+  <div class="kpi-container">
+    <div class="kpi-card">
+      <div class="kpi-title">1. Total Ships</div>
+      <div class="kpi-value" id="kpi-ships">-</div>
+      <div class="kpi-delta" id="delta-ships"></div>
     </div>
-
-    <section class="kpis">
-        <article class="card">
-            <div class="card-label">Total Ships</div>
-            <div class="card-value" id="totalShips">-</div>
-            <div class="card-delta" id="totalShipsDelta">-</div>
-        </article>
-        <article class="card">
-            <div class="card-label">Total Fleet TEU</div>
-            <div class="card-value" id="totalTeu">-</div>
-            <div class="card-delta" id="totalTeuDelta">-</div>
-        </article>
-        <article class="card">
-            <div class="card-label">Top 10 Concentration</div>
-            <div class="card-value" id="top10Share">-</div>
-            <div class="card-subvalue" id="top10Teu">-</div>
-            <div class="card-delta" id="top10ShareDelta">-</div>
-        </article>
-        <article class="card">
-            <div class="card-label">Orderbook</div>
-            <div class="card-value" id="orderbook">-</div>
-            <div class="card-subvalue" id="orderbookShare">-</div>
-            <div class="card-delta" id="orderbookDelta">-</div>
-        </article>
-    </section>
-
-    <div class="table-shell">
-        <table>
-            <thead>
-                <tr>
-                    <th rowspan="2" class="left">Rank</th>
-                    <th rowspan="2" class="left">Operator</th>
-                    <th colspan="3">Total Fleet</th>
-                    <th colspan="3">Owned</th>
-                    <th colspan="3">Chartered</th>
-                    <th colspan="3">Orderbook</th>
-                </tr>
-                <tr>
-                    <th>TEU</th>
-                    <th>Ships</th>
-                    <th>Share</th>
-                    <th>TEU</th>
-                    <th>Ships</th>
-                    <th>% Fleet</th>
-                    <th>TEU</th>
-                    <th>Ships</th>
-                    <th>% Fleet</th>
-                    <th>TEU</th>
-                    <th>Ships</th>
-                    <th>% Fleet</th>
-                </tr>
-            </thead>
-            <tbody id="tableBody"></tbody>
-        </table>
+    <div class="kpi-card">
+      <div class="kpi-title">2. Total Fleet TEU</div>
+      <div class="kpi-value" id="kpi-teu">-</div>
+      <div class="kpi-delta" id="delta-teu"></div>
     </div>
-</main>
+    <div class="kpi-card">
+      <div class="kpi-title">3. Top 10 Concentration</div>
+      <div class="kpi-value" id="kpi-top10">-</div>
+      <div class="kpi-delta" id="delta-top10"></div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">4. Orderbook TEU</div>
+      <div class="kpi-value" id="kpi-orderbook">-</div>
+      <div class="kpi-delta" id="delta-orderbook"></div>
+    </div>
+  </div>
 
-<script>
-const nf = new Intl.NumberFormat('en-US');
-let dashboardData = null;
-let selectedDate = null;
+  <div class="controls">
+    <label style="color: var(--text-muted); font-size: 12px;">Snapshot:</label>
+    <select id="date-select"></select>
+    <label style="color: var(--text-muted); font-size: 12px; margin-left: 10px;">Compare with:</label>
+    <select id="compare-select"></select>
+    <input type="text" id="search-box" placeholder="Filter operator..." style="margin-left: auto; width: 200px;">
+    <button id="btn-export">Export CSV (BOM)</button>
+  </div>
 
-function num(value) {
-    return Number(value || 0);
-}
+  <div class="table-container">
+    <table id="operator-table">
+      <thead>
+        <tr>
+          <th class="text-center">Rank</th>
+          <th class="text-left">Operator</th>
+          <th>Total TEU</th>
+          <th>Total Ships</th>
+          <th>Share (%)</th>
+          <th>Owned TEU</th>
+          <th>Owned Ships</th>
+          <th>Chart TEU</th>
+          <th>Chart Ships</th>
+          <th>Orderbook TEU</th>
+          <th>Orderbook Ships</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
 
-function fmt(value) {
-    return nf.format(Math.round(num(value)));
-}
+  <script>
+    let appData = null;
 
-function fmtPct(value) {
-    return num(value).toFixed(2) + '%';
-}
+    async function init() {
+      try {
+        const res = await fetch('alphaliner_data.json?v=' + Date.now());
+        appData = await res.json();
 
-function getFleetTeu(row) {
-    return num(row.fleet_teu || row.teu);
-}
+        const dateSelect = document.getElementById('date-select');
+        const compareSelect = document.getElementById('compare-select');
 
-function getFleetShips(row) {
-    return num(row.fleet_ships || row.ships);
-}
+        dateSelect.innerHTML = '';
+        compareSelect.innerHTML = '<option value="">None</option>';
 
-function getMeta(snapshot) {
-    return snapshot && snapshot.meta ? snapshot.meta : {};
-}
-
-function metaTeu(meta) {
-    return num(meta.total_teu || meta.global_total_teu || meta.top100_total_teu);
-}
-
-function metaShips(meta) {
-    return num(meta.total_ships || meta.global_total_ships || meta.top100_total_ships);
-}
-
-function deltaNumber(current, previous, unit = '') {
-    if (previous === null || previous === undefined) {
-        return '<span class="flat">NO PRIOR SNAPSHOT</span>';
-    }
-
-    const diff = num(current) - num(previous);
-
-    if (diff === 0) {
-        return '<span class="flat">UNCHANGED VS PRIOR</span>';
-    }
-
-    const cls = diff > 0 ? 'up' : 'down';
-    const sign = diff > 0 ? '+' : '';
-
-    return '<span class="' + cls + '">' +
-        sign + fmt(diff) + unit + ' VS PRIOR</span>';
-}
-
-function deltaBps(current, previous) {
-    if (previous === null || previous === undefined) {
-        return '<span class="flat">NO PRIOR SNAPSHOT</span>';
-    }
-
-    const bps = Math.round((num(current) - num(previous)) * 100);
-
-    if (bps === 0) {
-        return '<span class="flat">UNCHANGED VS PRIOR</span>';
-    }
-
-    const cls = bps > 0 ? 'up' : 'down';
-    const sign = bps > 0 ? '+' : '';
-
-    return '<span class="' + cls + '">' +
-        sign + nf.format(bps) + ' BPS VS PRIOR</span>';
-}
-
-function escapeHtml(value) {
-    return String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-}
-
-function getFilteredRows() {
-    if (!dashboardData || !selectedDate) return [];
-
-    const snapshot = dashboardData.snapshots[selectedDate];
-    const query = document.getElementById('searchInput').value
-        .trim()
-        .toLowerCase();
-
-    const rows = snapshot.operators || [];
-
-    if (!query) return rows;
-
-    return rows.filter(row => {
-        return String(row.operator || '').toLowerCase().includes(query) ||
-            String(row.rank || '').includes(query);
-    });
-}
-
-function renderTable() {
-    const body = document.getElementById('tableBody');
-    const rows = getFilteredRows();
-
-    body.innerHTML = rows.map(row => {
-        const fleetTeu = getFleetTeu(row);
-        const fleetShare = fleetTeu > 0
-            ? (fleetTeu / currentTotalTeu() * 100)
-            : 0;
-
-        return `
-            <tr>
-                <td class="left rank">${escapeHtml(row.rank)}</td>
-                <td class="left operator">${escapeHtml(row.operator)}</td>
-                <td>${fmt(fleetTeu)}</td>
-                <td>${fmt(getFleetShips(row))}</td>
-                <td>${fmtPct(fleetShare)}</td>
-                <td>${fmt(row.owned_teu)}</td>
-                <td>${fmt(row.owned_ships)}</td>
-                <td>${fmtPct(row.owned_share)}</td>
-                <td>${fmt(row.chartered_teu)}</td>
-                <td>${fmt(row.chartered_ships)}</td>
-                <td>${fmtPct(row.chartered_share)}</td>
-                <td>${fmt(row.orderbook_teu)}</td>
-                <td>${fmt(row.orderbook_ships)}</td>
-                <td>${fmtPct(row.orderbook_share || row.orderbook_teu_share)}</td>
-            </tr>
-        `;
-    }).join('');
-
-    if (!rows.length) {
-        body.innerHTML = `
-            <tr>
-                <td colspan="14" class="dim left">
-                    NO MATCHING OPERATORS
-                </td>
-            </tr>
-        `;
-    }
-}
-
-function currentTotalTeu() {
-    if (!dashboardData || !selectedDate) return 0;
-    const snapshot = dashboardData.snapshots[selectedDate];
-    return metaTeu(getMeta(snapshot));
-}
-
-function renderSnapshot() {
-    const snapshot = dashboardData.snapshots[selectedDate];
-    const meta = getMeta(snapshot);
-    const dates = dashboardData.dates || [];
-
-    const currentIndex = dates.indexOf(selectedDate);
-    const priorDate = currentIndex >= 0 ? dates[currentIndex + 1] : null;
-    const priorMeta = priorDate
-        ? getMeta(dashboardData.snapshots[priorDate])
-        : null;
-
-    const totalTeu = metaTeu(meta);
-    const totalShips = metaShips(meta);
-    const orderbookTeu = num(meta.orderbook_total_teu);
-    const orderbookShare = totalTeu > 0
-        ? orderbookTeu / totalTeu * 100
-        : 0;
-
-    document.getElementById('totalShips').textContent = fmt(totalShips);
-    document.getElementById('totalTeu').textContent = fmt(totalTeu);
-    document.getElementById('top10Share').textContent = fmtPct(meta.top10_share);
-    document.getElementById('top10Teu').textContent =
-        'TOP 10: ' + fmt(meta.top10_total_teu) + ' TEU';
-    document.getElementById('orderbook').textContent = fmt(orderbookTeu);
-    document.getElementById('orderbookShare').textContent =
-        fmtPct(orderbookShare) + ' OF FLEET';
-
-    document.getElementById('totalShipsDelta').innerHTML =
-        deltaNumber(
-            totalShips,
-            priorMeta ? metaShips(priorMeta) : null
-        );
-
-    document.getElementById('totalTeuDelta').innerHTML =
-        deltaNumber(
-            totalTeu,
-            priorMeta ? metaTeu(priorMeta) : null
-        );
-
-    document.getElementById('top10ShareDelta').innerHTML =
-        deltaBps(
-            meta.top10_share,
-            priorMeta ? priorMeta.top10_share : null
-        );
-
-    document.getElementById('orderbookDelta').innerHTML =
-        deltaNumber(
-            orderbookTeu,
-            priorMeta ? priorMeta.orderbook_total_teu : null
-        );
-
-    renderTable();
-
-    document.getElementById('status').textContent =
-        'SNAPSHOT ' + selectedDate +
-        ' // OPERATORS ' + (snapshot.operators || []).length +
-        ' // EXTRACTED ' + (meta.extracted_at || '-');
-}
-
-function csvCell(value) {
-    const text = String(value ?? '');
-    return '"' + text.replace(/"/g, '""') + '"';
-}
-
-function exportCsv() {
-    const rows = getFilteredRows();
-
-    const header = [
-        'Rank', 'Operator',
-        'Fleet TEU', 'Fleet Ships', 'Fleet Share %',
-        'Owned TEU', 'Owned Ships', 'Owned Share %',
-        'Chartered TEU', 'Chartered Ships', 'Chartered Share %',
-        'Orderbook TEU', 'Orderbook Ships', 'Orderbook Share %'
-    ];
-
-    const totalTeu = currentTotalTeu();
-
-    const lines = [header.map(csvCell).join(',')];
-
-    rows.forEach(row => {
-        const fleetTeu = getFleetTeu(row);
-        const fleetShare = totalTeu > 0
-            ? fleetTeu / totalTeu * 100
-            : 0;
-
-        lines.push([
-            row.rank,
-            row.operator,
-            fleetTeu,
-            getFleetShips(row),
-            fleetShare.toFixed(2),
-            num(row.owned_teu),
-            num(row.owned_ships),
-            num(row.owned_share).toFixed(2),
-            num(row.chartered_teu),
-            num(row.chartered_ships),
-            num(row.chartered_share).toFixed(2),
-            num(row.orderbook_teu),
-            num(row.orderbook_ships),
-            num(row.orderbook_share || row.orderbook_teu_share).toFixed(2)
-        ].map(csvCell).join(','));
-    });
-
-    const blob = new Blob(
-        ['\uFEFF' + lines.join('\n')],
-        { type: 'text/csv;charset=utf-8;' }
-    );
-
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download =
-        'alphaliner_top100_' + selectedDate + '.csv';
-
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(link.href);
-}
-
-async function init() {
-    try {
-        const response = await fetch(
-            './alphaliner_data.json?ts=' + Date.now()
-        );
-
-        if (!response.ok) {
-            throw new Error('Could not load alphaliner_data.json');
-        }
-
-        dashboardData = await response.json();
-
-        const dates = dashboardData.dates || [];
-
-        if (!dates.length) {
-            throw new Error('No valid snapshots available.');
-        }
-
-        const select = document.getElementById('dateSelect');
-
-        dates.forEach(date => {
-            const option = document.createElement('option');
-            option.value = date;
-            option.textContent = date;
-            select.appendChild(option);
+        appData.dates.forEach((d, idx) => {
+          dateSelect.innerHTML += `<option value="${d}">${d}</option>`;
+          compareSelect.innerHTML += `<option value="${d}" ${idx===1?'selected':''}>${d}</option>`;
         });
 
-        selectedDate = dashboardData.latest_date || dates[0];
-        select.value = selectedDate;
+        dateSelect.addEventListener('change', render);
+        compareSelect.addEventListener('change', render);
+        document.getElementById('search-box').addEventListener('input', renderTable);
+        document.getElementById('btn-export').addEventListener('click', exportCSV);
 
-        select.addEventListener('change', function() {
-            selectedDate = this.value;
-            renderSnapshot();
-        });
-
-        document.getElementById('searchInput')
-            .addEventListener('input', renderTable);
-
-        document.getElementById('csvButton')
-            .addEventListener('click', exportCsv);
-
-        renderSnapshot();
-
-    } catch (error) {
-        document.querySelector('.container').innerHTML =
-            '<div class="error">DASHBOARD DATA COULD NOT BE LOADED: ' +
-            escapeHtml(error.message) +
-            '</div>';
+        render();
+      } catch (e) {
+        console.error("Failed to load dashboard data:", e);
+      }
     }
-}
 
-init();
-</script>
+    function formatNumber(num) {
+      if (!num && num !== 0) return "-";
+      return Number(num).toLocaleString();
+    }
+
+    function renderDelta(curr, prev, isPercent=false) {
+      if (prev === null || prev === undefined || !curr) return `<span class="flat">-</span>`;
+      const diff = curr - prev;
+      if (diff === 0) return `<span class="flat">0.00 (0%)</span>`;
+      const cls = diff > 0 ? "up" : "down";
+      const sign = diff > 0 ? "+" : "";
+      const pDiff = prev > 0 ? ((diff / prev) * 100).toFixed(2) : "0.00";
+      return `<span class="${cls}">${sign}${isPercent ? diff.toFixed(2) + '%' : formatNumber(diff)} (${sign}${pDiff}%)</span>`;
+    }
+
+    function render() {
+      const curDate = document.getElementById('date-select').value;
+      const compDate = document.getElementById('compare-select').value;
+
+      const curSnap = appData.snapshots[curDate];
+      const compSnap = compDate ? appData.snapshots[compDate] : null;
+
+      if (!curSnap) return;
+
+      document.getElementById('last-updated').innerText = 'Generated: ' + appData.generated_at.replace('T', ' ').substring(0, 19);
+
+      const m = curSnap.meta;
+      const cm = compSnap ? compSnap.meta : null;
+
+      document.getElementById('kpi-ships').innerText = formatNumber(m.top100_ships);
+      document.getElementById('delta-ships').innerHTML = renderDelta(m.top100_ships, cm ? cm.top100_ships : null);
+
+      document.getElementById('kpi-teu').innerText = formatNumber(m.top100_teu);
+      document.getElementById('delta-teu').innerHTML = renderDelta(m.top100_teu, cm ? cm.top100_teu : null);
+
+      document.getElementById('kpi-top10').innerText = (m.top10_share || 0).toFixed(2) + '%';
+      document.getElementById('delta-top10').innerHTML = renderDelta(m.top10_share, cm ? cm.top10_share : null, true);
+
+      document.getElementById('kpi-orderbook').innerText = formatNumber(m.orderbook_teu);
+      document.getElementById('delta-orderbook').innerHTML = renderDelta(m.orderbook_teu, cm ? cm.orderbook_teu : null);
+
+      renderTable();
+    }
+
+    function renderTable() {
+      const curDate = document.getElementById('date-select').value;
+      const curSnap = appData.snapshots[curDate];
+      if (!curSnap) return;
+
+      const filter = document.getElementById('search-box').value.toLowerCase();
+      const tbody = document.querySelector('#operator-table tbody');
+      tbody.innerHTML = '';
+
+      curSnap.operators.forEach(op => {
+        const name = op.operator_name || op.operator || '';
+        if (filter && !name.toLowerCase().includes(filter)) return;
+
+        const row = `
+          <tr>
+            <td class="text-center">${op.rank}</td>
+            <td class="text-left op-name">${name}</td>
+            <td>${formatNumber(op.total_teu)}</td>
+            <td>${formatNumber(op.total_ships)}</td>
+            <td>${(op.market_share || 0).toFixed(1)}%</td>
+            <td>${formatNumber(op.owned_teu)}</td>
+            <td>${formatNumber(op.owned_ships)}</td>
+            <td>${formatNumber(op.chartered_teu)}</td>
+            <td>${formatNumber(op.chartered_ships)}</td>
+            <td>${formatNumber(op.orderbook_teu)}</td>
+            <td>${formatNumber(op.orderbook_ships)}</td>
+          </tr>
+        `;
+        tbody.innerHTML += row;
+      });
+    }
+
+    function exportCSV() {
+      const curDate = document.getElementById('date-select').value;
+      const curSnap = appData.snapshots[curDate];
+      if (!curSnap) return;
+
+      let csv = "\uFEFFRank,Operator,Total TEU,Total Ships,Market Share (%),Owned TEU,Owned Ships,Chartered TEU,Chartered Ships,Orderbook TEU,Orderbook Ships\\n";
+      curSnap.operators.forEach(op => {
+        const name = `"${(op.operator_name || op.operator || '').replace(/"/g, '""')}"`;
+        csv += `${op.rank},${name},${op.total_teu},${op.total_ships},${op.market_share},${op.owned_teu},${op.owned_ships},${op.chartered_teu},${op.chartered_ships},${op.orderbook_teu},${op.orderbook_ships}\\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Alphaliner_TOP100_${curDate}.csv`;
+      a.click();
+    }
+
+    window.onload = init;
+  </script>
 </body>
 </html>
 """
-
-    with open(HTML_PATH, "w", encoding="utf-8") as file:
-        file.write(html)
-
-    logger.info("Generated dashboard HTML: %s", HTML_PATH)
+    with open(HTML_PATH, "w", encoding="utf-8") as f:
+        f.write(html_content)
+    logger.info(f"Generated dashboard HTML: {HTML_PATH}")
 
 # =========================================================
-# 12. Main Processing Flow
+# 7. Web Server Routing
 # =========================================================
-
-def process_and_persist() -> bool:
-    raw_records, page_info = fetch_alphaliner_data()
-
-    operators = normalize_records(raw_records)
-    metrics = calculate_metrics(operators)
-
-    logger.info(
-        "Candidate snapshot metrics | operators=%s | total_teu=%s | "
-        "total_ships=%s | top10_share=%.2f%% | orderbook_teu=%s",
-        len(operators),
-        f"{metrics['total_teu']:,}",
-        f"{metrics['total_ships']:,}",
-        metrics["top10_share"],
-        f"{metrics['orderbook_total_teu']:,}",
-    )
-
-    is_valid, validation_errors = validate_snapshot(
-        operators,
-        metrics,
-    )
-
-    if not is_valid:
-        logger.error("Snapshot quality validation failed.")
-
-        for error in validation_errors:
-            logger.error("- %s", error)
-
-        logger.error(
-            "Scrape rejected. No invalid data has been written to the database."
-        )
-        return False
-
-    raw_hash = hashlib.sha256(
-        json.dumps(
-            raw_records,
-            ensure_ascii=False,
-            sort_keys=True,
-            default=str,
-        ).encode("utf-8")
-    ).hexdigest()
-
-    persist_snapshot(
-        snapshot_date=today_str(),
-        operators=operators,
-        metrics=metrics,
-        source_url=page_info.get("url") or TARGET_URL,
-        raw_hash=raw_hash,
-    )
-
-    return True
-
-def export_json_and_html() -> None:
-    json_exported = export_json()
-
-    if json_exported:
-        generate_html()
-    else:
-        logger.warning(
-            "JSON export skipped. Existing dashboard files were retained."
-        )
-
-# =========================================================
-# 13. Flask Routes
-# =========================================================
-
 @app.route("/")
-def index() -> Response:
-    return send_from_directory(BASE_DIR, "index.html")
+def index():
+    return send_from_directory(str(BASE_DIR), "index.html")
 
 @app.route("/alphaliner_data.json")
-def data_json() -> Response:
-    return send_from_directory(BASE_DIR, "alphaliner_data.json")
+def data_json():
+    return send_from_directory(str(BASE_DIR), "alphaliner_data.json")
 
 # =========================================================
-# 14. Main
+# 8. Main Entrypoint
 # =========================================================
-
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Alphaliner Top 100 crawler and static dashboard generator."
-    )
-
-    parser.add_argument(
-        "--cron",
-        action="store_true",
-        help="Run crawler once, export files, and exit.",
-    )
-
-    parser.add_argument(
-        "--host",
-        default="0.0.0.0",
-        help="Flask server host.",
-    )
-
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=5000,
-        help="Flask server port.",
-    )
-
+def main():
+    parser = argparse.ArgumentParser(description="Alphaliner Static Terminal Crawler")
+    parser.add_argument("--cron", action="store_true", help="Run once to crawl and export without starting the web server")
+    parser.add_argument("--port", type=int, default=5000)
+    parser.add_argument("--host", default="0.0.0.0")
     args = parser.parse_args()
 
-    init_database()
-
-    try:
-        success = process_and_persist()
-
-        if not success:
-            logger.warning(
-                "Crawler did not produce a valid new snapshot. "
-                "Existing valid dashboard data will be retained."
-            )
-
-    except Exception as exc:
-        logger.exception(
-            "Alphaliner crawler execution failed: %s",
-            exc,
-        )
-
-        # 기존 정상 JSON/HTML이 있으면 유지한다.
-        export_json_and_html()
-
-        if args.cron:
-            sys.exit(1)
-
-    export_json_and_html()
+    init_db()
 
     if args.cron:
-        logger.info("Cron execution completed.")
-        return
+        logger.info("Executing Alphaliner Cron Task...")
+        success = process_and_persist()
+        export_json_and_html()
+        if not success:
+            logger.warning("Cron run completed without saving a new snapshot (rejected or unchanged).")
+        sys.exit(0)
 
-    logger.info(
-        "Starting Alphaliner Web Server on http://%s:%s",
-        args.host,
-        args.port,
-    )
+    # Server mode
+    try:
+        with get_db_connection() as conn:
+            cnt = conn.cursor().execute("SELECT count(*) FROM snapshot_meta").fetchone()[0]
+            if cnt == 0:
+                logger.info("Database is empty. Initiating initial scrape...")
+                process_and_persist()
+    except Exception as e:
+        logger.warning(f"Initial scrape attempt warning: {e}")
 
-    app.run(
-        host=args.host,
-        port=args.port,
-        debug=False,
-    )
+    export_json_and_html()
+    logger.info(f"Starting Alphaliner Web Server on http://{args.host}:{args.port}")
+    app.run(host=args.host, port=args.port, debug=False)
 
 if __name__ == "__main__":
     main()
