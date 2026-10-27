@@ -1,24 +1,32 @@
 # -*- coding: utf-8 -*-
 """
-GDP, Inflation & GSCPI Bloomberg Terminal Engine
-------------------------------------------------
-로컬 개발 및 모니터링:
-    python GDP_Inflation_GSCPI_DB.py
+GDP, Inflation & GSCPI Static Dashboard Generator
+-------------------------------------------------
+수집 파이프라인:
+    1. World Bank API: GDP Growth Rate (NY.GDP.MKTP.KD.ZG)
+    2. World Bank API: CPI Inflation Rate (FP.CPI.TOTL.ZG)
+    3. New York Fed Playwright Headless: GSCPI Chart Network JSON Extraction
+       (수집 실패 시 기존 SQLite 캐시 보존 및 빈 JSON 배포 방지)
 
-GitHub Actions / 배포용 정적 생성:
-    python GDP_Inflation_GSCPI_DB.py --cron
+실행 모드:
+    - 로컬 개발 모드:
+        python GDP_Inflation_GSCPI_DB.py
+    - 정적 생성 모드 (GitHub Actions / 배포용):
+        python GDP_Inflation_GSCPI_DB.py --cron
 
-데이터 파이프라인:
-    1. NY Fed Global Supply Chain Pressure Index (GSCPI) 실시간 수집 및 시계열 파싱
-    2. World Bank Open Data API / 거시경제 벤치마크 지표(실질 GDP, CPI 인플레이션) 동기화
-    3. SQLite Durable DB 적재 및 무결성 검증
-    4. MI Terminal Design System 기반 정적 자산(index.html, JSONs) 완전 자동 생성
+생성 파일:
+    - index.html
+    - macro_data.json
+    - gscpi_data.json
+    - dashboard_meta.json
+    - gdp_inflation_gscpi_cache.db
 """
 
 import argparse
 import importlib.util
 import json
 import os
+import re
 import socket
 import sqlite3
 import subprocess
@@ -29,1795 +37,1335 @@ import webbrowser
 from datetime import datetime, timezone, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
+from urllib.parse import urlparse
 
 # =========================================================
-# 0. Dependency Setup
+# 0. Dependency Setup & Imports
 # =========================================================
+
 def setup_environment():
     """
-    로컬 PC 및 GitHub Actions 환경에서 필요한 패키지를 점검한다.
-    GSCPI xls/xlsx 파일 읽기를 위해 xlrd/openpyxl이 필요하다.
+    로컬 PC 및 GitHub Actions 환경에서 필요한 패키지를 점검하고 설치한다.
     """
     required_packages = {
         "pandas": "pandas",
         "requests": "requests",
         "flask": "flask",
         "xlrd": "xlrd",
-        "openpyxl": "openpyxl"
+        "openpyxl": "openpyxl",
+        "playwright": "playwright"
     }
 
-    for module_name, pip_name in required_packages.items():
+    missing_packages = []
+    for module_name, package_name in required_packages.items():
         if importlib.util.find_spec(module_name) is None:
-            print(f"[BOOTSTRAP] 필수 패키지 누락: {module_name} -> 자동 설치 진행 중...")
-            try:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", pip_name])
-                print(f"[BOOTSTRAP] 설치 완료: {pip_name}")
-            except Exception as e:
-                print(f"[BOOTSTRAP ERROR] {pip_name} 설치 실패: {e}")
+            missing_packages.append(package_name)
+
+    if missing_packages:
+        print(f"[INIT] 누락된 패키지 감지 및 자동 설치 진행: {missing_packages}")
+        try:
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "install", *missing_packages],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            print("[INIT] 필수 패키지 설치 완료.")
+        except Exception as exc:
+            print(f"[WARN] 패키지 자동 설치 실패: {exc}", file=sys.stderr)
 
 setup_environment()
 
 import pandas as pd
 import requests
 from flask import Flask, jsonify, send_from_directory
+from playwright.sync_api import sync_playwright
 
 # =========================================================
-# 1. Global Configurations & Paths
+# 1. Global Configurations & Path Standards
 # =========================================================
+
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "gdp_inflation_gscpi_cache.db"
-STATIC_HTML_PATH = BASE_DIR / "index.html"
+INDEX_HTML_PATH = BASE_DIR / "index.html"
 MACRO_JSON_PATH = BASE_DIR / "macro_data.json"
 GSCPI_JSON_PATH = BASE_DIR / "gscpi_data.json"
 META_JSON_PATH = BASE_DIR / "dashboard_meta.json"
 
-KST = timezone(timedelta(hours=9))
+KST_TIMEZONE = timezone(timedelta(hours=9))
 
-def now_kst_iso():
-    return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")
+GSCPI_PAGE_URL = (
+    "https://www.newyorkfed.org/research/policy/"
+    "global-supply-chain-pressure-index"
+)
 
-def log(msg: str):
-    print(f"[{datetime.now(KST).strftime('%H:%M:%S')}] {msg}")
+# World Bank 주요 관측 대상 국가 (ISO-2/ISO-3 매핑)
+TARGET_COUNTRIES = {
+    "WLD": {"name": "World", "region": "Global", "iso2": "1W"},
+    "USA": {"name": "United States", "region": "Americas", "iso2": "US"},
+    "CHN": {"name": "China", "region": "Asia", "iso2": "CN"},
+    "KOR": {"name": "South Korea", "region": "Asia", "iso2": "KR"},
+    "JPN": {"name": "Japan", "region": "Asia", "iso2": "JP"},
+    "DEU": {"name": "Germany", "region": "Europe", "iso2": "DE"},
+    "GBR": {"name": "United Kingdom", "region": "Europe", "iso2": "GB"},
+    "FRA": {"name": "France", "region": "Europe", "iso2": "FR"},
+    "IND": {"name": "India", "region": "Asia", "iso2": "IN"},
+    "VNM": {"name": "Vietnam", "region": "Asia", "iso2": "VN"},
+    "SGP": {"name": "Singapore", "region": "Asia", "iso2": "SG"},
+    "BRA": {"name": "Brazil", "region": "Americas", "iso2": "BR"},
+    "MEX": {"name": "Mexico", "region": "Americas", "iso2": "MX"},
+    "EUU": {"name": "European Union", "region": "Europe", "iso2": "EU"}
+}
 
-def atomic_write_text(path: Path, content: str, encoding: str = "utf-8"):
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
-    with open(tmp_path, "w", encoding=encoding) as f:
-        f.write(content)
-    tmp_path.replace(path)
+def log(message: str):
+    timestamp = datetime.now(KST_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S KST")
+    print(f"[{timestamp}] {message}", flush=True)
+
+def now_kst_iso() -> str:
+    return datetime.now(KST_TIMEZONE).strftime("%Y-%m-%d %H:%M:%S")
 
 # =========================================================
-# 2. Database Schema & Persistence
+# 2. Database Schema & Migration
 # =========================================================
-def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
+
+def get_db_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect(str(DB_PATH), timeout=30.0)
     conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
     conn = get_db_connection()
-    cur = conn.cursor()
+    try:
+        cur = conn.cursor()
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS macro_countries (
-            iso3 TEXT PRIMARY KEY,
-            name_ko TEXT NOT NULL,
-            name_en TEXT NOT NULL,
-            region TEXT NOT NULL,
-            display_order INTEGER DEFAULT 999
-        );
-    """)
+        # 거시경제 지표 시계열 테이블 (GDP, Inflation)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS macro_series (
+                country_code TEXT NOT NULL,
+                country_name TEXT NOT NULL,
+                indicator_code TEXT NOT NULL,
+                indicator_name TEXT NOT NULL,
+                year INTEGER NOT NULL,
+                value REAL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (country_code, indicator_code, year)
+            )
+        """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS macro_series (
-            iso3 TEXT NOT NULL,
-            indicator TEXT NOT NULL,
-            year INTEGER NOT NULL,
-            value REAL,
-            updated_at TEXT,
-            PRIMARY KEY (iso3, indicator, year),
-            FOREIGN KEY (iso3) REFERENCES macro_countries(iso3)
-        );
-    """)
+        # GSCPI 월별 시계열 테이블
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS gscpi_series (
+                period TEXT PRIMARY KEY,
+                gscpi_value REAL NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS gscpi_series (
-            period TEXT PRIMARY KEY,
-            gscpi_value REAL NOT NULL,
-            updated_at TEXT
-        );
-    """)
+        # 메타데이터/캐시 제어 테이블
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS metadata_cache (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS metadata_cache (
-            key TEXT PRIMARY KEY,
-            value TEXT,
-            updated_at TEXT
-        );
-    """)
-
-    countries_seed = [
-        ("WLD", "글로벌 (World)", "World", "Global", 1),
-        ("USA", "미국", "United States", "North America", 2),
-        ("CHN", "중국", "China", "Asia", 3),
-        ("KOR", "한국", "South Korea", "Asia", 4),
-        ("DEU", "독일", "Germany", "Europe", 5),
-        ("JPN", "일본", "Japan", "Asia", 6),
-        ("VNM", "베트남", "Vietnam", "Asia", 7),
-        ("IND", "인도", "India", "Asia", 8),
-        ("GBR", "영국", "United Kingdom", "Europe", 9),
-        ("EMU", "유로존", "Euro Area", "Europe", 10),
-        ("MEX", "멕시코", "Mexico", "North America", 11),
-        ("BRA", "브라질", "Brazil", "South America", 12),
-        ("TWN", "대만", "Taiwan", "Asia", 13)
-    ]
-
-    cur.executemany("""
-        INSERT OR IGNORE INTO macro_countries (iso3, name_ko, name_en, region, display_order)
-        VALUES (?, ?, ?, ?, ?)
-    """, countries_seed)
-
-    conn.commit()
-    conn.close()
+        conn.commit()
+    finally:
+        conn.close()
 
 # =========================================================
-# 3. Data Ingestion: World Bank API & NY Fed GSCPI
+# 3. GSCPI Data Ingestion (Playwright Headless + JSON Sniffer)
 # =========================================================
-def fetch_world_bank_indicator(indicator_code: str, db_indicator_name: str):
-    log(f"[World Bank] 지표 동기화 시작: {indicator_code} -> {db_indicator_name}")
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT iso3 FROM macro_countries")
-    countries = [r["iso3"] for r in cur.fetchall()]
 
-    country_clause = ";".join(countries)
-    current_year = datetime.now(KST).year
-    start_year = current_year - 15
-    url = f"https://api.worldbank.org/v2/country/{country_clause}/indicator/{indicator_code}?date={start_year}:{current_year}&format=json&per_page=1000"
-
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+def parse_gscpi_period(value):
+    """다양한 날짜 형식을 표준 월 단위(YYYY-MM)로 정규화한다."""
+    if value is None:
+        return None
 
     try:
-        res = requests.get(url, headers=headers, timeout=20)
-        res.raise_for_status()
-        data = res.json()
+        if isinstance(value, (int, float)):
+            numeric = float(value)
+            if numeric > 10_000_000_000:
+                parsed = datetime.fromtimestamp(numeric / 1000, tz=timezone.utc)
+                return parsed.strftime("%Y-%m")
+            if numeric > 1_000_000_000:
+                parsed = datetime.fromtimestamp(numeric, tz=timezone.utc)
+                return parsed.strftime("%Y-%m")
 
-        if len(data) > 1 and isinstance(data[1], list):
-            records = data[1]
-            now_str = now_kst_iso()
-            inserted_count = 0
+        raw = str(value).strip()
+        if not raw:
+            return None
 
-            for rec in records:
-                iso3 = rec.get("countryiso3code")
-                if not iso3 or iso3 not in countries:
-                    cid = rec.get("country", {}).get("id")
-                    if cid == "1W":
-                        iso3 = "WLD"
-                    elif cid == "XC":
-                        iso3 = "EMU"
-                    else:
-                        continue
+        parsed = pd.to_datetime(raw, errors="coerce")
+        if pd.isna(parsed):
+            return None
 
-                year_raw = rec.get("date")
-                val_raw = rec.get("value")
+        return parsed.strftime("%Y-%m")
+    except Exception:
+        return None
 
-                if year_raw and val_raw is not None:
-                    try:
-                        year = int(year_raw)
-                        val = round(float(val_raw), 2)
-                        cur.execute("""
-                            INSERT OR REPLACE INTO macro_series (iso3, indicator, year, value, updated_at)
-                            VALUES (?, ?, ?, ?, ?)
-                        """, (iso3, db_indicator_name, year, val, now_str))
-                        inserted_count += 1
-                    except (ValueError, TypeError):
-                        continue
+def parse_gscpi_value(value):
+    """숫자 및 문자열을 float으로 정규화하고 유효 범위를 점검한다."""
+    if value is None:
+        return None
+    try:
+        if isinstance(value, str):
+            value = value.strip().replace(",", "")
+        numeric = float(value)
+        if pd.isna(numeric) or numeric < -100 or numeric > 100:
+            return None
+        return round(numeric, 4)
+    except (ValueError, TypeError):
+        return None
 
-            conn.commit()
-            log(f"[World Bank] {db_indicator_name} 적재 완료 ({inserted_count} 건)")
-        else:
-            log(f"[World Bank WARN] 유효 데이터 없음: {indicator_code}")
+def normalize_gscpi_payload(payload):
+    """New York Fed 차트 JSON 응답 구조를 재귀 탐색하여 시계열을 추출한다."""
+    candidate_lists = []
 
-    except Exception as e:
-        log(f"[World Bank ERROR] 수집 실패 ({indicator_code}): {e}")
+    def collect_lists(obj):
+        if isinstance(obj, list):
+            candidate_lists.append(obj)
+            for item in obj:
+                collect_lists(item)
+        elif isinstance(obj, dict):
+            for v in obj.values():
+                collect_lists(v)
+
+    collect_lists(payload)
+
+    best_series = []
+    date_keys = ["date", "Date", "DATE", "period", "Period", "time", "Time", "timestamp", "Timestamp", "x"]
+    value_keys = ["gscpi", "GSCPI", "gscpi_value", "GSCPI_VALUE", "value", "Value", "VALUE", "index", "Index", "pressure", "Pressure", "y"]
+
+    for rows in candidate_lists:
+        normalized_rows = []
+        for row in rows:
+            raw_date = None
+            raw_value = None
+
+            if isinstance(row, dict):
+                for k in date_keys:
+                    if k in row:
+                        raw_date = row[k]
+                        break
+                for k in value_keys:
+                    if k in row:
+                        raw_value = row[k]
+                        break
+            elif isinstance(row, (list, tuple)) and len(row) >= 2:
+                raw_date = row[0]
+                raw_value = row[1]
+
+            period = parse_gscpi_period(raw_date)
+            numeric_val = parse_gscpi_value(raw_value)
+
+            if period is not None and numeric_val is not None:
+                normalized_rows.append({"period": period, "gscpi_value": numeric_val})
+
+        if len(normalized_rows) > len(best_series):
+            best_series = normalized_rows
+
+    deduped = {}
+    for row in best_series:
+        deduped[row["period"]] = row["gscpi_value"]
+
+    return [{"period": p, "gscpi_value": v} for p, v in sorted(deduped.items())]
+
+def inspect_gscpi_response(response, captured_payloads):
+    """Playwright response 이벤트에서 XHR/JSON 시계열 후보를 추출한다."""
+    try:
+        content_type = response.headers.get("content-type", "").lower()
+        response_url = response.url
+        url_lower = response_url.lower()
+
+        is_candidate = (
+            "json" in content_type
+            or "gscpi" in url_lower
+            or "supply-chain" in url_lower
+            or "chart" in url_lower
+            or "series" in url_lower
+            or "interactive" in url_lower
+        )
+
+        if not is_candidate:
+            return
+
+        body = response.body()
+        if not body:
+            return
+
+        text = body.decode("utf-8", errors="ignore").strip()
+        if not text.startswith("{") and not text.startswith("["):
+            return
+
+        payload = json.loads(text)
+        captured_payloads.append({
+            "url": response_url,
+            "content_type": content_type,
+            "payload": payload
+        })
+        log(f"[GSCPI][CHART] JSON 후보 탐지: {response_url}")
+    except Exception:
+        return
+
+def fetch_gscpi_from_chart():
+    """Headless Chromium으로 New York Fed 인터랙티브 차트 데이터를 스니핑한다."""
+    captured_payloads = []
+    log("[GSCPI][CHART] New York Fed 인터랙티브 차트 데이터 수집 시작...")
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+        )
+        context = browser.new_context(
+            viewport={"width": 1440, "height": 1200},
+            user_agent=(
+                "Mozilla/5.0 (X11; Linux x86_64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/128.0.0.0 Safari/537.36"
+            ),
+            locale="en-US"
+        )
+        page = context.new_page()
+        page.on("response", lambda res: inspect_gscpi_response(res, captured_payloads))
+
+        try:
+            page.goto(GSCPI_PAGE_URL, wait_until="domcontentloaded", timeout=90_000)
+            page.wait_for_timeout(12_000)
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.55);")
+            page.wait_for_timeout(5_000)
+        finally:
+            browser.close()
+
+    log(f"[GSCPI][CHART] 네트워크 JSON 후보 {len(captured_payloads)}개 확보")
+
+    best_series = []
+    best_source = None
+
+    for candidate in captured_payloads:
+        normalized = normalize_gscpi_payload(candidate["payload"])
+        if len(normalized) > len(best_series):
+            best_series = normalized
+            best_source = candidate["url"]
+
+    if len(best_series) < 100:
+        raise RuntimeError(
+            f"유효한 GSCPI 월별 시계열을 차트 응답에서 발견하지 못했습니다. (후보 수: {len(best_series)}건)"
+        )
+
+    latest = best_series[-1]
+    log(
+        f"[GSCPI][CHART] 유효 시계열 확인: {len(best_series)}건 / "
+        f"latest={latest['period']} / value={latest['gscpi_value']:.4f} / source={best_source}"
+    )
+
+    return best_series, best_source
+
+def get_cached_gscpi_count() -> int:
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS count FROM gscpi_series")
+        row = cur.fetchone()
+        return int(row["count"]) if row else 0
+    finally:
+        conn.close()
+
+def save_gscpi_series_to_db(series, source_url):
+    if not series:
+        raise ValueError("저장할 GSCPI 시계열이 없습니다.")
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    now_str = now_kst_iso()
+    inserted_count = 0
+
+    try:
+        for row in series:
+            period = row.get("period")
+            val = row.get("gscpi_value")
+            if not period or val is None:
+                continue
+
+            cur.execute("""
+                INSERT INTO gscpi_series (period, gscpi_value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(period) DO UPDATE SET
+                    gscpi_value = excluded.gscpi_value,
+                    updated_at = excluded.updated_at
+            """, (period, float(val), now_str))
+            inserted_count += 1
+
+        cur.execute("""
+            INSERT INTO metadata_cache (key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = excluded.updated_at
+        """, ("gscpi_source_url", source_url, now_str))
+
+        cur.execute("""
+            INSERT INTO metadata_cache (key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = excluded.updated_at
+        """, ("gscpi_collection_method", "NY_FED_CHART_NETWORK_JSON", now_str))
+
+        conn.commit()
+        latest = series[-1]
+        log(f"[GSCPI] SQLite 적재 완료: {inserted_count}건 / latest={latest['period']} / value={latest['gscpi_value']:.4f}")
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
 def fetch_gscpi_series():
-    log("[GSCPI] New York Fed 공급망 압력지수 수집 시작...")
-    url = "https://www.newyorkfed.org/medialibrary/media/research/policy/gscpi/gscpi_data.xls"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-
+    """
+    GSCPI 데이터 수집 파이프라인.
+    실패 시 기존 캐시를 보존하여 불완전한 빈 JSON 배포를 차단한다.
+    """
+    log("[GSCPI] NY Fed GSCPI 수집 파이프라인 시작...")
     try:
-        res = requests.get(url, headers=headers, timeout=25)
-        res.raise_for_status()
-
-        df = None
-        try:
-            df = pd.read_excel(BytesIO(res.content), sheet_name=0)
-        except Exception:
-            try:
-                df = pd.read_excel(BytesIO(res.content), engine="openpyxl")
-            except Exception as ex2:
-                log(f"[GSCPI] 엑셀 파싱 재시도 실패: {ex2}")
-                return
-
-        date_col = None
-        val_col = None
-
-        for col in df.columns:
-            col_str = str(col).strip().lower()
-            if "date" in col_str or "time" in col_str or "period" in col_str or "year" in col_str:
-                date_col = col
-            if "gscpi" in col_str or "standard" in col_str or "index" in col_str or "pressure" in col_str:
-                val_col = col
-
-        if date_col is None:
-            date_col = df.columns[0]
-        if val_col is None and len(df.columns) > 1:
-            val_col = df.columns[1]
-
-        conn = get_db_connection()
-        cur = conn.cursor()
-        now_str = now_kst_iso()
-        inserted_count = 0
-
-        for _, row in df.iterrows():
-            d_val = row[date_col]
-            v_val = row[val_col]
-
-            if pd.isna(d_val) or pd.isna(v_val):
-                continue
-
-            period_str = ""
-            if isinstance(d_val, (datetime, pd.Timestamp)):
-                period_str = d_val.strftime("%Y-%m")
-            else:
-                s = str(d_val).strip()
-                if len(s) >= 7 and ("-" in s or "/" in s):
-                    period_str = s[:7].replace("/", "-")
-
-            if period_str and len(period_str) == 7:
-                try:
-                    num_val = round(float(v_val), 4)
-                    cur.execute("""
-                        INSERT OR REPLACE INTO gscpi_series (period, gscpi_value, updated_at)
-                        VALUES (?, ?, ?)
-                    """, (period_str, num_val, now_str))
-                    inserted_count += 1
-                except (ValueError, TypeError):
-                    continue
-
-        conn.commit()
-        conn.close()
-        log(f"[GSCPI] 적재 완료 ({inserted_count} 건)")
-
-    except Exception as e:
-        log(f"[GSCPI ERROR] 다운로드/파싱 실패: {e}")
+        series, source_url = fetch_gscpi_from_chart()
+        if len(series) < 100:
+            raise RuntimeError(f"GSCPI 관측치 부족: {len(series)}건")
+        save_gscpi_series_to_db(series, source_url)
+        log("[GSCPI] 차트 네트워크 JSON 기반 수집 및 캐싱 완료.")
+    except Exception as exc:
+        cached_count = get_cached_gscpi_count()
+        log(f"[GSCPI WARN] 차트 기반 수집 실패: {exc}")
+        if cached_count > 0:
+            log(f"[GSCPI] 기존 SQLite 캐시 {cached_count}건을 유지합니다. 빈 데이터로 덮어쓰지 않습니다.")
+            return
+        raise RuntimeError(
+            "GSCPI 차트 기반 수집 실패 및 기존 DB 캐시 부재로 배포를 중단합니다."
+        ) from exc
 
 # =========================================================
-# 4. Static Asset Serializer (JSONs & HTML)
+# 4. World Bank Data Ingestion (GDP & Inflation)
 # =========================================================
-def export_static_json_payloads():
-    log("[EXPORT] 배포용 JSON 페이로드 생성 중...")
+
+def fetch_world_bank_indicator(indicator_code: str, label: str):
+    """World Bank API에서 주요국 연간 시계열 데이터를 수집하여 DB에 적재한다."""
+    log(f"[WORLD_BANK] {label} ({indicator_code}) 수집 시작...")
+
     conn = get_db_connection()
     cur = conn.cursor()
+    now_str = now_kst_iso()
+    success_count = 0
 
-    cur.execute("SELECT * FROM macro_countries ORDER BY display_order ASC")
-    countries = [dict(r) for r in cur.fetchall()]
+    try:
+        for ccode, cinfo in TARGET_COUNTRIES.items():
+            iso2 = cinfo["iso2"]
+            url = f"https://api.worldbank.org/v2/country/{iso2}/indicator/{indicator_code}?format=json&per_page=100"
 
-    cur.execute("SELECT * FROM macro_series WHERE indicator = 'GDP_GROWTH' ORDER BY year ASC")
-    gdp_rows = [dict(r) for r in cur.fetchall()]
+            try:
+                resp = requests.get(url, timeout=15)
+                if resp.status_code != 200:
+                    continue
 
-    cur.execute("SELECT * FROM macro_series WHERE indicator = 'CPI_INFLATION' ORDER BY year ASC")
-    inflation_rows = [dict(r) for r in cur.fetchall()]
+                payload = resp.json()
+                if not isinstance(payload, list) or len(payload) < 2:
+                    continue
 
-    macro_payload = {
-        "countries": countries,
-        "gdp": gdp_rows,
-        "inflation": inflation_rows
-    }
-    atomic_write_text(MACRO_JSON_PATH, json.dumps(macro_payload, ensure_ascii=False, indent=2))
+                records = payload[1]
+                if not records:
+                    continue
 
-    cur.execute("SELECT period, gscpi_value FROM gscpi_series ORDER BY period ASC")
-    gscpi_rows = [dict(r) for r in cur.fetchall()]
+                for rec in records:
+                    raw_year = rec.get("date")
+                    raw_val = rec.get("value")
 
-    gscpi_payload = {
-        "gscpi": gscpi_rows
-    }
-    atomic_write_text(GSCPI_JSON_PATH, json.dumps(gscpi_payload, ensure_ascii=False, indent=2))
+                    if not raw_year or raw_val is None:
+                        continue
 
-    meta_payload = {
-        "generated_at": now_kst_iso(),
-        "total_countries": len(countries),
-        "gscpi_points": len(gscpi_rows),
-        "status": "ONLINE"
-    }
-    atomic_write_text(META_JSON_PATH, json.dumps(meta_payload, ensure_ascii=False, indent=2))
+                    try:
+                        year = int(raw_year)
+                        val = round(float(raw_val), 4)
+                    except (ValueError, TypeError):
+                        continue
 
-    conn.close()
-    log("[EXPORT] JSON 파일 생성 완료 (macro_data, gscpi_data, dashboard_meta)")
+                    cur.execute("""
+                        INSERT INTO macro_series (
+                            country_code, country_name, indicator_code,
+                            indicator_name, year, value, updated_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(country_code, indicator_code, year) DO UPDATE SET
+                            value = excluded.value,
+                            updated_at = excluded.updated_at
+                    """, (
+                        ccode,
+                        cinfo["name"],
+                        indicator_code,
+                        label,
+                        year,
+                        val,
+                        now_str
+                    ))
+                    success_count += 1
 
-def generate_static_html():
-    log(f"[STATIC] HTML 생성 중: {STATIC_HTML_PATH.name}")
-    atomic_write_text(STATIC_HTML_PATH, STATIC_HTML)
-    log(f"[STATIC] 생성 완료: {STATIC_HTML_PATH.name}")
+            except Exception as e:
+                log(f"[WORLD_BANK WARN] {ccode} {label} 수집 중 오류: {e}")
+                continue
+
+        conn.commit()
+        log(f"[WORLD_BANK] {label} 적재 완료 ({success_count}건 레코드)")
+    finally:
+        conn.close()
 
 # =========================================================
-# 5. Master Bloomberg Terminal HTML Template
+# 5. Static Assets Exporter (JSON & SQLite Serializer)
 # =========================================================
+
+def export_static_json_payloads():
+    """SQLite 캐시 데이터를 정적 배포용 JSON 파일들로 직렬화한다."""
+    log("[EXPORT] 정적 JSON 데이터 직렬화 시작...")
+    conn = get_db_connection()
+
+    try:
+        cur = conn.cursor()
+
+        # 1. Macro JSON
+        cur.execute("""
+            SELECT country_code, country_name, indicator_name, year, value
+            FROM macro_series
+            ORDER BY country_code, indicator_name, year ASC
+        """)
+        macro_rows = cur.fetchall()
+
+        macro_payload = {}
+        for r in macro_rows:
+            cc = r["country_code"]
+            cname = r["country_name"]
+            ind = r["indicator_name"]
+            yr = r["year"]
+            val = r["value"]
+
+            if cc not in macro_payload:
+                macro_payload[cc] = {
+                    "name": cname,
+                    "region": TARGET_COUNTRIES.get(cc, {}).get("region", "Global"),
+                    "GDP_GROWTH": {},
+                    "CPI_INFLATION": {}
+                }
+
+            if ind in macro_payload[cc]:
+                macro_payload[cc][ind][str(yr)] = val
+
+        with open(MACRO_JSON_PATH, "w", encoding="utf-8") as f:
+            json.dump(macro_payload, f, ensure_ascii=False, indent=2)
+
+        # 2. GSCPI JSON
+        cur.execute("""
+            SELECT period, gscpi_value
+            FROM gscpi_series
+            ORDER BY period ASC
+        """)
+        gscpi_rows = cur.fetchall()
+
+        gscpi_payload = [
+            {"period": r["period"], "value": r["gscpi_value"]}
+            for r in gscpi_rows
+        ]
+
+        with open(GSCPI_JSON_PATH, "w", encoding="utf-8") as f:
+            json.dump(gscpi_payload, f, ensure_ascii=False, indent=2)
+
+        # 3. Meta JSON
+        cur.execute("SELECT value FROM metadata_cache WHERE key = 'gscpi_source_url'")
+        source_row = cur.fetchone()
+        cur.execute("SELECT value FROM metadata_cache WHERE key = 'gscpi_collection_method'")
+        method_row = cur.fetchone()
+
+        meta_payload = {
+            "generated_at": now_kst_iso(),
+            "total_countries": len(macro_payload),
+            "gscpi_points": len(gscpi_payload),
+            "gscpi_source_url": source_row["value"] if source_row else None,
+            "gscpi_collection_method": method_row["value"] if method_row else "CACHE",
+            "status": "ONLINE" if len(gscpi_payload) > 0 else "DEGRADED"
+        }
+
+        with open(META_JSON_PATH, "w", encoding="utf-8") as f:
+            json.dump(meta_payload, f, ensure_ascii=False, indent=2)
+
+        log(f"[EXPORT] JSON 파일 생성 완료 (국가: {len(macro_payload)}개, GSCPI: {len(gscpi_payload)}포인트)")
+    finally:
+        conn.close()
+
+# =========================================================
+# 6. Bloomberg/MI Terminal Standard HTML Template
+# =========================================================
+
 STATIC_HTML = """<!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MACRO ECONOMIES & GSCPI | MI Terminal</title>
-    <!-- Chart.js & Luxon Plugins -->
-    <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <style>
-        /* =========================================================
-           MI TERMINAL DESIGN SYSTEM
-           Standardized Bloomberg / MI Terminal Theme
-           ========================================================= */
-
-        /* ---------------------------------------------------------
-           1. Design Tokens (Theme Variables)
-           --------------------------------------------------------- */
-        :root {
-            --mi-bg: #030b13;
-            --mi-bg-deep: #02070d;
-
-            --mi-header: #06111d;
-            --mi-header-2: #050d16;
-
-            --mi-panel: #091521;
-            --mi-panel-hover: #0c1d2b;
-            --mi-panel-strong: #0d1d2b;
-
-            --mi-border: #16334b;
-            --mi-border-soft: #0d2639;
-            --mi-grid: rgba(22, 51, 75, 0.42);
-
-            --mi-amber: #f5a623;
-            --mi-cyan: #27c7e8;
-            --mi-blue: #4fa3ff;
-            --mi-green: #31d0a0;
-            --mi-red: #ff5b68;
-
-            --mi-white: #f2f6fa;
-            --mi-text: #9eb3c7;
-            --mi-muted: #5f7892;
-
-            --mi-font: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-
-            --mi-header-height: 40px;
-            --mi-status-height: 30px;
-            --mi-page-max-width: 1680px;
-        }
-
-        /* ---------------------------------------------------------
-           2. Reset & Global Styles
-           --------------------------------------------------------- */
-        *,
-        *::before,
-        *::after {
-            box-sizing: border-box;
-        }
-
-        html {
-            min-height: 100%;
-            background: var(--mi-bg);
-        }
-
-        body {
-            min-height: 100%;
-            margin: 0;
-            background:
-                linear-gradient(180deg, rgba(7, 21, 33, 0.3) 0%, transparent 320px),
-                var(--mi-bg);
-            color: var(--mi-text);
-            font-family: var(--mi-font);
-            font-size: 12px;
-            line-height: 1.45;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        button, input, select, textarea {
-            font: inherit;
-        }
-
-        a {
-            color: inherit;
-            text-decoration: none;
-        }
-
-        /* ---------------------------------------------------------
-           3. Bloomberg-style Terminal Top Header
-           --------------------------------------------------------- */
-        .mi-terminal-header {
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-            width: 100%;
-            border-top: 1px solid var(--mi-border);
-            border-bottom: 1px solid var(--mi-border);
-            background: var(--mi-header);
-            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
-        }
-
-        .mi-ticker-bar {
-            display: flex;
-            align-items: stretch;
-            min-height: var(--mi-header-height);
-            overflow-x: auto;
-            overflow-y: hidden;
-            white-space: nowrap;
-        }
-
-        .mi-module-name {
-            display: flex;
-            flex: 0 0 auto;
-            align-items: center;
-            padding: 0 18px 0 12px;
-            border-right: 1px solid var(--mi-border);
-            color: var(--mi-white);
-            font-size: 12px;
-            font-weight: 900;
-            letter-spacing: 0.6px;
-        }
-
-        .mi-function-key {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            height: 18px;
-            margin-right: 10px;
-            padding: 0 6px;
-            background: var(--mi-amber);
-            color: #06111d;
-            font-size: 10px;
-            font-weight: 900;
-            letter-spacing: -0.3px;
-        }
-
-        .mi-ticker {
-            display: flex;
-            flex: 0 0 auto;
-            flex-direction: column;
-            justify-content: center;
-            min-width: 150px;
-            padding: 0 16px;
-            border-right: 1px solid var(--mi-border);
-        }
-
-        .mi-ticker-label {
-            color: var(--mi-muted);
-            font-size: 9px;
-            font-weight: 800;
-            letter-spacing: 0.8px;
-            line-height: 1.1;
-        }
-
-        .mi-ticker-data {
-            display: flex;
-            align-items: baseline;
-            gap: 8px;
-            margin-top: 3px;
-        }
-
-        .mi-ticker-value {
-            color: var(--mi-white);
-            font-size: 13px;
-            font-weight: 900;
-        }
-
-        .mi-ticker-change {
-            font-size: 9px;
-            font-weight: 900;
-        }
-
-        .mi-up { color: var(--mi-green) !important; }
-        .mi-down { color: var(--mi-red) !important; }
-        .mi-neutral { color: var(--mi-cyan) !important; }
-
-        .mi-header-action {
-            display: flex;
-            align-items: center;
-            margin-left: auto;
-            padding: 0 14px;
-        }
-
-        .mi-header-action a {
-            display: inline-flex;
-            align-items: center;
-            padding: 5px 12px;
-            border: 1px solid #1e5575;
-            background: #061624;
-            color: var(--mi-cyan);
-            font-size: 10px;
-            font-weight: 900;
-            letter-spacing: 0.6px;
-            transition: all 0.15s ease;
-        }
-
-        .mi-header-action a:hover {
-            border-color: var(--mi-cyan);
-            background: #0b2639;
-            color: var(--mi-white);
-        }
-
-        .mi-status-bar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 16px;
-            min-height: var(--mi-status-height);
-            padding: 0 12px;
-            border-top: 1px solid var(--mi-border-soft);
-            background: var(--mi-header-2);
-            color: var(--mi-text);
-            font-size: 9px;
-            font-weight: 800;
-            letter-spacing: 0.55px;
-        }
-
-        .mi-system-status {
-            padding-left: 10px;
-            border-left: 2px solid var(--mi-green);
-        }
-
-        .mi-status-emphasis,
-        .mi-refresh-value {
-            color: var(--mi-white);
-        }
-
-        .mi-refresh-label {
-            color: var(--mi-muted);
-        }
-
-        /* ---------------------------------------------------------
-           4. Layout & UI Components
-           --------------------------------------------------------- */
-        .mi-page {
-            width: min(var(--mi-page-max-width), calc(100% - 32px));
-            margin: 0 auto;
-            padding: 18px 0 36px;
-        }
-
-        .mi-panel {
-            border: 1px solid var(--mi-border);
-            background: var(--mi-panel);
-            transition: background 0.15s ease;
-        }
-
-        .mi-panel:hover {
-            background: var(--mi-panel-hover);
-        }
-
-        .mi-section-title {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin: 20px 0 10px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid var(--mi-border);
-            color: var(--mi-white);
-            font-size: 12px;
-            font-weight: 900;
-            letter-spacing: 0.8px;
-        }
-
-        .mi-section-title::before {
-            display: block;
-            width: 3px;
-            height: 14px;
-            background: var(--mi-amber);
-            content: "";
-        }
-
-        .mi-data-label {
-            color: var(--mi-muted);
-            font-size: 10px;
-            font-weight: 800;
-            letter-spacing: 0.7px;
-        }
-
-        .mi-data-value {
-            color: var(--mi-white);
-            font-weight: 900;
-        }
-
-        /* ---------------------------------------------------------
-           5. Controls, Nav Tabs, Cards
-           --------------------------------------------------------- */
-        .tab-bar {
-            display: flex;
-            gap: 0;
-            margin-bottom: 14px;
-            border: 1px solid var(--mi-border);
-            background: #06111d;
-        }
-
-        .tab-btn {
-            flex: 1;
-            min-height: 38px;
-            border: 0;
-            border-right: 1px solid var(--mi-border);
-            background: transparent;
-            color: var(--mi-text);
-            font-size: 11px;
-            font-weight: 900;
-            letter-spacing: 0.5px;
-            cursor: pointer;
-            transition: all 0.15s ease;
-        }
-
-        .tab-btn:last-child {
-            border-right: 0;
-        }
-
-        .tab-btn:hover {
-            background: var(--mi-panel-hover);
-            color: var(--mi-white);
-        }
-
-        .tab-btn.active {
-            background: var(--mi-amber);
-            color: #06111d;
-            font-weight: 900;
-        }
-
-        .controls-card {
-            padding: 12px 16px;
-            margin-bottom: 14px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 16px;
-            align-items: center;
-        }
-
-        .control-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .control-label {
-            font-size: 10px;
-            color: var(--mi-muted);
-            font-weight: 800;
-            letter-spacing: 0.6px;
-            text-transform: uppercase;
-        }
-
-        select {
-            background: #061624;
-            border: 1px solid var(--mi-border);
-            color: var(--mi-white);
-            padding: 5px 10px;
-            font-size: 11px;
-            outline: none;
-            cursor: pointer;
-        }
-
-        select:focus {
-            border-color: var(--mi-cyan);
-        }
-
-        .country-chips {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            max-width: 760px;
-        }
-
-        .chip {
-            font-size: 10px;
-            background: #061624;
-            border: 1px solid var(--mi-border);
-            color: var(--mi-text);
-            padding: 3px 8px;
-            cursor: pointer;
-            user-select: none;
-            transition: all 0.15s ease;
-            font-weight: 700;
-        }
-
-        .chip:hover {
-            border-color: var(--mi-cyan);
-            color: var(--mi-white);
-        }
-
-        .chip.active {
-            background: rgba(39, 199, 232, 0.15);
-            border-color: var(--mi-cyan);
-            color: var(--mi-cyan);
-            font-weight: 900;
-        }
-
-        .btn-action {
-            margin-left: auto;
-            background: #061624;
-            border: 1px solid #1e5575;
-            color: var(--mi-cyan);
-            padding: 6px 14px;
-            font-size: 10px;
-            font-weight: 900;
-            letter-spacing: 0.6px;
-            cursor: pointer;
-            transition: all 0.15s ease;
-        }
-
-        .btn-action:hover {
-            background: #0b2639;
-            border-color: var(--mi-cyan);
-            color: var(--mi-white);
-        }
-
-        .dashboard-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 16px;
-            margin-bottom: 16px;
-        }
-
-        .card-header {
-            padding: 10px 14px;
-            border-bottom: 1px solid var(--mi-border);
-            background: #07111c;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .card-title {
-            font-size: 11px;
-            font-weight: 900;
-            color: var(--mi-amber);
-            letter-spacing: 0.6px;
-            text-transform: uppercase;
-        }
-
-        .chart-container {
-            position: relative;
-            height: 380px;
-            padding: 14px;
-        }
-
-        .table-container {
-            overflow-x: auto;
-            max-height: 480px;
-        }
-
-        /* ---------------------------------------------------------
-           6. Terminal Tables
-           --------------------------------------------------------- */
-        .mi-table {
-            width: 100%;
-            border-collapse: collapse;
-            background: var(--mi-panel);
-            color: var(--mi-text);
-            font-size: 11px;
-        }
-
-        .mi-table th {
-            padding: 10px 12px;
-            border-bottom: 1px solid var(--mi-border);
-            background: #07111c;
-            color: var(--mi-muted);
-            font-size: 9px;
-            font-weight: 900;
-            letter-spacing: 0.65px;
-            text-align: left;
-            position: sticky;
-            top: 0;
-            z-index: 2;
-        }
-
-        .mi-table td {
-            padding: 8px 12px;
-            border-bottom: 1px solid var(--mi-border-soft);
-        }
-
-        .mi-table tbody tr:hover {
-            background: rgba(39, 199, 232, 0.05);
-        }
-
-        .mi-table .number {
-            text-align: right;
-            font-variant-numeric: tabular-nums;
-        }
-
-        #loading {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: var(--mi-bg);
-            color: var(--mi-cyan);
-            font-size: 13px;
-            font-weight: 900;
-            letter-spacing: 0.8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-        }
-
-        .hidden { display: none !important; }
-
-        .banner-warning {
-            background-color: rgba(255, 91, 104, 0.12);
-            border: 1px solid var(--mi-red);
-            color: var(--mi-red);
-            padding: 10px 14px;
-            margin-bottom: 14px;
-            font-size: 11px;
-            font-weight: 700;
-        }
-
-        /* ---------------------------------------------------------
-           7. Terminal Custom Scrollbar & Responsive
-           --------------------------------------------------------- */
-        ::-webkit-scrollbar {
-            width: 7px;
-            height: 7px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: #040b12;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            border: 1px solid #040b12;
-            background: #1b4059;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: #27647f;
-        }
-
-        @media (max-width: 768px) {
-            .mi-page {
-                width: calc(100% - 20px);
-                padding-top: 12px;
-            }
-            .mi-module-name {
-                padding-right: 12px;
-                font-size: 10px;
-            }
-            .mi-ticker {
-                min-width: 130px;
-                padding: 0 10px;
-            }
-            .mi-header-action {
-                display: none;
-            }
-            .mi-status-bar {
-                font-size: 8px;
-            }
-            .tab-bar {
-                flex-direction: column;
-            }
-            .tab-btn {
-                border-right: 0;
-                border-bottom: 1px solid var(--mi-border);
-            }
-            .tab-btn:last-child {
-                border-bottom: 0;
-            }
-            .btn-action {
-                margin-left: 0;
-                width: 100%;
-                text-align: center;
-            }
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MI Terminal - Macro Economies & GSCPI</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #0a0e14;
+      --bg-panel: #121820;
+      --bg-card: #18222d;
+      --border-panel: #202b38;
+      --border-light: #2c3b4d;
+      --amber: #ff9900;
+      --amber-dim: rgba(255, 153, 0, 0.15);
+      --green: #00e676;
+      --green-dim: rgba(0, 230, 118, 0.12);
+      --red: #ff5252;
+      --red-dim: rgba(255, 82, 82, 0.12);
+      --cyan: #00b0ff;
+      --cyan-dim: rgba(0, 176, 255, 0.12);
+      --text-main: #cfd8dc;
+      --text-bright: #ffffff;
+      --text-muted: #607d8b;
+      --font-mono: 'JetBrains Mono', monospace;
+      --font-sans: 'Inter', -apple-system, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.5;
+      padding: 12px 16px 32px 16px;
+    }
+
+    /* MI Standard Bloomberg Header */
+    .terminal-header {
+      background-color: var(--bg-panel);
+      border: 1px solid var(--border-panel);
+      border-left: 4px solid var(--amber);
+      padding: 10px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .header-left {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .module-title {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--amber);
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .module-subtitle {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      background: var(--green-dim);
+      border: 1px solid var(--green);
+      color: var(--green);
+      font-weight: 700;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      background-color: var(--green);
+      border-radius: 50%;
+      box-shadow: 0 0 6px var(--green);
+    }
+
+    .clock-display {
+      color: var(--cyan);
+      font-weight: 700;
+      border: 1px solid var(--border-light);
+      background: var(--bg-card);
+      padding: 3px 8px;
+    }
+
+    .portal-link {
+      color: var(--text-bright);
+      text-decoration: none;
+      background: var(--amber-dim);
+      border: 1px solid var(--amber);
+      padding: 3px 10px;
+      font-weight: 700;
+      transition: all 0.2s ease;
+    }
+
+    .portal-link:hover {
+      background: var(--amber);
+      color: #000;
+    }
+
+    /* KPI Summary Cards */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .kpi-card {
+      background-color: var(--bg-panel);
+      border: 1px solid var(--border-panel);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .kpi-label {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .kpi-value {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-bright);
+    }
+
+    .kpi-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Main Grid Layout */
+    .layout-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .panel {
+      background-color: var(--bg-panel);
+      border: 1px solid var(--border-panel);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-header {
+      padding: 8px 12px;
+      background-color: var(--bg-card);
+      border-bottom: 1px solid var(--border-panel);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .panel-title {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--amber);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .panel-controls {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-select {
+      background: var(--bg-base);
+      color: var(--text-bright);
+      border: 1px solid var(--border-light);
+      padding: 3px 8px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      outline: none;
+    }
+
+    .btn-select:focus {
+      border-color: var(--amber);
+    }
+
+    .panel-body {
+      padding: 12px;
+      flex: 1;
+      position: relative;
+    }
+
+    .chart-container {
+      position: relative;
+      height: 320px;
+      width: 100%;
+    }
+
+    /* Data Tables */
+    .table-container {
+      overflow-x: auto;
+      max-height: 320px;
+    }
+
+    table.terminal-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      text-align: right;
+    }
+
+    table.terminal-table th, table.terminal-table td {
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border-panel);
+    }
+
+    table.terminal-table th {
+      background-color: var(--bg-card);
+      color: var(--text-muted);
+      font-weight: 700;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    table.terminal-table th:first-child, table.terminal-table td:first-child {
+      text-align: left;
+    }
+
+    table.terminal-table tr:hover {
+      background-color: rgba(255, 153, 0, 0.05);
+    }
+
+    .val-positive { color: var(--green); }
+    .val-negative { color: var(--red); }
+    .val-neutral { color: var(--text-bright); }
+
+    /* Footer */
+    .terminal-footer {
+      margin-top: 12px;
+      padding: 8px 12px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-panel);
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+  </style>
 </head>
 <body>
 
-    <div id="loading">INITIALIZING TERMINAL DATA PIPELINE...</div>
+  <!-- MI Bloomberg Header -->
+  <header class="terminal-header">
+    <div class="header-left">
+      <div class="module-title">
+        <span>[03. MACRO]</span> MACRO ECONOMIES & GSCPI TERMINAL
+      </div>
+      <div class="module-subtitle">WORLD BANK GDP / CPI & NY FED GLOBAL SUPPLY CHAIN PRESSURE INDEX</div>
+    </div>
+    <div class="header-right">
+      <div class="status-badge"><span class="status-dot"></span><span id="sys-status">LIVE FEED</span></div>
+      <div class="clock-display" id="live-clock">--:--:-- KST</div>
+      <a href="../index.html" class="portal-link">&larr; MI PORTAL</a>
+    </div>
+  </header>
 
-    <!-- Master Bloomberg-style Top Header -->
-    <header class="mi-terminal-header">
-        <div class="mi-ticker-bar">
-            <div class="mi-module-name">
-                <span class="mi-function-key">MI&lt;GO&gt;</span>
-                03. MACRO / INTELLIGENCE MONITOR
-            </div>
+  <!-- KPI Row -->
+  <div class="kpi-row">
+    <div class="kpi-card">
+      <span class="kpi-label">LATEST GSCPI INDEX</span>
+      <span class="kpi-value" id="kpi-gscpi-val">--</span>
+      <div class="kpi-sub">
+        <span>PERIOD: <b id="kpi-gscpi-date">--</b></span>
+        <span id="kpi-gscpi-status">STANDARD DEV</span>
+      </div>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">US GDP GROWTH (LATEST)</span>
+      <span class="kpi-value" id="kpi-us-gdp">--</span>
+      <div class="kpi-sub">
+        <span>ANNUAL REAL GDP</span>
+        <span id="kpi-us-gdp-year">--</span>
+      </div>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">CHINA GDP GROWTH (LATEST)</span>
+      <span class="kpi-value" id="kpi-cn-gdp">--</span>
+      <div class="kpi-sub">
+        <span>ANNUAL REAL GDP</span>
+        <span id="kpi-cn-gdp-year">--</span>
+      </div>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">US CPI INFLATION</span>
+      <span class="kpi-value" id="kpi-us-cpi">--</span>
+      <div class="kpi-sub">
+        <span>ANNUAL HEADLINE CPI</span>
+        <span id="kpi-us-cpi-year">--</span>
+      </div>
+    </div>
+  </div>
 
-            <div class="mi-ticker">
-                <div class="mi-ticker-label">LATEST SNAPSHOT</div>
-                <div class="mi-ticker-data">
-                    <span class="mi-ticker-value" id="generatedAtTicker">--</span>
-                </div>
-            </div>
-
-            <div class="mi-ticker">
-                <div class="mi-ticker-label">SOURCES</div>
-                <div class="mi-ticker-data">
-                    <span class="mi-ticker-value" style="font-size:11px; color:var(--mi-cyan);">WORLD BANK · NY FED</span>
-                </div>
-            </div>
-
-            <div class="mi-header-action">
-                <a href="../index.html" title="MI Portal Dashboard">PORTAL ↗</a>
-            </div>
+  <!-- Primary Charts Layout -->
+  <div class="layout-grid">
+    <!-- GSCPI Chart -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">&#9632; NY FED GLOBAL SUPPLY CHAIN PRESSURE INDEX (GSCPI)</span>
+        <div class="panel-controls">
+          <select id="gscpi-range-select" class="btn-select" onchange="updateGSCPIChart()">
+            <option value="ALL">ALL HISTORY</option>
+            <option value="10Y">LAST 10 YEARS</option>
+            <option value="5Y" selected>LAST 5 YEARS</option>
+            <option value="3Y">LAST 3 YEARS</option>
+          </select>
         </div>
-
-        <div class="mi-status-bar">
-            <div class="mi-system-status">
-                SYSTEM STATUS: <span class="mi-status-emphasis" style="color:var(--mi-green);">ONLINE</span>
-                &nbsp;|&nbsp; MODULE: <span class="mi-status-emphasis">MACRO ECONOMIES &amp; GSCPI</span>
-            </div>
-            <div>
-                <span class="mi-refresh-label">KST CLOCK: </span>
-                <span class="mi-refresh-value" id="kstClock">--:--:--</span>
-            </div>
+      </div>
+      <div class="panel-body">
+        <div class="chart-container">
+          <canvas id="gscpiChart"></canvas>
         </div>
-    </header>
-
-    <div class="mi-page">
-        <div id="warningBanner" class="banner-warning hidden"></div>
-
-        <!-- Metric Navigation Tabs -->
-        <div class="tab-bar">
-            <button class="tab-btn active" onclick="switchTab('gdp')">실질 GDP 성장률 (Real GDP Growth %)</button>
-            <button class="tab-btn" onclick="switchTab('inflation')">소비자물가 인플레이션 (CPI Inflation %)</button>
-            <button class="tab-btn" onclick="switchTab('gscpi')">글로벌 공급망 압력지수 (NY Fed GSCPI)</button>
-        </div>
-
-        <!-- Macro Filters Panel -->
-        <div id="macroControls" class="mi-panel controls-card">
-            <div class="control-group">
-                <span class="control-label">권역 필터:</span>
-                <select id="regionSelect" onchange="onRegionChange()">
-                    <option value="전체">전체 권역 (All Regions)</option>
-                </select>
-            </div>
-            <div class="control-group">
-                <span class="control-label">국가 선택:</span>
-                <div id="countryChips" class="country-chips"></div>
-            </div>
-            <button class="btn-action" onclick="exportCurrentViewCSV()">CSV 다운로드 ↗</button>
-        </div>
-
-        <!-- GSCPI Filter Panel -->
-        <div id="gscpiControls" class="mi-panel controls-card hidden">
-            <div class="control-group">
-                <span class="control-label">시계열 조회 기간:</span>
-                <select id="gscpiRangeSelect" onchange="renderGSCPIView()">
-                    <option value="all">전체 (2000 ~ 현재)</option>
-                    <option value="10y">최근 10년 (10Y)</option>
-                    <option value="5y">최근 5년 (5Y)</option>
-                    <option value="3y" selected>최근 3년 (3Y)</option>
-                </select>
-            </div>
-            <button class="btn-action" onclick="exportGscpiCSV()">GSCPI CSV 다운로드 ↗</button>
-        </div>
-
-        <!-- Main Visualization Grid -->
-        <div class="dashboard-grid">
-            <div class="mi-panel">
-                <div class="card-header">
-                    <span class="card-title" id="chartTitle">시계열 트렌드 차트</span>
-                </div>
-                <div class="chart-container">
-                    <canvas id="mainChart"></canvas>
-                </div>
-            </div>
-
-            <div class="mi-panel">
-                <div class="card-header">
-                    <span class="card-title" id="tableTitle">데이터 매트릭스</span>
-                </div>
-                <div class="table-container" id="tableContainer">
-                    <table class="mi-table" id="dataTable">
-                        <thead id="tableHead"></thead>
-                        <tbody id="tableBody"></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
+      </div>
     </div>
 
-    <script>
-        // KST Real-time Clock
-        function updateKstClock() {
-            const now = new Date();
-            const kstTime = new Intl.DateTimeFormat("ko-KR", {
-                timeZone: "Asia/Seoul",
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-                hour12: false
-            }).format(now);
-            const el = document.getElementById("kstClock");
-            if (el) el.textContent = kstTime;
-        }
-        updateKstClock();
-        setInterval(updateKstClock, 1000);
-
-        // =========================================================
-        // Core Dashboard State & Safe Initialization Logic
-        // =========================================================
-        const DEFAULT_COUNTRIES = ["USA", "CHN", "KOR", "DEU", "JPN", "WLD"];
-        const COLOR_PALETTE = [
-            "#27c7e8", "#31d0a0", "#f5a623", "#ff5b68",
-            "#4fa3ff", "#d48bfe", "#ff8a00", "#00e5ff",
-            "#a0d468", "#ff6b8b", "#48cfad", "#ffd600"
-        ];
-
-        let activeTab = "gdp";
-        let macroData = { countries: [], gdp: [], inflation: [] };
-        let gscpiData = { gscpi: [] };
-        let selectedCountries = new Set(DEFAULT_COUNTRIES);
-        let mainChartInstance = null;
-        let dashboardInitialized = false;
-
-        function getLoadingElement() {
-            return document.getElementById("loading");
-        }
-
-        function setLoadingMessage(message, isError = false) {
-            const loading = getLoadingElement();
-            if (!loading) return;
-
-            loading.textContent = message;
-
-            if (isError) {
-                loading.style.color = "#ff5b68";
-                loading.style.whiteSpace = "pre-line";
-                loading.style.textAlign = "center";
-                loading.style.lineHeight = "1.8";
-                loading.style.padding = "28px";
-            }
-        }
-
-        function hideLoading() {
-            const loading = getLoadingElement();
-            if (loading) {
-                loading.classList.add("hidden");
-            }
-        }
-
-        function showWarning(msg) {
-            const warning = document.getElementById("warningBanner");
-            if (!warning) return;
-            warning.textContent = msg;
-            warning.classList.remove("hidden");
-        }
-
-        function hideWarning() {
-            const warning = document.getElementById("warningBanner");
-            if (warning) {
-                warning.classList.add("hidden");
-            }
-        }
-
-        function getStaticAssetUrl(fileName) {
-            return new URL(fileName, document.baseURI).href;
-        }
-
-        async function fetchStaticJson(fileName) {
-            const url = getStaticAssetUrl(fileName);
-
-            let response;
-            try {
-                response = await fetch(url, {
-                    cache: "no-store",
-                    headers: {
-                        "Accept": "application/json"
-                    }
-                });
-            } catch (networkError) {
-                throw new Error(
-                    `${fileName} 네트워크 요청 실패: ${networkError.message}`
-                );
-            }
-
-            if (!response.ok) {
-                throw new Error(
-                    `${fileName} 로드 실패 (HTTP ${response.status}: ${response.statusText})`
-                );
-            }
-
-            const rawText = await response.text();
-
-            if (!rawText || !rawText.trim()) {
-                throw new Error(`${fileName} 파일이 비어 있습니다.`);
-            }
-
-            try {
-                return JSON.parse(rawText);
-            } catch (parseError) {
-                console.error(`[JSON PARSE ERROR] ${fileName}`, rawText.slice(0, 500));
-                throw new Error(
-                    `${fileName} JSON 파싱 실패: ${parseError.message}`
-                );
-            }
-        }
-
-        function validateLoadedData(loadedMacro, loadedGscpi, metaData) {
-            if (!loadedMacro || typeof loadedMacro !== "object") {
-                throw new Error("macro_data.json 데이터 객체가 유효하지 않습니다.");
-            }
-
-            if (!Array.isArray(loadedMacro.countries)) {
-                throw new Error("macro_data.json의 countries 배열이 없습니다.");
-            }
-
-            if (!Array.isArray(loadedMacro.gdp)) {
-                throw new Error("macro_data.json의 gdp 배열이 없습니다.");
-            }
-
-            if (!Array.isArray(loadedMacro.inflation)) {
-                throw new Error("macro_data.json의 inflation 배열이 없습니다.");
-            }
-
-            if (!loadedGscpi || typeof loadedGscpi !== "object") {
-                throw new Error("gscpi_data.json 데이터 객체가 유효하지 않습니다.");
-            }
-
-            if (!Array.isArray(loadedGscpi.gscpi)) {
-                throw new Error("gscpi_data.json의 gscpi 배열이 없습니다.");
-            }
-
-            if (!metaData || typeof metaData !== "object") {
-                throw new Error("dashboard_meta.json 데이터 객체가 유효하지 않습니다.");
-            }
-        }
-
-        async function initializeDashboard() {
-            try {
-                setLoadingMessage("INITIALIZING TERMINAL DATA PIPELINE...");
-                hideWarning();
-
-                console.info("[MI MACRO] Static JSON loading started.");
-
-                const [loadedMacro, loadedGscpi, metaData] = await Promise.all([
-                    fetchStaticJson("macro_data.json"),
-                    fetchStaticJson("gscpi_data.json"),
-                    fetchStaticJson("dashboard_meta.json")
-                ]);
-
-                validateLoadedData(loadedMacro, loadedGscpi, metaData);
-
-                macroData = {
-                    countries: loadedMacro.countries,
-                    gdp: loadedMacro.gdp,
-                    inflation: loadedMacro.inflation
-                };
-
-                gscpiData = {
-                    gscpi: loadedGscpi.gscpi
-                };
-
-                console.info("[MI MACRO] Static JSON loading completed.", {
-                    countries: macroData.countries.length,
-                    gdpRows: macroData.gdp.length,
-                    inflationRows: macroData.inflation.length,
-                    gscpiRows: gscpiData.gscpi.length,
-                    generatedAt: metaData.generated_at || null
-                });
-
-                const generatedTicker = document.getElementById("generatedAtTicker");
-                if (generatedTicker) {
-                    const syncTime = metaData.generated_at
-                        ? String(metaData.generated_at).replace(" KST", "")
-                        : "-";
-                    generatedTicker.textContent = syncTime;
-                }
-
-                populateRegionSelect();
-                populateCountryChips("전체");
-
-                /*
-                 * Chart.js CDN이 일시적으로 로드되지 않아도,
-                 * 표와 필터는 정상적으로 표시되도록 loading overlay를 먼저 제거한다.
-                 */
-                dashboardInitialized = true;
-                hideLoading();
-
-                switchTab("gdp");
-
-            } catch (error) {
-                console.error("[MI MACRO INIT ERROR]", error);
-
-                const detail = error && error.message
-                    ? error.message
-                    : String(error);
-
-                setLoadingMessage(
-                    "TERMINAL INITIALIZATION FAILED\n\n" +
-                    detail +
-                    "\n\n브라우저 개발자도구(F12) Console을 확인하십시오.",
-                    true
-                );
-
-                showWarning(`데이터 로드 또는 화면 초기화 오류: ${detail}`);
-            }
-        }
-
-        function populateRegionSelect() {
-            const select = document.getElementById("regionSelect");
-            if (!select) return;
-
-            const regions = Array.from(
-                new Set(
-                    macroData.countries
-                        .map(country => country.region)
-                        .filter(Boolean)
-                )
-            );
-
-            select.innerHTML = '<option value="전체">전체 권역 (All Regions)</option>';
-
-            regions.forEach(region => {
-                const option = document.createElement("option");
-                option.value = region;
-                option.textContent = region;
-                select.appendChild(option);
-            });
-        }
-
-        function populateCountryChips(region) {
-            const container = document.getElementById("countryChips");
-            if (!container) return;
-
-            container.innerHTML = "";
-
-            const filteredCountries = region === "전체"
-                ? macroData.countries
-                : macroData.countries.filter(country => country.region === region);
-
-            filteredCountries.forEach(country => {
-                const chip = document.createElement("div");
-                chip.className = `chip ${selectedCountries.has(country.iso3) ? "active" : ""}`;
-                chip.textContent = `${country.name_ko} (${country.iso3})`;
-                chip.onclick = () => toggleCountry(country.iso3);
-                container.appendChild(chip);
-            });
-        }
-
-        function onRegionChange() {
-            const select = document.getElementById("regionSelect");
-            const region = select ? select.value : "전체";
-            populateCountryChips(region);
-        }
-
-        function toggleCountry(iso3) {
-            if (selectedCountries.has(iso3)) {
-                if (selectedCountries.size > 1) {
-                    selectedCountries.delete(iso3);
-                }
-            } else {
-                selectedCountries.add(iso3);
-            }
-
-            const select = document.getElementById("regionSelect");
-            const region = select ? select.value : "전체";
-
-            populateCountryChips(region);
-            renderCurrentMacroView();
-        }
-
-        function switchTab(tab) {
-            activeTab = tab;
-
-            const tabs = ["gdp", "inflation", "gscpi"];
-
-            document.querySelectorAll(".tab-btn").forEach((button, index) => {
-                button.classList.toggle("active", tabs[index] === tab);
-            });
-
-            const macroControls = document.getElementById("macroControls");
-            const gscpiControls = document.getElementById("gscpiControls");
-
-            if (tab === "gscpi") {
-                if (macroControls) macroControls.classList.add("hidden");
-                if (gscpiControls) gscpiControls.classList.remove("hidden");
-                renderGSCPIView();
-            } else {
-                if (macroControls) macroControls.classList.remove("hidden");
-                if (gscpiControls) gscpiControls.classList.add("hidden");
-                renderCurrentMacroView();
-            }
-        }
-
-        function renderCurrentMacroView() {
-            const isGdp = activeTab === "gdp";
-            const dataset = isGdp ? macroData.gdp : macroData.inflation;
-
-            const titlePrefix = isGdp
-                ? "실질 GDP 성장률 (Real GDP Growth Rate %)"
-                : "소비자물가 인플레이션 (CPI Inflation %)";
-
-            document.getElementById("chartTitle").textContent = `${titlePrefix} 시계열 추이`;
-            document.getElementById("tableTitle").textContent = `${titlePrefix} 매트릭스 (최근 연도순)`;
-
-            const years = Array.from(
-                new Set(
-                    dataset
-                        .map(row => Number(row.year))
-                        .filter(Number.isFinite)
-                )
-            ).sort((a, b) => a - b);
-
-            const chartDatasets = [];
-            let colorIndex = 0;
-
-            selectedCountries.forEach(iso3 => {
-                const countryMeta = macroData.countries.find(country => country.iso3 === iso3)
-                    || { name_ko: iso3 };
-
-                const countryData = dataset.filter(row => row.iso3 === iso3);
-
-                const dataMap = new Map(
-                    countryData.map(row => [Number(row.year), Number(row.value)])
-                );
-
-                const series = years.map(year =>
-                    dataMap.has(year) ? dataMap.get(year) : null
-                );
-
-                const color = COLOR_PALETTE[colorIndex % COLOR_PALETTE.length];
-
-                chartDatasets.push({
-                    label: countryMeta.name_ko,
-                    data: series,
-                    borderColor: color,
-                    backgroundColor: color,
-                    borderWidth: 2,
-                    tension: 0.15,
-                    pointRadius: 3,
-                    pointHoverRadius: 5
-                });
-
-                colorIndex += 1;
-            });
-
-            renderChart(years, chartDatasets, "%");
-            renderMacroTable(years.slice().reverse(), dataset);
-        }
-
-        function renderMacroTable(reversedYears, dataset) {
-            const thead = document.getElementById("tableHead");
-            const tbody = document.getElementById("tableBody");
-
-            let headHtml = "<tr><th>국가 / 권역</th><th>지표</th>";
-
-            reversedYears.forEach(year => {
-                headHtml += `<th class="number">${year}</th>`;
-            });
-
-            headHtml += "</tr>";
-            thead.innerHTML = headHtml;
-
-            let bodyHtml = "";
-
-            selectedCountries.forEach(iso3 => {
-                const countryMeta = macroData.countries.find(country => country.iso3 === iso3)
-                    || { name_ko: iso3, region: "" };
-
-                const countryData = dataset.filter(row => row.iso3 === iso3);
-
-                const dataMap = new Map(
-                    countryData.map(row => [Number(row.year), Number(row.value)])
-                );
-
-                bodyHtml += `
-                    <tr>
-                        <td>
-                            <strong>${countryMeta.name_ko}</strong>
-                            <span style="color:var(--mi-muted);">(${iso3})</span>
-                        </td>
-                        <td style="color:var(--mi-cyan);">${activeTab.toUpperCase()}</td>
-                `;
-
-                reversedYears.forEach(year => {
-                    if (dataMap.has(year) && Number.isFinite(dataMap.get(year))) {
-                        const value = dataMap.get(year);
-                        const colorClass = value > 0
-                            ? "mi-up"
-                            : (value < 0 ? "mi-down" : "mi-neutral");
-
-                        bodyHtml += `
-                            <td class="number ${colorClass}">
-                                ${value > 0 ? "+" : ""}${value.toFixed(2)}%
-                            </td>
-                        `;
-                    } else {
-                        bodyHtml += `
-                            <td class="number" style="color:var(--mi-muted);">-</td>
-                        `;
-                    }
-                });
-
-                bodyHtml += "</tr>";
-            });
-
-            tbody.innerHTML = bodyHtml || `
-                <tr>
-                    <td colspan="${reversedYears.length + 2}" style="text-align:center; color:var(--mi-muted);">
-                        선택 국가의 데이터가 없습니다.
-                    </td>
-                </tr>
-            `;
-        }
-
-        function renderGSCPIView() {
-            document.getElementById("chartTitle").textContent =
-                "글로벌 공급망 압력지수 (NY Fed GSCPI Standard Deviation)";
-
-            document.getElementById("tableTitle").textContent =
-                "GSCPI 월별 시계열 데이터 매트릭스";
-
-            const rangeSelect = document.getElementById("gscpiRangeSelect");
-            const range = rangeSelect ? rangeSelect.value : "3y";
-
-            let filtered = Array.isArray(gscpiData.gscpi)
-                ? gscpiData.gscpi.slice()
-                : [];
-
-            if (range === "3y") filtered = filtered.slice(-36);
-            else if (range === "5y") filtered = filtered.slice(-60);
-            else if (range === "10y") filtered = filtered.slice(-120);
-
-            const labels = filtered.map(row => row.period);
-            const values = filtered.map(row => Number(row.gscpi_value));
-
-            const chartDatasets = [{
-                label: "GSCPI (표준편차)",
-                data: values,
-                borderColor: "#f5a623",
-                backgroundColor: "rgba(245, 166, 35, 0.15)",
-                fill: true,
-                borderWidth: 2,
-                pointRadius: values.length > 50 ? 1 : 3,
-                tension: 0.2
-            }];
-
-            renderChart(labels, chartDatasets, "SD");
-            renderGscpiTable(filtered.slice().reverse());
-        }
-
-        function renderGscpiTable(reversedData) {
-            const thead = document.getElementById("tableHead");
-            const tbody = document.getElementById("tableBody");
-
-            thead.innerHTML = `
-                <tr>
-                    <th>기간 (Period)</th>
-                    <th>지표명</th>
-                    <th class="number">지수값 (표준편차)</th>
-                    <th>공급망 압력 상태</th>
-                </tr>
-            `;
-
-            let bodyHtml = "";
-
-            reversedData.forEach(row => {
-                const value = Number(row.gscpi_value);
-
-                if (!Number.isFinite(value)) return;
-
-                const status = value > 0
-                    ? "압력 상승 (Above Avg)"
-                    : "압력 완화 (Below Avg)";
-
-                const colorClass = value > 0 ? "mi-down" : "mi-up";
-
-                bodyHtml += `
-                    <tr>
-                        <td><strong>${row.period}</strong></td>
-                        <td style="color:var(--mi-amber);">NY FED GSCPI</td>
-                        <td class="number ${colorClass}">
-                            <strong>${value > 0 ? "+" : ""}${value.toFixed(4)}</strong>
-                        </td>
-                        <td>
-                            <span style="color:${value > 0 ? "var(--mi-red)" : "var(--mi-green)"};">
-                                ${status}
-                            </span>
-                        </td>
-                    </tr>
-                `;
-            });
-
-            tbody.innerHTML = bodyHtml || `
-                <tr>
-                    <td colspan="4" style="text-align:center; color:var(--mi-muted);">
-                        GSCPI 데이터가 없습니다. 기존 DB 데이터 또는 NY Fed 원천 URL을 확인하십시오.
-                    </td>
-                </tr>
-            `;
-        }
-
-        function renderChart(labels, datasets, unit) {
-            const canvas = document.getElementById("mainChart");
-
-            if (!canvas) {
-                throw new Error("mainChart canvas를 찾을 수 없습니다.");
-            }
-
-            /*
-             * CDN 또는 네트워크 환경에서 Chart.js가 로드되지 않은 경우
-             * 표 데이터는 유지하고, 차트 영역에는 명확한 안내를 표시한다.
-             */
-            if (typeof Chart === "undefined") {
-                const container = canvas.parentElement;
-                if (container) {
-                    container.innerHTML = `
-                        <div style="
-                            display:flex;
-                            height:100%;
-                            align-items:center;
-                            justify-content:center;
-                            color:var(--mi-muted);
-                            text-align:center;
-                            line-height:1.8;
-                        ">
-                            CHART.JS LIBRARY UNAVAILABLE<br>
-                            데이터 테이블은 정상적으로 조회할 수 있습니다.
-                        </div>
-                    `;
-                }
-                return;
-            }
-
-            const context = canvas.getContext("2d");
-
-            if (mainChartInstance) {
-                mainChartInstance.destroy();
-                mainChartInstance = null;
-            }
-
-            mainChartInstance = new Chart(context, {
-                type: "line",
-                data: {
-                    labels,
-                    datasets
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        mode: "index",
-                        intersect: false
-                    },
-                    scales: {
-                        x: {
-                            grid: {
-                                color: "rgba(22, 51, 75, 0.42)",
-                                drawBorder: false
-                            },
-                            ticks: {
-                                color: "#5f7892",
-                                font: {
-                                    family: "JetBrains Mono",
-                                    size: 10
-                                }
-                            }
-                        },
-                        y: {
-                            grid: {
-                                color: "rgba(22, 51, 75, 0.42)",
-                                drawBorder: false
-                            },
-                            ticks: {
-                                color: "#5f7892",
-                                font: {
-                                    family: "JetBrains Mono",
-                                    size: 10
-                                },
-                                callback: value => `${value} ${unit}`
-                            }
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            position: "top",
-                            labels: {
-                                color: "#f2f6fa",
-                                boxWidth: 12,
-                                font: {
-                                    family: "JetBrains Mono",
-                                    size: 11,
-                                    weight: "bold"
-                                }
-                            }
-                        },
-                        tooltip: {
-                            backgroundColor: "#06111d",
-                            titleColor: "#f5a623",
-                            bodyColor: "#f2f6fa",
-                            borderColor: "#16334b",
-                            borderWidth: 1,
-                            padding: 10,
-                            bodyFont: {
-                                family: "JetBrains Mono"
-                            },
-                            titleFont: {
-                                family: "JetBrains Mono",
-                                weight: "bold"
-                            }
-                        }
-                    }
-                }
-            });
-        }
-
-        function exportCurrentViewCSV() {
-            const isGdp = activeTab === "gdp";
-            const dataset = isGdp ? macroData.gdp : macroData.inflation;
-
-            const years = Array.from(
-                new Set(
-                    dataset
-                        .map(row => Number(row.year))
-                        .filter(Number.isFinite)
-                )
-            ).sort((a, b) => b - a);
-
-            let csv = "\uFEFF국가코드,국가명,권역,지표," + years.join(",") + "\n";
-
-            selectedCountries.forEach(iso3 => {
-                const countryMeta = macroData.countries.find(country => country.iso3 === iso3)
-                    || { name_ko: iso3, region: "" };
-
-                const countryData = dataset.filter(row => row.iso3 === iso3);
-
-                const dataMap = new Map(
-                    countryData.map(row => [Number(row.year), row.value])
-                );
-
-                const row = [
-                    iso3,
-                    `"${countryMeta.name_ko}"`,
-                    `"${countryMeta.region}"`,
-                    activeTab.toUpperCase()
-                ];
-
-                years.forEach(year => {
-                    row.push(dataMap.has(year) ? dataMap.get(year) : "");
-                });
-
-                csv += row.join(",") + "\n";
-            });
-
-            downloadCSVFile(
-                csv,
-                `MI_Macro_${activeTab.toUpperCase()}_Export.csv`
-            );
-        }
-
-        function exportGscpiCSV() {
-            let csv = "\uFEFFPeriod,Indicator,GSCPI_Value\n";
-
-            gscpiData.gscpi.forEach(row => {
-                csv += `${row.period},NY_FED_GSCPI,${row.gscpi_value}\n`;
-            });
-
-            downloadCSVFile(csv, "MI_GSCPI_Series_Export.csv");
-        }
-
-        function downloadCSVFile(content, fileName) {
-            const blob = new Blob(
-                [content],
-                { type: "text/csv;charset=utf-8;" }
-            );
-
-            const link = document.createElement("a");
-            const objectUrl = URL.createObjectURL(blob);
-
-            link.href = objectUrl;
-            link.setAttribute("download", fileName);
-
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-            URL.revokeObjectURL(objectUrl);
-        }
-
-        /*
-         * DOMContentLoaded가 이미 발생한 경우에도 초기화가 누락되지 않도록
-         * document.readyState를 함께 확인한다.
-         */
-        if (document.readyState === "loading") {
-            document.addEventListener("DOMContentLoaded", initializeDashboard, { once: true });
+    <!-- GSCPI Table -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">&#9632; RECENT GSCPI OBSERVATIONS</span>
+      </div>
+      <div class="panel-body" style="padding: 0;">
+        <div class="table-container">
+          <table class="terminal-table" id="gscpi-recent-table">
+            <thead>
+              <tr>
+                <th>PERIOD</th>
+                <th>INDEX</th>
+                <th>MoM CHANGE</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="3" style="text-align:center;">LOADING...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Secondary Macro Panel -->
+  <div class="panel" style="margin-bottom: 12px;">
+    <div class="panel-header">
+      <span class="panel-title">&#9632; MAJOR ECONOMIES MACRO INDICATORS COMPARISON</span>
+      <div class="panel-controls">
+        <select id="macro-indicator-select" class="btn-select" onchange="renderMacroTable()">
+          <option value="GDP_GROWTH" selected>GDP REAL GROWTH RATE (%)</option>
+          <option value="CPI_INFLATION">CPI INFLATION RATE (%)</option>
+        </select>
+      </div>
+    </div>
+    <div class="panel-body" style="padding: 0;">
+      <div class="table-container" style="max-height: 380px;">
+        <table class="terminal-table" id="macro-matrix-table">
+          <thead>
+            <tr id="macro-matrix-header">
+              <th>COUNTRY</th>
+              <!-- Dynamic Year Headers -->
+            </tr>
+          </thead>
+          <tbody id="macro-matrix-body">
+            <tr><td colspan="6" style="text-align:center;">LOADING...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Terminal Footer -->
+  <footer class="terminal-footer">
+    <div>SOURCES: WORLD BANK OPEN DATA API, FEDERAL RESERVE BANK OF NEW YORK</div>
+    <div>DATA REFRESH: <span id="meta-refreshed">--</span> | CACHE ENGINE: SQLITE / PLAYWRIGHT</div>
+  </footer>
+
+  <script>
+    // Live KST Clock
+    function updateKSTClock() {
+      const now = new Date();
+      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+      const kstDate = new Date(utc + (3600000 * 9));
+      const hours = String(kstDate.getHours()).padStart(2, '0');
+      const mins = String(kstDate.getMinutes()).padStart(2, '0');
+      const secs = String(kstDate.getSeconds()).padStart(2, '0');
+      document.getElementById('live-clock').innerText = `${hours}:${mins}:${secs} KST`;
+    }
+    setInterval(updateKSTClock, 1000);
+    updateKSTClock();
+
+    let gscpiRawData = [];
+    let macroRawData = {};
+    let gscpiChartInstance = null;
+
+    async function loadData() {
+      try {
+        const [macroRes, gscpiRes, metaRes] = await Promise.all([
+          fetch('macro_data.json'),
+          fetch('gscpi_data.json'),
+          fetch('dashboard_meta.json')
+        ]);
+
+        macroRawData = await macroRes.json();
+        gscpiRawData = await gscpiRes.json();
+        const meta = await metaRes.json();
+
+        document.getElementById('meta-refreshed').innerText = meta.generated_at + ' KST';
+        if (meta.status === 'ONLINE') {
+          document.getElementById('sys-status').innerText = 'FEED ONLINE';
         } else {
-            initializeDashboard();
+          document.getElementById('sys-status').innerText = 'FEED DEGRADED';
+          document.getElementById('sys-status').parentElement.style.borderColor = '#ff5252';
+          document.getElementById('sys-status').parentElement.style.color = '#ff5252';
         }
 
-        /*
-         * 예기치 않은 JS 실행 중단 시 무한 INITIALIZING 화면을 방지한다.
-         */
-        window.setTimeout(() => {
-            if (!dashboardInitialized) {
-                const loading = getLoadingElement();
+        renderKPICards();
+        initGSCPIChart();
+        renderGSCPITable();
+        renderMacroTable();
 
-                if (loading && !loading.classList.contains("hidden")) {
-                    setLoadingMessage(
-                        "TERMINAL INITIALIZATION TIMEOUT\n\n" +
-                        "정적 JSON 또는 JavaScript 초기화가 완료되지 않았습니다.\n" +
-                        "F12 → Console 및 Network 탭을 확인하십시오.",
-                        true
-                    );
-                }
+      } catch (err) {
+        console.error("데이터 로드 실패:", err);
+      }
+    }
+
+    function renderKPICards() {
+      // 1. GSCPI KPI
+      if (gscpiRawData && gscpiRawData.length > 0) {
+        const latest = gscpiRawData[gscpiRawData.length - 1];
+        const valElem = document.getElementById('kpi-gscpi-val');
+        valElem.innerText = latest.value.toFixed(2);
+        valElem.className = 'kpi-value ' + (latest.value > 0 ? 'val-negative' : 'val-positive');
+        document.getElementById('kpi-gscpi-date').innerText = latest.period;
+      }
+
+      // 2. US GDP
+      if (macroRawData['USA'] && macroRawData['USA']['GDP_GROWTH']) {
+        const years = Object.keys(macroRawData['USA']['GDP_GROWTH']).sort();
+        const latestYr = years[years.length - 1];
+        const val = macroRawData['USA']['GDP_GROWTH'][latestYr];
+        const elem = document.getElementById('kpi-us-gdp');
+        elem.innerText = val.toFixed(1) + '%';
+        elem.className = 'kpi-value ' + (val >= 0 ? 'val-positive' : 'val-negative');
+        document.getElementById('kpi-us-gdp-year').innerText = latestYr;
+      }
+
+      // 3. China GDP
+      if (macroRawData['CHN'] && macroRawData['CHN']['GDP_GROWTH']) {
+        const years = Object.keys(macroRawData['CHN']['GDP_GROWTH']).sort();
+        const latestYr = years[years.length - 1];
+        const val = macroRawData['CHN']['GDP_GROWTH'][latestYr];
+        const elem = document.getElementById('kpi-cn-gdp');
+        elem.innerText = val.toFixed(1) + '%';
+        elem.className = 'kpi-value ' + (val >= 0 ? 'val-positive' : 'val-negative');
+        document.getElementById('kpi-cn-gdp-year').innerText = latestYr;
+      }
+
+      // 4. US CPI
+      if (macroRawData['USA'] && macroRawData['USA']['CPI_INFLATION']) {
+        const years = Object.keys(macroRawData['USA']['CPI_INFLATION']).sort();
+        const latestYr = years[years.length - 1];
+        const val = macroRawData['USA']['CPI_INFLATION'][latestYr];
+        const elem = document.getElementById('kpi-us-cpi');
+        elem.innerText = val.toFixed(1) + '%';
+        elem.className = 'kpi-value ' + (val > 3.0 ? 'val-negative' : 'val-neutral');
+        document.getElementById('kpi-us-cpi-year').innerText = latestYr;
+      }
+    }
+
+    function initGSCPIChart() {
+      const ctx = document.getElementById('gscpiChart').getContext('2d');
+      gscpiChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: { labels: [], datasets: [] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#121820',
+              titleColor: '#ff9900',
+              bodyColor: '#cfd8dc',
+              borderColor: '#2c3b4d',
+              borderWidth: 1,
+              padding: 10,
+              displayColors: false
             }
-        }, 15000);
+          },
+          scales: {
+            x: {
+              grid: { color: 'rgba(44, 59, 77, 0.4)' },
+              ticks: { color: '#607d8b', font: { family: "'JetBrains Mono', monospace", size: 10 }, maxTicksLimit: 12 }
+            },
+            y: {
+              grid: { color: 'rgba(44, 59, 77, 0.4)' },
+              ticks: { color: '#607d8b', font: { family: "'JetBrains Mono', monospace", size: 10 } }
+            }
+          }
+        }
+      });
+      updateGSCPIChart();
+    }
 
-    </script>
+    function updateGSCPIChart() {
+      if (!gscpiChartInstance || !gscpiRawData.length) return;
+      const range = document.getElementById('gscpi-range-select').value;
+
+      let filtered = [...gscpiRawData];
+      if (range === '10Y') filtered = filtered.slice(-120);
+      else if (range === '5Y') filtered = filtered.slice(-60);
+      else if (range === '3Y') filtered = filtered.slice(-36);
+
+      const labels = filtered.map(d => d.period);
+      const values = filtered.map(d => d.value);
+
+      gscpiChartInstance.data = {
+        labels: labels,
+        datasets: [
+          {
+            label: 'GSCPI',
+            data: values,
+            borderColor: '#00b0ff',
+            backgroundColor: 'rgba(0, 176, 255, 0.08)',
+            borderWidth: 1.8,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            fill: true,
+            tension: 0.1
+          },
+          {
+            label: 'Baseline (0.0)',
+            data: labels.map(() => 0),
+            borderColor: 'rgba(255, 153, 0, 0.5)',
+            borderWidth: 1,
+            borderDash: [4, 4],
+            pointRadius: 0,
+            fill: false
+          }
+        ]
+      };
+      gscpiChartInstance.update();
+    }
+
+    function renderGSCPITable() {
+      const tbody = document.querySelector('#gscpi-recent-table tbody');
+      if (!gscpiRawData.length) return;
+
+      const recent = gscpiRawData.slice(-12).reverse();
+      tbody.innerHTML = recent.map((item, idx) => {
+        let diffHtml = '--';
+        if (idx < recent.length - 1) {
+          const prev = recent[idx + 1].value;
+          const diff = item.value - prev;
+          const cls = diff > 0 ? 'val-negative' : (diff < 0 ? 'val-positive' : 'val-neutral');
+          const sign = diff > 0 ? '+' : '';
+          diffHtml = `<span class="${cls}">${sign}${diff.toFixed(2)}</span>`;
+        }
+        const valCls = item.value > 0 ? 'val-negative' : 'val-positive';
+        return `
+          <tr>
+            <td>${item.period}</td>
+            <td class="${valCls}">${item.value.toFixed(2)}</td>
+            <td>${diffHtml}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderMacroTable() {
+      const indicator = document.getElementById('macro-indicator-select').value;
+      const theadTr = document.getElementById('macro-matrix-header');
+      const tbody = document.getElementById('macro-matrix-body');
+
+      const allYears = new Set();
+      Object.values(macroRawData).forEach(c => {
+        if (c[indicator]) {
+          Object.keys(c[indicator]).forEach(y => allYears.add(y));
+        }
+      });
+
+      const sortedYears = Array.from(allYears).sort().slice(-6);
+
+      theadTr.innerHTML = `<th>COUNTRY / REGION</th>` +
+        sortedYears.map(y => `<th>${y}</th>`).join('');
+
+      const rowsHtml = Object.keys(macroRawData).map(cc => {
+        const c = macroRawData[cc];
+        const series = c[indicator] || {};
+        const cells = sortedYears.map(y => {
+          const val = series[y];
+          if (val === undefined || val === null) return `<td>--</td>`;
+          const cls = indicator === 'GDP_GROWTH'
+            ? (val >= 0 ? 'val-positive' : 'val-negative')
+            : (val > 3.0 ? 'val-negative' : 'val-neutral');
+          return `<td class="${cls}">${val.toFixed(1)}%</td>`;
+        }).join('');
+
+        return `
+          <tr>
+            <td><b>${c.name}</b> <span style="color:var(--text-muted); font-size:10px;">(${cc})</span></td>
+            ${cells}
+          </tr>
+        `;
+      }).join('');
+
+      tbody.innerHTML = rowsHtml;
+    }
+
+    window.onload = loadData;
+  </script>
 </body>
 </html>
 """
 
+def generate_static_html():
+    """정적 배포용 index.html을 작성한다."""
+    with open(INDEX_HTML_PATH, "w", encoding="utf-8") as f:
+        f.write(STATIC_HTML)
+    log(f"[HTML] 정적 대시보드 파일 생성 완료: {INDEX_HTML_PATH}")
+
 # =========================================================
-# 6. Flask Web Server & Entrypoint
+# 7. Local Flask Server & CLI Interface
 # =========================================================
+
 app = Flask(__name__, static_folder=str(BASE_DIR))
 
 @app.route("/")
-def index():
-    if not STATIC_HTML_PATH.exists():
-        generate_static_html()
-    return send_from_directory(BASE_DIR, "index.html")
+def serve_index():
+    return send_from_directory(str(BASE_DIR), "index.html")
 
-@app.route("/<path:path>")
-def static_files(path):
-    return send_from_directory(BASE_DIR, path)
+@app.route("/<path:filename>")
+def serve_static(filename):
+    return send_from_directory(str(BASE_DIR), filename)
 
-def wait_and_open_browser(url: str, host: str, port: int, timeout: float = 8.0):
-    start = time.time()
-    while time.time() - start < timeout:
-        try:
-            with socket.create_connection((host, port), timeout=0.5):
-                webbrowser.open(url)
-                return
-        except OSError:
-            time.sleep(0.2)
+@app.route("/api/macro")
+def api_macro():
+    if not MACRO_JSON_PATH.exists():
+        return jsonify({"error": "macro_data.json not found"}), 404
+    with open(MACRO_JSON_PATH, "r", encoding="utf-8") as f:
+        return jsonify(json.load(f))
+
+@app.route("/api/gscpi")
+def api_gscpi():
+    if not GSCPI_JSON_PATH.exists():
+        return jsonify({"error": "gscpi_data.json not found"}), 404
+    with open(GSCPI_JSON_PATH, "r", encoding="utf-8") as f:
+        return jsonify(json.load(f))
+
+def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(1.0)
+        return s.connect_ex((host, port)) == 0
+
+def find_available_port(start_port: int = 8000, host: str = "127.0.0.1") -> int:
+    port = start_port
+    while is_port_in_use(port, host):
+        port += 1
+    return port
+
+def wait_and_open_browser(url: str, host: str, port: int):
+    for _ in range(30):
+        if is_port_in_use(port, host):
+            webbrowser.open(url)
+            return
+        time.sleep(0.5)
+
+# =========================================================
+# 8. Main Execution Entry Point
+# =========================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="GDP, Inflation & GSCPI Bloomberg Terminal Engine")
-    parser.add_argument("--cron", action="store_true", help="정적 파일(HTML, JSONs) 생성 후 즉시 종료")
-    parser.add_argument("--host", default="127.0.0.1", help="Flask 서버 바인딩 호스트")
-    parser.add_argument("--port", type=int, default=5000, help="Flask 서버 포트")
+    parser = argparse.ArgumentParser(description="GDP, Inflation & GSCPI Terminal Pipeline")
+    parser.add_argument("--cron", action="store_true", help="GitHub Actions 정적 빌드 모드")
+    parser.add_argument("--host", default="0.0.0.0", help="Flask 바인딩 호스트")
+    parser.add_argument("--port", type=int, default=8000, help="Flask 바인딩 포트")
     parser.add_argument("--no-open", action="store_true", help="브라우저 자동 열기 비활성화")
     args = parser.parse_args()
 
+    log("[PIPELINE] MacroEconomies 파이프라인 초기화...")
     init_db()
 
-    # 데이터 수집 실행
+    # 1. World Bank 거시지표 수집
     fetch_world_bank_indicator("NY.GDP.MKTP.KD.ZG", "GDP_GROWTH")
     fetch_world_bank_indicator("FP.CPI.TOTL.ZG", "CPI_INFLATION")
-    fetch_gscpi_series()
 
-    # JSON 및 HTML 정적 에셋 빌드
+    # 2. GSCPI 인터랙티브 차트 기반 수집 (안전장치 적용)
+    try:
+        fetch_gscpi_series()
+    except Exception as e:
+        log(f"[GSCPI ERROR] GSCPI 파이프라인 최종 오류: {e}")
+        if get_cached_gscpi_count() == 0:
+            log("[FATAL] 유효한 캐시가 없어 빌드를 중단합니다.")
+            sys.exit(1)
+
+    # 3. 정적 JSON 및 HTML 산출물 생성
     export_static_json_payloads()
     generate_static_html()
 
     if args.cron:
-        log("[CRON] 정적 에셋 빌드 완료 -> 프로세스를 정상 종료합니다.")
-        sys.exit(0)
+        log("[PIPELINE] --cron 정적 산출물 빌드 완료. 프로세스를 정상 종료합니다.")
+        return
 
-    host = args.host
-    port = args.port
-    browser_host = "localhost" if host == "0.0.0.0" else host
-    local_url = f"http://{browser_host}:{port}"
+    # 로컬 Flask 개발 서버 구동
+    target_port = args.port if not is_port_in_use(args.port, args.host) else find_available_port(args.port, args.host)
+    local_url = f"http://localhost:{target_port}/"
 
-    log(f"[INFO] SQLite 캐시 DB: {DB_PATH}")
-    log(f"[INFO] MI Terminal Flask 서버 시작: {local_url}")
+    log(f"[SERVER] Flask 로컬 대시보드 서버 기동: {local_url}")
 
     if not args.no_open:
         threading.Thread(
             target=wait_and_open_browser,
-            args=(local_url, host, port),
-            daemon=True,
+            args=(local_url, args.host, target_port),
+            daemon=True
         ).start()
 
     app.run(
-        host=host,
-        port=port,
+        host=args.host,
+        port=target_port,
         debug=False,
-        use_reloader=False,
+        use_reloader=False
     )
 
 if __name__ == "__main__":
