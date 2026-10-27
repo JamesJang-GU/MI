@@ -124,7 +124,7 @@ def init_db(conn: sqlite3.Connection):
         """)
         cursor.execute("DROP TABLE IF EXISTS macro_series_old")
 
-    # 2. gscpi_series 테이블 생성
+    # 2. gscpi_series 스키마 생성 및 구버전 자동 마이그레이션
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS gscpi_series (
             date TEXT PRIMARY KEY,
@@ -132,6 +132,49 @@ def init_db(conn: sqlite3.Connection):
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    cursor.execute("PRAGMA table_info(gscpi_series)")
+    gscpi_columns = [col[1] for col in cursor.fetchall()]
+
+    # 구버전 스키마: period / gscpi_value / updated_at
+    if "date" not in gscpi_columns or "value" not in gscpi_columns:
+        logger.warning(
+            "[DB] gscpi_series 구버전 스키마 감지 -> "
+            "date/value 표준 구조로 자동 마이그레이션 실행"
+        )
+
+        cursor.execute("ALTER TABLE gscpi_series RENAME TO gscpi_series_old")
+
+        cursor.execute("""
+            CREATE TABLE gscpi_series (
+                date TEXT PRIMARY KEY,
+                value REAL NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        old_columns = [
+            col[1]
+            for col in cursor.execute(
+                "PRAGMA table_info(gscpi_series_old)"
+            ).fetchall()
+        ]
+
+        # 기존 DB에 실제 데이터가 있을 때만 안전 이관
+        if "period" in old_columns and "gscpi_value" in old_columns:
+            cursor.execute("""
+                INSERT OR REPLACE INTO gscpi_series (date, value, updated_at)
+                SELECT
+                    period,
+                    gscpi_value,
+                    COALESCE(updated_at, CURRENT_TIMESTAMP)
+                FROM gscpi_series_old
+                WHERE period IS NOT NULL
+                  AND gscpi_value IS NOT NULL
+            """)
+
+        cursor.execute("DROP TABLE gscpi_series_old")
+
 
     # 3. meta 정보 테이블
     cursor.execute("""
@@ -261,14 +304,16 @@ def fetch_gscpi_data(conn: sqlite3.Connection):
 
                 page.on("response", on_response)
                 page.goto(
-                    "https://www.newyorkfed.org/research/policy/gscpi#/interactive", 
+                    "https://www.newyorkfed.org/research/policy/gscpi#/interactive",
                     wait_until="domcontentloaded",
                     timeout=60000
-)
+                )
 
-page.wait_for_timeout(8000)
+                # NY Fed SPA의 차트/API 호출 대기
+                page.wait_for_timeout(8000)
 
                 for blob in intercepted_json:
+
                     if isinstance(blob, list):
                         for item in blob:
                             if isinstance(item, dict) and "date" in item and "gscpi" in item:
@@ -331,12 +376,11 @@ def export_assets(conn: sqlite3.Connection):
 
     # 2. GSCPI JSON
     cursor.execute("""
-    SELECT
-        period AS date,
-        gscpi_value AS value
-    FROM gscpi_series
-    ORDER BY period ASC
-""")
+        SELECT date, value
+        FROM gscpi_series
+        ORDER BY date ASC
+    """)
+
 
     gscpi_rows = cursor.fetchall()
     gscpi_list = [{"date": r[0], "value": r[1]} for r in gscpi_rows]
