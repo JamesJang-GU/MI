@@ -45,146 +45,53 @@ BASE_URL = "https://www.ksg.co.kr/"
 
 SUPPORTED_INDEXES = ["SCFI", "BDI"]
 
+SCFI_REGION_PRIORITY = ["종합", "종합지수"]
+
 BDI_REGION_PRIORITY = [
     "BDI",
     "BCI",
     "BPI",
     "BSI",
     "BHSI",
-    "BDTI",
-    "BCTI"
+    "Cape(4TC)",
+    "Pana(4TC)",
+    "Pana(5TC)",
+    "Pana(82_5TC)",
+    "Supra(6TC)",
+    "Supra(58_10TC)",
+    "Supra(63_11TC)",
+    "Handy(6TC)",
+    "Handy(38_7TC)",
 ]
 
-INVALID_REGION_NAMES = {
-    "",
-    "일자",
-    "날짜",
-    "날 자",
-    "DATE",
-    "Date",
-    "date",
-    "YEAR",
-    "Year",
-    "year",
-    "INDEX_NAME",
-    "CRAWL_PAGE"
-}
-
 # =============================================================================
-# 2. Common Functions
+# 2. Database Management
 # =============================================================================
 
-def log(message):
-    """Print timestamped console log."""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] {message}")
-
-def now_string():
-    """Return current timestamp string."""
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-def atomic_write_text(file_path, content):
+def init_db(db_path: Path):
     """
-    Write a file atomically.
-    Prevents partial output files if execution is interrupted.
+    SQLite 데이터베이스 테이블 초기화
+    - index_raw: SCFI / BDI 통합 원천 데이터 (Composite PK: dt, region, index_name)
+    - crawl_audit: 수집 이력 감사 로그
     """
-    file_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
 
-    temp_path = file_path.with_suffix(file_path.suffix + ".tmp")
-
-    with open(temp_path, "w", encoding="utf-8", newline="\n") as file:
-        file.write(content)
-
-    temp_path.replace(file_path)
-
-def normalize_index_name(index_name):
-    """Normalize index name."""
-    index_name = str(index_name or "").strip().upper()
-
-    if index_name in SUPPORTED_INDEXES:
-        return index_name
-
-    return "SCFI"
-
-def is_valid_region_for_index(region, index_name):
-    """
-    Filter invalid table headers / region names.
-
-    BDI accepts only standard Baltic sub-index names.
-    """
-    region = str(region or "").strip()
-    index_name = normalize_index_name(index_name)
-
-    if region in INVALID_REGION_NAMES:
-        return False
-
-    if index_name == "BDI":
-        return region in BDI_REGION_PRIORITY
-
-    return True
-
-def parse_date_value(value):
-    """Parse date values from KSG table."""
-    value = str(value or "").strip()
-
-    date_formats = [
-        "%Y-%m-%d",
-        "%Y.%m.%d",
-        "%Y/%m/%d",
-        "%y-%m-%d",
-        "%y.%m.%d",
-        "%y/%m/%d"
-    ]
-
-    for date_format in date_formats:
-        try:
-            return datetime.strptime(value, date_format).date()
-        except ValueError:
-            continue
-
-    return value
-
-def clean_number(value):
-    """Convert displayed numeric values to float."""
-    value = str(value or "").strip().replace(",", "")
-
-    if not value:
-        return None
-
-    if re.fullmatch(r"[+-]?\d+(\.\d+)?", value):
-        return float(value)
-
-    return None
-
-# =============================================================================
-# 3. SQLite Database Functions
-# =============================================================================
-
-def get_db_connection():
-    """
-    Create and return SQLite connection.
-
-    index_raw:
-        Raw long-format data collected from KSG.
-
-    crawl_audit:
-        Execution log for each SCFI / BDI crawl.
-    """
-    connection = sqlite3.connect(DB_PATH)
-
-    connection.execute("""
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS index_raw (
             dt TEXT NOT NULL,
             region TEXT NOT NULL,
             value REAL,
             index_name TEXT NOT NULL,
             source_file TEXT,
-            created_at TEXT,
             PRIMARY KEY (dt, region, index_name)
         )
-    """)
+        """
+    )
 
-    connection.execute("""
+    cur.execute(
+        """
         CREATE TABLE IF NOT EXISTS crawl_audit (
             audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
             started_at TEXT,
@@ -195,2834 +102,1702 @@ def get_db_connection():
             total_rows INTEGER,
             index_name TEXT
         )
-    """)
+        """
+    )
 
-    connection.commit()
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_raw_search ON index_raw(index_name, region, dt DESC)"
+    )
 
-    return connection
+    conn.commit()
+    conn.close()
 
-def get_last_saved_date(index_name):
-    """Return latest stored date for incremental crawl."""
-    index_name = normalize_index_name(index_name)
+def get_latest_date_in_db(db_path: Path, index_name: str) -> str:
+    """DB에 저장된 특정 인덱스의 최신 날짜 반환 (YYYY-MM-DD)"""
+    if not db_path.exists():
+        return "1900-01-01"
 
-    query = """
-        SELECT MAX(dt)
-        FROM index_raw
-        WHERE index_name = ?
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT MAX(dt) FROM index_raw WHERE index_name = ? AND value IS NOT NULL",
+        (index_name,),
+    )
+    row = cur.fetchone()
+    conn.close()
+
+    if row and row[0]:
+        return row[0]
+    return "1900-01-01"
+
+def upsert_index_records(db_path: Path, records: list) -> int:
     """
-
-    with get_db_connection() as connection:
-        row = connection.execute(
-            query,
-            (index_name,)
-        ).fetchone()
-
-    if not row or not row[0]:
-        return None
-
-    try:
-        return datetime.strptime(row[0], "%Y-%m-%d").date()
-    except ValueError:
-        return None
-
-def get_total_record_count(index_name):
-    """Return total row count for one index."""
-    index_name = normalize_index_name(index_name)
-
-    with get_db_connection() as connection:
-        row = connection.execute(
-            """
-            SELECT COUNT(*)
-            FROM index_raw
-            WHERE index_name = ?
-            """,
-            (index_name,)
-        ).fetchone()
-
-    return int(row[0] or 0)
-
-def cleanup_invalid_regions():
+    수집된 레코드를 index_raw 테이블에 INSERT OR REPLACE
+    records: list of tuples (dt, region, value, index_name, source_file)
     """
-    Remove legacy invalid rows, such as:
-    - 일자
-    - DATE
-    - incorrect BDI column names
-    """
-    try:
-        with get_db_connection() as connection:
-            cursor = connection.cursor()
+    if not records:
+        return 0
 
-            invalid_names = sorted(INVALID_REGION_NAMES)
-            invalid_placeholders = ",".join(
-                ["?"] * len(invalid_names)
-            )
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
 
-            cursor.execute(
-                f"""
-                DELETE FROM index_raw
-                WHERE TRIM(region) IN ({invalid_placeholders})
-                """,
-                invalid_names
-            )
+    cur.executemany(
+        """
+        INSERT OR REPLACE INTO index_raw (dt, region, value, index_name, source_file)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        records,
+    )
 
-            bdi_placeholders = ",".join(
-                ["?"] * len(BDI_REGION_PRIORITY)
-            )
+    inserted_count = cur.rowcount
+    conn.commit()
+    conn.close()
+    return inserted_count
 
-            cursor.execute(
-                f"""
-                DELETE FROM index_raw
-                WHERE index_name = 'BDI'
-                AND TRIM(region) NOT IN ({bdi_placeholders})
-                """,
-                BDI_REGION_PRIORITY
-            )
-
-            connection.commit()
-
-        log("[DB] Invalid region cleanup complete.")
-
-    except Exception as error:
-        log(f"[WARNING] Invalid region cleanup failed: {error}")
-
-def write_crawl_audit(
-    index_name,
-    started_at,
-    status,
-    message,
-    rows_added,
-    total_rows
+def log_audit(
+    db_path: Path,
+    started_at: str,
+    finished_at: str,
+    status: str,
+    message: str,
+    rows_added: int,
+    total_rows: int,
+    index_name: str,
 ):
-    """Write crawl result to audit table."""
-    index_name = normalize_index_name(index_name)
-
-    with get_db_connection() as connection:
-        connection.execute(
-            """
-            INSERT INTO crawl_audit (
-                started_at,
-                finished_at,
-                status,
-                message,
-                rows_added,
-                total_rows,
-                index_name
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                started_at,
-                now_string(),
-                status,
-                message,
-                rows_added,
-                total_rows,
-                index_name
-            )
-        )
-
-        connection.commit()
-
-# =============================================================================
-# 4. Selenium / KSG Login Functions
-# =============================================================================
-
-def get_driver():
-    """
-    Initialize Chrome WebDriver.
-
-    GitHub Actions ubuntu-latest normally provides Chrome and ChromeDriver.
-    A custom driver path can optionally be supplied through CHROMEDRIVER_PATH.
-    """
-    options = webdriver.ChromeOptions()
-
-    options.add_argument("--headless=new")
-    options.add_argument("--disable-popup-blocking")
-    options.add_argument("--disable-notifications")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--lang=ko-KR")
-    options.add_argument("--window-size=1600,1000")
-
-    chrome_binary = os.getenv("CHROME_BINARY", "").strip()
-
-    if chrome_binary:
-        options.binary_location = chrome_binary
-
-    driver_path = os.getenv("CHROMEDRIVER_PATH", "").strip()
-
-    if driver_path:
-        log(f"[DRIVER] Custom ChromeDriver path: {driver_path}")
-
-        return webdriver.Chrome(
-            service=Service(driver_path),
-            options=options
-        )
-
-    return webdriver.Chrome(options=options)
-
-def handle_login_alerts(driver, timeout=1.0, max_alerts=3):
-    """Accept browser alert messages after login."""
-    for _ in range(max_alerts):
-        try:
-            WebDriverWait(driver, timeout).until(
-                EC.alert_is_present()
-            )
-
-            alert = driver.switch_to.alert
-
-            log(f"[ALERT] {alert.text}")
-
-            alert.accept()
-
-            time.sleep(0.2)
-
-        except (TimeoutException, NoAlertPresentException):
-            return
-
-def login_ksg(driver):
-    """
-    Login to Korea Shipping Gazette.
-
-    Credentials must come from:
-    - GitHub Actions Secrets
-    - local environment variables
-
-    KSG_ID
-    KSG_PW
-    """
-    user_id = os.getenv("KSG_ID", "").strip()
-    password = os.getenv("KSG_PW", "").strip()
-
-    if not user_id or not password:
-        raise RuntimeError(
-            "KSG_ID 또는 KSG_PW 환경변수가 없습니다. "
-            "GitHub Actions Secrets 설정을 확인하세요."
-        )
-
-    log("[LOGIN] KSG 로그인 페이지 접속 중...")
-
-    driver.get(BASE_URL)
-
-    wait = WebDriverWait(driver, 20)
-
-    wait.until(
-        EC.element_to_be_clickable(
-            (By.LINK_TEXT, "로그인")
-        )
-    ).click()
-
-    id_input = wait.until(
-        EC.presence_of_element_located(
-            (By.ID, "loginId")
-        )
-    )
-
-    password_input = wait.until(
-        EC.presence_of_element_located(
-            (By.ID, "loginPass")
-        )
-    )
-
-    id_input.clear()
-    id_input.send_keys(user_id)
-
-    password_input.clear()
-    password_input.send_keys(password)
-
-    driver.execute_script(
-        "loginSubmitForm(document.form1);"
-    )
-
-    handle_login_alerts(driver)
-
-    time.sleep(1.0)
-
-    # Login input still present generally means login failed.
-    visible_login_inputs = [
-        element
-        for element in driver.find_elements(By.ID, "loginId")
-        if element.is_displayed()
-    ]
-
-    if visible_login_inputs:
-        raise RuntimeError(
-            "KSG 로그인에 실패했습니다. "
-            "KSG_ID / KSG_PW를 확인하세요."
-        )
-
-    log("[LOGIN] KSG 로그인 성공")
-
-def go_to_index_page(driver, index_name):
-    """Navigate to SCFI or BDI page."""
-    index_name = normalize_index_name(index_name)
-
-    log(f"[CRAWL] {index_name} 메인 페이지 이동 중...")
-
-    wait = WebDriverWait(driver, 20)
-
-    wait.until(
-        EC.element_to_be_clickable(
-            (By.LINK_TEXT, index_name)
-        )
-    ).click()
-
-    try:
-        wait.until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "table")
-            )
-        )
-    except TimeoutException:
-        pass
-
-    time.sleep(0.8)
-
-    log(f"[CRAWL] {index_name} 메인 페이지 진입 완료")
-
-# =============================================================================
-# 5. KSG Table Parsing / Pagination
-# =============================================================================
-
-def parse_current_table(driver, index_name):
-    """
-    Extract currently visible KSG table.
-
-    Returns a wide-format DataFrame.
-    First column is expected to be date.
-    Remaining columns are SCFI routes or BDI sub-indexes.
-    """
-    index_name = normalize_index_name(index_name)
-
-    script = f"""
-    const INDEX_NAME = "{index_name}";
-    const tables = Array.from(document.querySelectorAll("table"));
-    let target = null;
-
-    for (const table of tables) {{
-      const caption = (
-        table.querySelector("caption")?.innerText || ""
-      ).toUpperCase();
-
-      const text = (table.innerText || "").toUpperCase();
-
-      if (
+    """크롤링 실행 감사 로그 기록"""
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO crawl_audit (started_at, finished_at, status, message, rows_added, total_rows, index_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
         (
-          caption.includes(INDEX_NAME) ||
-          text.includes(INDEX_NAME) ||
-          text.includes("일자")
-        ) &&
-        table.querySelector("tbody tr")
-      ) {{
-        target = table;
-        break;
-      }}
-    }}
+            started_at,
+            finished_at,
+            status,
+            message,
+            rows_added,
+            total_rows,
+            index_name,
+        ),
+    )
+    conn.commit()
+    conn.close()
 
-    if (!target) {{
-      let maximumRowCount = 0;
+# =============================================================================
+# 3. Selenium Crawler Module
+# =============================================================================
 
-      for (const table of tables) {{
-        const rowCount = table.querySelectorAll("tbody tr").length;
+class KSGCrawler:
 
-        if (rowCount > maximumRowCount) {{
-          maximumRowCount = rowCount;
-          target = table;
-        }}
-      }}
-    }}
+    def __init__(self, user_id: str, user_pw: str, headless: bool = True):
+        self.user_id = user_id
+        self.user_pw = user_pw
+        self.driver = self._init_driver(headless)
 
-    if (!target) {{
-      return {{
-        headers: [],
-        rows: []
-      }};
-    }}
-
-    const headerRows = Array.from(
-      target.querySelectorAll("thead tr")
-    );
-
-    let headers = [];
-
-    if (headerRows.length > 0) {{
-      headers = Array.from(
-        headerRows[headerRows.length - 1]
-          .querySelectorAll("th, td")
-      ).map(cell => (cell.innerText || "").trim());
-    }}
-
-    const rows = Array.from(
-      target.querySelectorAll("tbody tr")
-    ).map(row =>
-      Array.from(
-        row.querySelectorAll("th, td")
-      ).map(cell => (cell.innerText || "").trim())
-    ).filter(row => row.length > 0);
-
-    return {{
-      headers: headers,
-      rows: rows
-    }};
-    """
-
-    data = driver.execute_script(script)
-
-    headers = data.get("headers", [])
-    rows = data.get("rows", [])
-
-    if not rows:
-        return pd.DataFrame()
-
-    maximum_columns = max(len(row) for row in rows)
-
-    if len(headers) < maximum_columns:
-        headers.extend(
-            [
-                f"COL_{number}"
-                for number in range(
-                    len(headers) + 1,
-                    maximum_columns + 1
-                )
-            ]
+    def _init_driver(self, headless: bool):
+        options = webdriver.ChromeOptions()
+        if headless:
+            options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--window-size=1920,1080")
+        options.add_argument(
+            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
 
-    normalized_rows = []
+        service = Service()
+        return webdriver.Chrome(service=service, options=options)
 
-    for raw_row in rows:
-        raw_row = list(raw_row) + [""] * (
-            len(headers) - len(raw_row)
-        )
-
-        row = {}
-
-        for position, value in enumerate(raw_row):
-            column_name = headers[position] or f"COL_{position + 1}"
-
-            if position == 0:
-                row[column_name] = parse_date_value(value)
-            else:
-                row[column_name] = clean_number(value)
-
-        normalized_rows.append(row)
-
-    return pd.DataFrame(normalized_rows)
-
-def get_table_signature(driver):
-    """
-    Get page/table signature to prevent duplicate page loops.
-    """
-    script = """
-    const tables = Array.from(document.querySelectorAll("table"));
-
-    let target = null;
-    let maximumRowCount = 0;
-
-    for (const table of tables) {
-      const rowCount = table.querySelectorAll("tbody tr").length;
-
-      if (rowCount > maximumRowCount) {
-        maximumRowCount = rowCount;
-        target = table;
-      }
-    }
-
-    if (!target) return "";
-
-    const firstRow = target.querySelector("tbody tr");
-
-    const rowSignature = firstRow
-      ? Array.from(firstRow.querySelectorAll("th, td"))
-          .slice(0, 4)
-          .map(cell => (cell.innerText || "").trim())
-          .join("|")
-      : "";
-
-    const pageSelectors = [
-      ".paginate strong",
-      ".paging strong",
-      ".pagination .active",
-      ".paginate .on"
-    ];
-
-    let currentPage = "";
-
-    for (const selector of pageSelectors) {
-      const element = document.querySelector(selector);
-
-      if (element) {
-        currentPage = (element.innerText || "").trim();
-
-        if (currentPage) break;
-      }
-    }
-
-    return currentPage + "||" + rowSignature;
-    """
-
-    try:
-        return str(
-            driver.execute_script(script) or ""
-        ).strip()
-
-    except Exception:
-        return ""
-
-def wait_for_table_change(driver, previous_signature, timeout=10):
-    """Wait until table/pagination data changes."""
-    start_time = time.time()
-
-    while time.time() - start_time < timeout:
-        current_signature = get_table_signature(driver)
-
-        if (
-            current_signature
-            and current_signature != previous_signature
-        ):
-            return True
-
-        time.sleep(0.2)
-
-    return False
-
-def get_current_page_number(driver):
-    """Read selected pagination page number."""
-    selectors = [
-        ".paginate strong",
-        ".paging strong",
-        ".pagination .active",
-        ".paginate .on"
-    ]
-
-    for selector in selectors:
+    def login(self) -> bool:
         try:
-            elements = driver.find_elements(
-                By.CSS_SELECTOR,
-                selector
+            print("[INFO] Navigating to KSG main page for login...")
+            self.driver.get(BASE_URL)
+            time.sleep(2)
+
+            try:
+                alert = self.driver.switch_to.alert
+                alert.accept()
+            except NoAlertPresentException:
+                pass
+
+            login_inputs = self.driver.find_elements(
+                By.CSS_SELECTOR, "input[type='text'], input[name*='id' i]"
+            )
+            pw_inputs = self.driver.find_elements(
+                By.CSS_SELECTOR, "input[type='password']"
             )
 
-            for element in elements:
-                text = element.text.strip()
+            if not login_inputs or not pw_inputs:
+                login_btn_direct = self.driver.find_elements(
+                    By.XPATH, "//a[contains(text(), '로그인')]"
+                )
+                if login_btn_direct:
+                    login_btn_direct[0].click()
+                    time.sleep(2)
 
-                if text.isdigit():
-                    return int(text)
+            id_elem = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located(
+                    (
+                        By.CSS_SELECTOR,
+                        "input[name='uid'], input[id*='id' i], input[type='text']",
+                    )
+                )
+            )
+            pw_elem = self.driver.find_element(
+                By.CSS_SELECTOR, "input[type='password']"
+            )
 
-        except Exception:
-            continue
+            id_elem.clear()
+            id_elem.send_keys(self.user_id)
+            pw_elem.clear()
+            pw_elem.send_keys(self.user_pw)
 
-    return None
+            submit_btn = self.driver.find_element(
+                By.CSS_SELECTOR,
+                "button[type='submit'], .btn_login_submit, input[type='submit']",
+            )
+            submit_btn.click()
+            time.sleep(3)
 
-def try_javascript_click(driver, element):
-    """Safely click an element using JavaScript."""
-    try:
-        if not element.is_displayed():
+            try:
+                alert = self.driver.switch_to.alert
+                alert.accept()
+            except NoAlertPresentException:
+                pass
+
+            print("[INFO] Login routine executed successfully.")
+            return True
+        except Exception as e:
+            print(f"[ERROR] Login failed: {e}")
             return False
 
-        driver.execute_script(
-            "arguments[0].scrollIntoView({block:'center'});",
-            element
+    def scrape_scfi_recent(self, stop_date: str) -> list:
+        records = []
+        target_url = "https://www.ksg.co.kr/shipping_index/scfi.jsp"
+        print(
+            f"[INFO] Scraping SCFI from {target_url} (Incremental threshold: {stop_date})"
         )
-
-        driver.execute_script(
-            "arguments[0].click();",
-            element
-        )
-
-        return True
-
-    except Exception:
-        return False
-
-def move_to_next_page(driver):
-    """Move to next KSG table page."""
-    current_page = get_current_page_number(driver)
-
-    if current_page is not None:
-        target_page = current_page + 1
 
         try:
-            has_go_page = driver.execute_script(
-                "return typeof goPage === 'function';"
-            )
+            self.driver.get(target_url)
+            time.sleep(3)
 
-            if has_go_page:
-                driver.execute_script(
-                    f"goPage({target_page});"
-                )
+            tables = self.driver.find_elements(By.CSS_SELECTOR, "table")
+            if not tables:
+                print("[WARN] No tables found on SCFI page.")
+                return records
 
-                return True
+            for table in tables:
+                rows = table.find_elements(By.CSS_SELECTOR, "tbody tr")
+                if not rows:
+                    rows = table.find_elements(By.CSS_SELECTOR, "tr")
 
+                for row in rows:
+                    cols = [
+                        c.text.strip().replace(",", "")
+                        for c in row.find_elements(By.CSS_SELECTOR, "td, th")
+                    ]
+                    if not cols or len(cols) < 2:
+                        continue
+
+                    dt_match = re.search(r"\d{4}[-.]\d{2}[-.]\d{2}", cols[0])
+                    if not dt_match:
+                        continue
+
+                    raw_dt = dt_match.group(0).replace(".", "-")
+                    if raw_dt <= stop_date:
+                        continue
+
+                    val_match = re.search(r"^-?\d+(\.\d+)?$", cols[1])
+                    if val_match:
+                        val = float(cols[1])
+                        records.append(
+                            (raw_dt, "종합지수", val, "SCFI", "ksg_web_incremental")
+                        )
+
+            print(f"[INFO] Scraped {len(records)} new SCFI records.")
+            return records
+        except Exception as e:
+            print(f"[ERROR] Failed scraping SCFI: {e}")
+            return records
+
+    def scrape_bdi_recent(self, stop_date: str) -> list:
+        records = []
+        target_url = "https://www.ksg.co.kr/shipping_index/bdi.jsp"
+        print(
+            f"[INFO] Scraping BDI from {target_url} (Incremental threshold: {stop_date})"
+        )
+
+        try:
+            self.driver.get(target_url)
+            time.sleep(3)
+
+            tables = self.driver.find_elements(By.CSS_SELECTOR, "table")
+            if not tables:
+                print("[WARN] No tables found on BDI page.")
+                return records
+
+            for table in tables:
+                headers = [
+                    th.text.strip()
+                    for th in table.find_elements(By.CSS_SELECTOR, "thead th")
+                ]
+                rows = table.find_elements(By.CSS_SELECTOR, "tbody tr")
+                if not rows:
+                    rows = table.find_elements(By.CSS_SELECTOR, "tr")
+
+                for row in rows:
+                    cols = [
+                        c.text.strip().replace(",", "")
+                        for c in row.find_elements(By.CSS_SELECTOR, "td")
+                    ]
+                    if not cols or len(cols) < 2:
+                        continue
+
+                    dt_match = re.search(r"\d{4}[-.]\d{2}[-.]\d{2}", cols[0])
+                    if not dt_match:
+                        continue
+
+                    raw_dt = dt_match.group(0).replace(".", "-")
+                    if raw_dt <= stop_date:
+                        continue
+
+                    if len(headers) == len(cols):
+                        for idx, h_name in enumerate(headers[1:], start=1):
+                            if idx < len(cols):
+                                val_match = re.search(
+                                    r"^-?\d+(\.\d+)?$", cols[idx]
+                                )
+                                if val_match:
+                                    val = float(cols[idx])
+                                    clean_region = (
+                                        h_name
+                                        if h_name
+                                        else f"Region_{idx}"
+                                    )
+                                    records.append(
+                                        (
+                                            raw_dt,
+                                            clean_region,
+                                            val,
+                                            "BDI",
+                                            "ksg_web_incremental",
+                                        )
+                                    )
+                    else:
+                        val_match = re.search(r"^-?\d+(\.\d+)?$", cols[1])
+                        if val_match:
+                            val = float(cols[1])
+                            records.append(
+                                (
+                                    raw_dt,
+                                    "BDI",
+                                    val,
+                                    "BDI",
+                                    "ksg_web_incremental",
+                                )
+                            )
+
+            print(f"[INFO] Scraped {len(records)} new BDI records.")
+            return records
+        except Exception as e:
+            print(f"[ERROR] Failed scraping BDI: {e}")
+            return records
+
+    def close(self):
+        try:
+            self.driver.quit()
         except Exception:
             pass
 
-        xpaths = [
-            f"//a[normalize-space(text())='{target_page}']",
-            f"//span[normalize-space(text())='{target_page}']/parent::a"
-        ]
-
-        for xpath in xpaths:
-            try:
-                candidates = driver.find_elements(
-                    By.XPATH,
-                    xpath
-                )
-
-                for candidate in candidates:
-                    if try_javascript_click(driver, candidate):
-                        return True
-
-            except Exception:
-                continue
-
-    selectors = [
-        (By.CSS_SELECTOR, "a.next"),
-        (By.CSS_SELECTOR, ".paginate a.next"),
-        (By.CSS_SELECTOR, ".paging a.next"),
-        (By.LINK_TEXT, "다음"),
-        (By.XPATH, "//a[contains(text(), '다음')]")
-    ]
-
-    for by, selector in selectors:
-        try:
-            candidates = driver.find_elements(by, selector)
-
-            for candidate in candidates:
-                if try_javascript_click(driver, candidate):
-                    return True
-
-        except Exception:
-            continue
-
-    return False
-
-def crawl_index_pages(
-    driver,
-    index_name,
-    stop_date=None,
-    max_pages=100000,
-    pause_seconds=0.3
-):
-    """
-    Crawl pages incrementally.
-
-    When a previously stored date is found, crawling stops.
-    """
-    index_name = normalize_index_name(index_name)
-
-    log(
-        f"[CRAWL] {index_name} 수집 시작 / "
-        f"증분 기준일: {stop_date or '없음'}"
-    )
-
-    all_frames = []
-    seen_signatures = set()
-
-    for page_number in range(1, max_pages + 1):
-        df = pd.DataFrame()
-
-        for _ in range(4):
-            try:
-                df = parse_current_table(driver, index_name)
-
-                if not df.empty:
-                    break
-
-            except Exception:
-                pass
-
-            time.sleep(0.5)
-
-        if df.empty:
-            log(
-                f"[CRAWL] {index_name} "
-                f"{page_number}페이지: 데이터 없음"
-            )
-            break
-
-        date_column = df.columns[0]
-
-        df_dates = pd.to_datetime(
-            df[date_column],
-            errors="coerce"
-        )
-
-        # Incremental crawling:
-        # The table normally starts from latest records.
-        if stop_date is not None:
-            newer_records = df[
-                df_dates.dt.date > stop_date
-            ].copy()
-
-            # Existing date found on this page.
-            if len(newer_records) < len(df):
-                if not newer_records.empty:
-                    newer_records["CRAWL_PAGE"] = page_number
-                    all_frames.append(newer_records)
-
-                log(
-                    f"[CRAWL] {index_name} "
-                    f"{page_number}페이지에서 기존 기준일 발견, 종료"
-                )
-                break
-
-            df = newer_records
-
-        signature = get_table_signature(driver)
-
-        if not signature:
-            first_date = str(df.iloc[0, 0]) if not df.empty else ""
-            signature = f"{page_number}||{first_date}"
-
-        if signature in seen_signatures:
-            log(
-                f"[CRAWL] {index_name}: "
-                "반복 페이지 감지, 종료"
-            )
-            break
-
-        seen_signatures.add(signature)
-
-        df["CRAWL_PAGE"] = page_number
-        all_frames.append(df)
-
-        log(
-            f"[CRAWL] {index_name} "
-            f"{page_number}페이지 완료: {len(df):,}행"
-        )
-
-        previous_signature = signature
-
-        if not move_to_next_page(driver):
-            log(
-                f"[CRAWL] {index_name}: "
-                "다음 페이지 없음"
-            )
-            break
-
-        if not wait_for_table_change(
-            driver,
-            previous_signature,
-            timeout=10
-        ):
-            log(
-                f"[CRAWL] {index_name}: "
-                "페이지 전환 시간 초과"
-            )
-            break
-
-        if pause_seconds > 0:
-            time.sleep(pause_seconds)
-
-    if not all_frames:
-        return pd.DataFrame()
-
-    return pd.concat(all_frames, ignore_index=True)
-
 # =============================================================================
-# 6. Data Conversion / DB Upsert
+# 4. JSON Payload Generator & Dashboard Exporter
 # =============================================================================
 
-def convert_wide_to_long(df, index_name):
+def fetch_payload_data(db_path: Path) -> dict:
     """
-    Convert KSG table from wide format to long format.
-
-    Wide example:
-        DATE        Europe    US West
-        2026-01-01  2000      1500
-
-    Long result:
-        DATE        REGION    VALUE    INDEX_NAME
-        2026-01-01  Europe    2000     SCFI
-        2026-01-01  US West   1500     SCFI
+    index_history.db의 index_raw 테이블에서 전체 시계열 데이터를 추출하여
+    프론트엔드용 JSON 딕셔너리로 직렬화
     """
-    index_name = normalize_index_name(index_name)
-
-    empty_df = pd.DataFrame(
-        columns=["DATE", "REGION", "VALUE", "INDEX_NAME"]
-    )
-
-    if df is None or df.empty:
-        return empty_df
-
-    working = df.copy()
-    date_column = working.columns[0]
-
-    working[date_column] = pd.to_datetime(
-        working[date_column],
-        errors="coerce"
-    )
-
-    working = working.dropna(subset=[date_column])
-
-    if working.empty:
-        return empty_df
-
-    excluded_columns = {
-        date_column,
-        "INDEX_NAME",
-        "CRAWL_PAGE"
-    }
-
-    value_columns = [
-        column
-        for column in working.columns
-        if column not in excluded_columns
-        and is_valid_region_for_index(column, index_name)
-    ]
-
-    numeric_columns = []
-
-    for column in value_columns:
-        numeric_values = pd.to_numeric(
-            working[column],
-            errors="coerce"
-        )
-
-        if numeric_values.notna().any():
-            working[column] = numeric_values
-            numeric_columns.append(column)
-
-    if not numeric_columns:
-        return empty_df
-
-    long_df = working.melt(
-        id_vars=[date_column],
-        value_vars=numeric_columns,
-        var_name="REGION",
-        value_name="VALUE"
-    )
-
-    long_df = long_df.rename(
-        columns={date_column: "DATE"}
-    )
-
-    long_df = long_df.dropna(
-        subset=["DATE", "VALUE"]
-    )
-
-    long_df["REGION"] = (
-        long_df["REGION"]
-        .astype(str)
-        .str.strip()
-    )
-
-    long_df = long_df[
-        long_df["REGION"].apply(
-            lambda region: is_valid_region_for_index(
-                region,
-                index_name
-            )
-        )
-    ]
-
-    if long_df.empty:
-        return empty_df
-
-    long_df["DATE"] = pd.to_datetime(
-        long_df["DATE"]
-    ).dt.strftime("%Y-%m-%d")
-
-    long_df["VALUE"] = pd.to_numeric(
-        long_df["VALUE"],
-        errors="coerce"
-    )
-
-    long_df = long_df.dropna(
-        subset=["VALUE"]
-    )
-
-    long_df["VALUE"] = long_df["VALUE"].astype(float)
-    long_df["INDEX_NAME"] = index_name
-
-    long_df = long_df[
-        ["DATE", "REGION", "VALUE", "INDEX_NAME"]
-    ].drop_duplicates(
-        subset=["DATE", "REGION", "INDEX_NAME"],
-        keep="last"
-    )
-
-    return long_df.sort_values(
-        by=["DATE", "REGION"]
-    ).reset_index(drop=True)
-
-def upsert_index_data(long_df, index_name):
-    """Insert/update long-format index data in index_raw."""
-    index_name = normalize_index_name(index_name)
-
-    if long_df is None or long_df.empty:
-        return 0, get_total_record_count(index_name)
-
-    processed_rows = 0
-    created_at = now_string()
-
-    with get_db_connection() as connection:
-        cursor = connection.cursor()
-
-        for _, row in long_df.iterrows():
-            cursor.execute(
-                """
-                INSERT INTO index_raw (
-                    dt,
-                    region,
-                    value,
-                    index_name,
-                    source_file,
-                    created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?)
-
-                ON CONFLICT(dt, region, index_name)
-                DO UPDATE SET
-                    value = excluded.value,
-                    source_file = excluded.source_file,
-                    created_at = excluded.created_at
-                """,
-                (
-                    row["DATE"],
-                    row["REGION"],
-                    float(row["VALUE"]),
-                    index_name,
-                    "Korea Shipping Gazette",
-                    created_at
-                )
-            )
-
-            processed_rows += 1
-
-        connection.commit()
-
-    total_rows = get_total_record_count(index_name)
-
-    return processed_rows, total_rows
-
-# =============================================================================
-# 7. Crawler Execution
-# =============================================================================
-
-def crawl_and_save_index(index_name):
-    """Crawl and save one index: SCFI or BDI."""
-    index_name = normalize_index_name(index_name)
-
-    started_at = now_string()
-    driver = None
-
-    try:
-        stop_date = get_last_saved_date(index_name)
-
-        log("=" * 72)
-        log(f"[CRAWL] {index_name} 크롤링 시작")
-        log(f"[CRAWL] 기존 DB 최종일: {stop_date or '없음'}")
-        log("=" * 72)
-
-        driver = get_driver()
-
-        login_ksg(driver)
-
-        go_to_index_page(driver, index_name)
-
-        wide_df = crawl_index_pages(
-            driver=driver,
-            index_name=index_name,
-            stop_date=stop_date
-        )
-
-        long_df = convert_wide_to_long(
-            wide_df,
-            index_name
-        )
-
-        rows_added, total_rows = upsert_index_data(
-            long_df,
-            index_name
-        )
-
-        if total_rows == 0:
-            raise RuntimeError(
-                f"{index_name} DB 누적 데이터가 0건입니다. "
-                "KSG 로그인, 메뉴, 테이블 구조 및 컬럼명을 확인하세요."
-            )
-
-        write_crawl_audit(
-            index_name=index_name,
-            started_at=started_at,
-            status="SUCCESS",
-            message="OK",
-            rows_added=rows_added,
-            total_rows=total_rows
-        )
-
-        log(
-            f"[CRAWL] {index_name} 완료 / "
-            f"이번 처리: {rows_added:,}건 / "
-            f"누적: {total_rows:,}건"
-        )
-
+    if not db_path.exists():
         return {
-            "ok": True,
-            "index_name": index_name,
-            "rows_added": rows_added,
-            "total_rows": total_rows
+            "meta": {
+                "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "total_records": 0,
+            },
+            "indexes": {},
         }
 
-    except Exception as error:
-        total_rows = get_total_record_count(index_name)
-
-        write_crawl_audit(
-            index_name=index_name,
-            started_at=started_at,
-            status="ERROR",
-            message=str(error)[:1000],
-            rows_added=0,
-            total_rows=total_rows
-        )
-
-        log(f"[ERROR] {index_name} 크롤링 실패: {error}")
-
-        return {
-            "ok": False,
-            "index_name": index_name,
-            "error": str(error),
-            "total_rows": total_rows
-        }
-
-    finally:
-        if driver is not None:
-            try:
-                driver.quit()
-            except Exception:
-                pass
-
-def crawl_all_indexes():
-    """Crawl SCFI and BDI sequentially."""
-    log("[CRAWL] SCFI / BDI 통합 크롤링 시작")
-
-    results = []
-
-    for index_name in SUPPORTED_INDEXES:
-        result = crawl_and_save_index(index_name)
-        results.append(result)
-
-    failed_results = [
-        result
-        for result in results
-        if not result.get("ok")
-    ]
-
-    if failed_results:
-        error_message = " | ".join(
-            f"{result['index_name']}: "
-            f"{result.get('error', 'Unknown error')}"
-            for result in failed_results
-        )
-
-        raise RuntimeError(
-            f"일부 지수 크롤링 실패: {error_message}"
-        )
-
-    log("[CRAWL] SCFI / BDI 통합 크롤링 완료")
-
-# =============================================================================
-# 8. Database Read / JSON Data Cleaning
-# =============================================================================
-
-def load_index_data(index_name):
-    """Load SCFI or BDI records from index_raw."""
-    empty_df = pd.DataFrame(
-        columns=["DATE", "REGION", "VALUE", "INDEX_NAME"]
-    )
-
-    if not DB_PATH.exists():
-        log(f"[ERROR] Database file not found: {DB_PATH}")
-        return empty_df
+    conn = sqlite3.connect(db_path)
 
     query = """
-        SELECT
-            dt AS DATE,
-            region AS REGION,
-            value AS VALUE,
-            index_name AS INDEX_NAME
+        SELECT dt, region, value, index_name
         FROM index_raw
-        WHERE UPPER(index_name) = UPPER(?)
-        ORDER BY dt ASC, region ASC
+        WHERE value IS NOT NULL
+        ORDER BY dt ASC
     """
+    df = pd.read_sql_query(query, conn)
+    conn.close()
 
-    try:
-        with sqlite3.connect(DB_PATH) as connection:
-            df = pd.read_sql_query(
-                query,
-                connection,
-                params=[index_name]
-            )
-
-        log(
-            f"[DB] {index_name} loaded from index_raw: "
-            f"{len(df):,} rows"
-        )
-
-        return df
-
-    except Exception as error:
-        log(f"[ERROR] Failed to load {index_name}: {error}")
-        return empty_df
-
-def clean_data(df, index_name):
-    """Clean data for JSON serialization and dashboard display."""
-    index_name = normalize_index_name(index_name)
-
-    empty_df = pd.DataFrame(
-        columns=["DATE", "REGION", "VALUE", "INDEX_NAME"]
-    )
-
-    if df is None or df.empty:
-        return empty_df
-
-    cleaned = df.copy()
-
-    cleaned["DATE"] = pd.to_datetime(
-        cleaned["DATE"],
-        errors="coerce"
-    )
-
-    cleaned["REGION"] = (
-        cleaned["REGION"]
-        .fillna("Unknown")
-        .astype(str)
-        .str.strip()
-    )
-
-    cleaned["VALUE"] = pd.to_numeric(
-        cleaned["VALUE"],
-        errors="coerce"
-    )
-
-    cleaned["INDEX_NAME"] = index_name
-
-    cleaned = cleaned.dropna(
-        subset=["DATE", "VALUE"]
-    )
-
-    cleaned = cleaned[
-        cleaned["REGION"].apply(
-            lambda region: is_valid_region_for_index(
-                region,
-                index_name
-            )
-        )
-    ]
-
-    if cleaned.empty:
-        return empty_df
-
-    cleaned = cleaned.drop_duplicates(
-        subset=["DATE", "REGION"],
-        keep="last"
-    )
-
-    cleaned = cleaned.sort_values(
-        by=["DATE", "REGION"]
-    ).reset_index(drop=True)
-
-    cleaned["DATE"] = cleaned["DATE"].dt.strftime("%Y-%m-%d")
-    cleaned["VALUE"] = cleaned["VALUE"].astype(float)
-
-    return cleaned[
-        ["DATE", "REGION", "VALUE", "INDEX_NAME"]
-    ]
-
-def load_and_clean_data(index_name):
-    """Load raw DB data and return cleaned data."""
-    raw_df = load_index_data(index_name)
-
-    return clean_data(raw_df, index_name)
-
-# =============================================================================
-# 9. JSON Generator
-# =============================================================================
-
-def build_json():
-    """Generate shipping_index_data.json."""
-    log("[JSON] shipping_index_data.json 생성 중...")
-    log(f"[INFO] DB_PATH   : {DB_PATH}")
-    log(f"[INFO] JSON_PATH : {JSON_PATH}")
-    log(f"[INFO] HTML_PATH : {HTML_PATH}")
-    log(f"[INFO] DB Exists : {DB_PATH.exists()}")
-
-    generated_at = now_string()
-    indexes_dict = {}
-
-    for index_name in SUPPORTED_INDEXES:
-        df = load_and_clean_data(index_name)
-
-        records = (
-            df.to_dict(orient="records")
-            if not df.empty
-            else []
-        )
-
-        regions = (
-            sorted(df["REGION"].dropna().unique().tolist())
-            if not df.empty
-            else []
-        )
-
-        latest_date = (
-            df["DATE"].max()
-            if not df.empty
-            else None
-        )
-
-        indexes_dict[index_name] = {
-            "regions": regions,
-            "records": records,
-            "record_count": len(records),
-            "latest_date": latest_date,
-            "last_sync": generated_at
+    if df.empty:
+        return {
+            "meta": {
+                "generated_at": datetime.now().strftime(
+                    "%Y-%m-%d %H:%M:%S KST"
+                ),
+                "total_records": 0,
+            },
+            "indexes": {},
         }
 
-        log(
-            f"[JSON] {index_name}: "
-            f"records={len(records):,}, "
-            f"regions={len(regions):,}, "
-            f"latest_date={latest_date or '-'}"
-        )
+    df["dt"] = df["dt"].astype(str)
+    df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    df = df.dropna(subset=["value"])
 
     payload = {
-        "status": "success",
-        "generated_at": generated_at,
-        "source_database": DB_PATH.name,
-        "indexes": indexes_dict
+        "meta": {
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S KST"),
+            "total_records": int(len(df)),
+        },
+        "indexes": {},
     }
 
-    json_content = json.dumps(
-        payload,
-        ensure_ascii=False,
-        indent=2
+    for idx_name in SUPPORTED_INDEXES:
+        sub_df = df[df["index_name"] == idx_name]
+        if sub_df.empty:
+            continue
+
+        regions_raw = sub_df["region"].unique().tolist()
+
+        if idx_name == "SCFI":
+            regions = [r for r in SCFI_REGION_PRIORITY if r in regions_raw]
+            for r in sorted(regions_raw):
+                if r not in regions:
+                    regions.append(r)
+        elif idx_name == "BDI":
+            regions = [r for r in BDI_REGION_PRIORITY if r in regions_raw]
+            for r in regions_raw:
+                if r not in regions:
+                    regions.append(r)
+        else:
+            regions = sorted(regions_raw)
+
+        idx_dict = {"regions": regions, "series": {}}
+
+        for reg in regions:
+            reg_df = sub_df[sub_df["region"] == reg].sort_values("dt")
+            idx_dict["series"][reg] = {
+                "dates": reg_df["dt"].tolist(),
+                "values": [round(float(v), 2) for v in reg_df["value"]],
+            }
+
+        payload["indexes"][idx_name] = idx_dict
+
+    return payload
+
+def generate_static_files(db_path: Path, json_path: Path, html_path: Path):
+    """JSON 데이터 및 표준 Bloomberg / MI Terminal CSS가 적용된 index.html 생성"""
+    payload = fetch_payload_data(db_path)
+
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+    print(
+        f"[INFO] Exported JSON: {json_path} (Total Records: {payload['meta']['total_records']})"
     )
 
-    atomic_write_text(JSON_PATH, json_content)
+    embedded_json = json.dumps(payload, ensure_ascii=False)
 
-    log(f"[JSON] 저장 완료: {JSON_PATH}")
-
-# =============================================================================
-# 10. GitHub Pages Static HTML Generator
-# =============================================================================
-
-def generate_html_file():
-    """Generate Bloomberg Terminal-style GitHub Pages index.html."""
-    log("[HTML] Bloomberg Terminal-style index.html 생성 중...")
-
-    html_content = r"""<!DOCTYPE html>
+    html_content = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="SCFI 및 BDI 해운 지수 Bloomberg Terminal 대시보드">
-  <title>MI Terminal | Shipping Index</title>
-
-  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-
-  <style>
-    :root {
-      --bg: #02060b;
-      --bg-2: #050b12;
-      --panel: #07111c;
-      --panel-2: #0a1724;
-      --panel-3: #0d1d2b;
-
-      --line: #1c3448;
-      --line-soft: #132536;
-      --line-strong: #2b506d;
-
-      --text: #f1f6fa;
-      --text-soft: #c4d2dc;
-      --muted: #8298aa;
-      --dim: #536c80;
-
-      --amber: #f6a623;
-      --amber-soft: #ffbe5c;
-      --blue: #42a8f5;
-      --cyan: #39c7e2;
-      --green: #35ca82;
-      --red: #ff6565;
-      --purple: #b791ff;
-
-      --shadow:
-        0 8px 28px rgba(0, 0, 0, .48),
-        0 0 18px rgba(47, 133, 191, .08);
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    html,
-    body {
-      min-height: 100%;
-    }
-
-    body {
-      min-width: 320px;
-      margin: 0;
-      color: var(--text);
-      background:
-        radial-gradient(
-          circle at 50% -20%,
-          rgba(37, 106, 156, .15),
-          transparent 43%
-        ),
-        linear-gradient(
-          180deg,
-          rgba(246, 166, 35, .025),
-          transparent 260px
-        ),
-        var(--bg);
-      font-family:
-        "IBM Plex Mono",
-        "Roboto Mono",
-        "SFMono-Regular",
-        Consolas,
-        "Noto Sans KR",
-        monospace;
-      font-size: 12px;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    button,
-    input {
-      font: inherit;
-    }
-
-    button {
-      border-radius: 0;
-    }
-
-    .topbar {
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      min-height: 48px;
-      padding: 0 14px;
-      border-bottom: 1px solid var(--line-strong);
-      background:
-        linear-gradient(
-          180deg,
-          rgba(13, 31, 47, .98),
-          rgba(3, 9, 15, .98)
-        );
-      box-shadow: var(--shadow);
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 11px;
-      min-width: 0;
-      white-space: nowrap;
-    }
-
-    .brand-mark {
-      padding: 4px 7px;
-      color: #02060b;
-      background: var(--amber);
-      font-size: 12px;
-      font-weight: 900;
-      letter-spacing: .08em;
-    }
-
-    .brand-divider {
-      width: 1px;
-      height: 18px;
-      background: var(--line-strong);
-    }
-
-    .brand-title {
-      color: #ffffff;
-      font-size: 12px;
-      font-weight: 900;
-      letter-spacing: .09em;
-    }
-
-    .brand-subtitle {
-      color: var(--muted);
-      font-size: 9px;
-      font-weight: 800;
-      letter-spacing: .07em;
-    }
-
-    .top-status {
-      color: var(--muted);
-      font-size: 9px;
-      font-weight: 800;
-      letter-spacing: .04em;
-      text-align: right;
-    }
-
-    .terminal {
-      width: min(1920px, calc(100% - 16px));
-      max-width: 1920px;
-      margin: 7px auto 14px;
-    }
-
-    .status-strip {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 15px;
-      min-height: 35px;
-      margin-bottom: 6px;
-      padding: 0 11px;
-      color: var(--muted);
-      border: 1px solid var(--line);
-      background:
-        linear-gradient(
-          90deg,
-          rgba(246, 166, 35, .10),
-          rgba(4, 12, 20, .96) 25%,
-          rgba(4, 12, 20, .96)
-        );
-      font-size: 9px;
-      font-weight: 800;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-      box-shadow: 0 3px 13px rgba(0, 0, 0, .28);
-    }
-
-    .status-left {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .status-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 9px rgba(53, 202, 130, .72);
-    }
-
-    .status-dot.error {
-      background: var(--red);
-      box-shadow: 0 0 9px rgba(255, 101, 101, .72);
-    }
-
-    .workspace {
-      display: grid;
-      grid-template-columns: repeat(12, minmax(0, 1fr));
-      gap: 6px;
-    }
-
-    .panel,
-    .filter-panel,
-    .kpi,
-    .chart-panel {
-      overflow: hidden;
-      border: 1px solid var(--line);
-      background:
-        linear-gradient(
-          145deg,
-          rgba(13, 31, 47, .78),
-          rgba(3, 10, 17, .98)
-        );
-      box-shadow: var(--shadow);
-    }
-
-    .panel::before,
-    .filter-panel::before,
-    .chart-panel::before {
-      display: block;
-      height: 2px;
-      content: "";
-      background:
-        linear-gradient(
-          90deg,
-          var(--amber),
-          rgba(246, 166, 35, .16) 45%,
-          transparent 82%
-        );
-    }
-
-    .filter-panel {
-      grid-column: span 4;
-      grid-row: span 2;
-      height: fit-content;
-    }
-
-    .main-area {
-      grid-column: span 8;
-      min-width: 0;
-      display: grid;
-      grid-template-columns: repeat(8, minmax(0, 1fr));
-      gap: 6px;
-    }
-
-    .main-titlebar {
-      grid-column: span 8;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      min-height: 54px;
-      padding: 8px 11px;
-      border: 1px solid var(--line);
-      background:
-        linear-gradient(
-          90deg,
-          rgba(18, 46, 69, .70),
-          rgba(4, 11, 18, .94)
-        );
-      box-shadow: var(--shadow);
-    }
-
-    .instrument-title {
-      margin: 0;
-      color: #ffffff;
-      font-size: 16px;
-      font-weight: 900;
-      letter-spacing: .04em;
-      text-transform: uppercase;
-    }
-
-    .instrument-meta {
-      margin-top: 4px;
-      color: var(--muted);
-      font-size: 9px;
-      font-weight: 700;
-      letter-spacing: .04em;
-      text-transform: uppercase;
-    }
-
-    .panel-header {
-      min-height: 31px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 0 10px;
-      border-bottom: 1px solid var(--line);
-      background:
-        linear-gradient(
-          180deg,
-          rgba(14, 34, 51, .90),
-          rgba(6, 16, 25, .92)
-        );
-    }
-
-    .panel-title {
-      color: var(--amber);
-      font-size: 9px;
-      font-weight: 900;
-      letter-spacing: .09em;
-      text-transform: uppercase;
-    }
-
-    .kpi-grid {
-      grid-column: span 8;
-      display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 6px;
-    }
-
-    .kpi {
-      min-height: 102px;
-      padding: 10px;
-      border-top: 2px solid var(--blue);
-    }
-
-    .kpi:nth-child(2) {
-      border-top-color: var(--green);
-    }
-
-    .kpi:nth-child(3) {
-      border-top-color: var(--amber);
-    }
-
-    .kpi:nth-child(4) {
-      border-top-color: var(--purple);
-    }
-
-    .kpi:nth-child(5) {
-      border-top-color: var(--cyan);
-    }
-
-    .kpi-label {
-      display: block;
-      min-height: 27px;
-      color: var(--muted);
-      font-size: 8px;
-      font-weight: 800;
-      letter-spacing: .07em;
-      line-height: 1.45;
-      text-transform: uppercase;
-    }
-
-    .kpi-value {
-      display: block;
-      margin-top: 10px;
-      overflow: hidden;
-      color: #ffffff;
-      font-size: clamp(16px, 1.3vw, 22px);
-      font-weight: 900;
-      font-variant-numeric: tabular-nums;
-      letter-spacing: -.06em;
-      text-align: right;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .kpi-sub {
-      display: block;
-      min-height: 13px;
-      margin-top: 7px;
-      color: var(--muted);
-      font-size: 8px;
-      font-weight: 800;
-      letter-spacing: .02em;
-      text-align: right;
-      text-transform: uppercase;
-    }
-
-    .positive {
-      color: var(--green) !important;
-    }
-
-    .negative {
-      color: var(--red) !important;
-    }
-
-    .neutral {
-      color: var(--text-soft) !important;
-    }
-
-    .chart-panel {
-      grid-column: span 8;
-      margin: 0;
-    }
-
-    #chart {
-      width: 100%;
-      min-height: 465px;
-    }
-
-    .filter-section {
-      padding: 10px;
-      border-bottom: 1px solid var(--line-soft);
-    }
-
-    .filter-section:last-child {
-      border-bottom: 0;
-    }
-
-    .label {
-      display: block;
-      margin-bottom: 8px;
-      color: var(--muted);
-      font-size: 8px;
-      font-weight: 900;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-    }
-
-    .index-switch {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 5px;
-    }
-
-    .terminal-btn {
-      min-height: 29px;
-      padding: 6px 8px;
-      color: var(--muted);
-      border: 1px solid var(--line);
-      background: #07101a;
-      cursor: pointer;
-      font-size: 9px;
-      font-weight: 900;
-      letter-spacing: .05em;
-      transition: .15s ease;
-    }
-
-    .terminal-btn:hover {
-      color: var(--amber-soft);
-      border-color: var(--amber);
-      background: rgba(246, 166, 35, .07);
-    }
-
-    .terminal-btn.active {
-      color: #071018;
-      border-color: var(--amber);
-      background: var(--amber);
-      box-shadow: 0 0 12px rgba(246, 166, 35, .24);
-    }
-
-    .period-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 5px;
-    }
-
-    .period-grid .terminal-btn:last-child {
-      grid-column: span 3;
-    }
-
-    .search-input {
-      width: 100%;
-      padding: 8px 9px;
-      color: var(--text);
-      outline: 0;
-      border: 1px solid var(--line);
-      background: #030a11;
-      font-size: 10px;
-    }
-
-    .search-input:focus {
-      border-color: var(--amber);
-      box-shadow: 0 0 0 1px rgba(246, 166, 35, .12);
-    }
-
-    .selection-actions {
-      display: flex;
-      gap: 9px;
-      margin: 8px 0;
-    }
-
-    .small-action {
-      padding: 0;
-      color: var(--blue);
-      border: 0;
-      background: transparent;
-      cursor: pointer;
-      font-size: 8px;
-      font-weight: 800;
-      letter-spacing: .05em;
-    }
-
-    .small-action:hover {
-      color: var(--amber-soft);
-    }
-
-    .selected-summary {
-      min-height: 32px;
-      margin-bottom: 8px;
-      padding: 5px;
-      border: 1px solid var(--line-soft);
-      background: rgba(2, 8, 14, .74);
-    }
-
-    .chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      margin: 2px;
-      padding: 3px 5px;
-      color: var(--amber-soft);
-      border: 1px solid #634b27;
-      background: #21190e;
-      font-size: 8px;
-      font-weight: 700;
-    }
-
-    .chip button {
-      padding: 0;
-      color: var(--amber-soft);
-      border: 0;
-      background: transparent;
-      cursor: pointer;
-      font-size: 12px;
-      line-height: 1;
-    }
-
-    .route-list {
-      max-height: 295px;
-      overflow-y: auto;
-      border: 1px solid var(--line-soft);
-      background: #030a11;
-    }
-
-    .route-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 9px;
-      color: var(--text-soft);
-      border-bottom: 1px solid rgba(30, 57, 78, .70);
-      cursor: pointer;
-      font-size: 9px;
-      font-weight: 700;
-    }
-
-    .route-item:last-child {
-      border-bottom: 0;
-    }
-
-    .route-item:hover {
-      background: rgba(66, 168, 245, .06);
-    }
-
-    .route-item input {
-      accent-color: var(--amber);
-    }
-
-    .download-btn {
-      color: var(--blue);
-      border-color: #28506d;
-      white-space: nowrap;
-    }
-
-    .main-area > .panel:last-child {
-      grid-column: span 8;
-    }
-
-    .table-wrap {
-      max-height: 430px;
-      overflow: auto;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 10px;
-    }
-
-    th,
-    td {
-      padding: 9px 10px;
-      color: var(--text-soft);
-      border-bottom: 1px solid rgba(32, 60, 82, .64);
-      font-variant-numeric: tabular-nums;
-      text-align: right;
-      white-space: nowrap;
-    }
-
-    th {
-      position: sticky;
-      top: 0;
-      z-index: 2;
-      color: var(--amber-soft);
-      background: #0d1d2b;
-      font-size: 8px;
-      font-weight: 900;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-    }
-
-    th:first-child,
-    td:first-child {
-      text-align: left;
-    }
-
-    tr:hover td {
-      background: rgba(66, 168, 245, .055);
-    }
-
-    .empty-message {
-      padding: 25px;
-      color: var(--muted);
-      text-align: center !important;
-    }
-
-    .terminal::after {
-      display: block;
-      min-height: 31px;
-      margin-top: 6px;
-      padding: 9px 11px;
-      color: var(--muted);
-      border: 1px solid var(--line);
-      border-left: 3px solid var(--green);
-      background: #02070d;
-      content:
-        "SYSTEM STATUS: NORMAL  |  MARKET HEALTH: MONITORED  |  SENTIMENT: DATA-DRIVEN  |  ALERTS: NO CRITICAL DATA EXCEPTIONS";
-      font-size: 8px;
-      font-weight: 800;
-      letter-spacing: .06em;
-      line-height: 1.4;
-      text-transform: uppercase;
-    }
-
-    @media (max-width: 1300px) {
-      .filter-panel {
-        grid-column: span 12;
-        grid-row: auto;
-      }
-
-      .main-area {
-        grid-column: span 12;
-      }
-
-      .route-list {
-        max-height: 190px;
-      }
-    }
-
-    @media (max-width: 900px) {
-      .kpi-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
-
-      .chart-panel,
-      .main-area > .panel:last-child {
-        grid-column: span 8;
-      }
-    }
-
-    @media (max-width: 680px) {
-      .terminal {
-        width: calc(100% - 10px);
-        margin-top: 5px;
-      }
-
-      .topbar {
-        padding: 0 10px;
-      }
-
-      .brand-subtitle,
-      .brand-divider,
-      .top-status {
-        display: none;
-      }
-
-      .status-strip {
-        align-items: flex-start;
-        flex-direction: column;
-        justify-content: center;
-        gap: 2px;
-        padding: 7px 10px;
-      }
-
-      .main-area {
-        display: block;
-      }
-
-      .main-area > * {
-        margin-bottom: 6px;
-      }
-
-      .kpi-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
-      .instrument-title {
-        font-size: 12px;
-      }
-
-      .main-titlebar {
-        align-items: flex-start;
-        flex-direction: column;
-      }
-
-      #chart {
-        min-height: 390px;
-      }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SHIPPING FREIGHT INDEX TERMINAL | MI</title>
+    <!-- Chart Engine -->
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <!-- Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        /* =========================================================
+           1. Terminal Design System Tokens
+           ========================================================= */
+        :root {{
+            --bg-base: #0a0e14;
+            --bg-surface: #0f151d;
+            --bg-surface-elevated: #151c26;
+            --bg-surface-hover: #1c2633;
+            --bg-highlight: #222f3e;
+
+            --border-subtle: #1b2430;
+            --border-default: #243142;
+            --border-accent: #ff9800;
+
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #545d68;
+            --text-accent: #ff9800;
+            --text-cyan: #00d2d3;
+            --text-blue: #2e86de;
+
+            --color-up: #ff4757;
+            --color-down: #2ed573;
+            --color-neutral: #8b949e;
+
+            --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            --font-sans: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+            --top-line-scfi: #ff9800;
+            --top-line-bdi: #00d2d3;
+        }}
+
+        * {{
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }}
+
+        body {{
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            font-family: var(--font-sans);
+            font-size: 13px;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            min-height: 100vh;
+        }}
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {{
+            width: 6px;
+            height: 6px;
+        }}
+        ::-webkit-scrollbar-track {{
+            background: var(--bg-base);
+        }}
+        ::-webkit-scrollbar-thumb {{
+            background: var(--border-default);
+            border-radius: 3px;
+        }}
+        ::-webkit-scrollbar-thumb:hover {{
+            background: var(--text-muted);
+        }}
+
+        /* Selection */
+        ::selection {{
+            background: rgba(255, 152, 0, 0.3);
+            color: var(--text-primary);
+        }}
+
+        /* =========================================================
+           2. Bloomberg / MI Terminal Top Header (Standard Spec)
+           ========================================================= */
+        .mi-terminal-header {{
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            background: linear-gradient(180deg, #0f151d 0%, rgba(15, 21, 29, 0.95) 100%);
+            border-bottom: 1px solid var(--border-default);
+            backdrop-filter: blur(8px);
+            padding: 0 16px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }}
+
+        .mi-header-left {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }}
+
+        .mi-brand {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+        }}
+
+        .mi-brand-tag {{
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 700;
+            background: var(--text-accent);
+            color: #000000;
+            padding: 2px 6px;
+            border-radius: 2px;
+            letter-spacing: 0.5px;
+        }}
+
+        .mi-module-name {{
+            font-family: var(--font-mono);
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-primary);
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            border-right: 1px solid var(--border-default);
+            padding-right: 12px;
+        }}
+
+        .mi-source-text {{
+            font-size: 11px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }}
+
+        .mi-source-badge {{
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-muted);
+            border: 1px solid var(--border-subtle);
+            padding: 1px 4px;
+            border-radius: 2px;
+        }}
+
+        .mi-header-right {{
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }}
+
+        /* Live Ticker in Header */
+        .mi-ticker-group {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+
+        .mi-ticker {{
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--bg-surface-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 3px;
+            padding: 2px 8px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+        }}
+
+        .mi-ticker-label {{
+            color: var(--text-secondary);
+            font-weight: 600;
+        }}
+
+        .mi-ticker-val {{
+            color: var(--text-primary);
+            font-weight: 700;
+        }}
+
+        .mi-ticker-chg {{
+            font-size: 10px;
+            font-weight: 600;
+        }}
+
+        .mi-status-indicator {{
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-secondary);
+        }}
+
+        .mi-pulse-dot {{
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--color-down);
+            box-shadow: 0 0 6px var(--color-down);
+            animation: pulse-glow 2s infinite;
+        }}
+
+        @keyframes pulse-glow {{
+            0%, 100% {{ opacity: 1; transform: scale(1); }}
+            50% {{ opacity: 0.4; transform: scale(0.85); }}
+        }}
+
+        .mi-header-action {{
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: var(--bg-surface-elevated);
+            border: 1px solid var(--border-default);
+            border-radius: 3px;
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            text-decoration: none;
+            transition: all 0.15s ease;
+        }}
+
+        .mi-header-action:hover {{
+            background: var(--bg-surface-hover);
+            border-color: var(--text-accent);
+            color: var(--text-accent);
+        }}
+
+        /* =========================================================
+           3. Layout Container & Page Elements
+           ========================================================= */
+        .mi-page {{
+            max-width: 1720px;
+            margin: 0 auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }}
+
+        /* Filter & Control Bar */
+        .mi-control-bar {{
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            border-radius: 4px;
+            padding: 10px 14px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }}
+
+        .mi-control-group {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }}
+
+        .mi-control-label {{
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+        }}
+
+        .mi-btn-group {{
+            display: inline-flex;
+            background: var(--bg-base);
+            border: 1px solid var(--border-default);
+            border-radius: 3px;
+            padding: 2px;
+        }}
+
+        .mi-btn-toggle {{
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 500;
+            padding: 3px 10px;
+            border-radius: 2px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }}
+
+        .mi-btn-toggle:hover {{
+            color: var(--text-primary);
+        }}
+
+        .mi-btn-toggle.active {{
+            background: var(--bg-surface-hover);
+            color: var(--text-accent);
+            font-weight: 700;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }}
+
+        /* Dual Column Layout for SCFI and BDI */
+        .mi-grid-dual {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }}
+
+        @media (max-width: 1280px) {{
+            .mi-grid-dual {{
+                grid-template-columns: 1fr;
+            }}
+        }}
+
+        /* Terminal Panel */
+        .mi-panel {{
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }}
+
+        .mi-panel-header {{
+            background: var(--bg-surface-elevated);
+            border-bottom: 1px solid var(--border-default);
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }}
+
+        .mi-panel-title-group {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+
+        .mi-panel-indicator {{
+            width: 3px;
+            height: 14px;
+            border-radius: 1px;
+        }}
+        .indicator-scfi {{ background: var(--top-line-scfi); }}
+        .indicator-bdi {{ background: var(--top-line-bdi); }}
+
+        .mi-panel-title {{
+            font-family: var(--font-mono);
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-primary);
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }}
+
+        .mi-panel-subtitle {{
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-left: 4px;
+        }}
+
+        /* Multi-select Chip Group */
+        .mi-chips-wrapper {{
+            background: var(--bg-surface-elevated);
+            border-bottom: 1px solid var(--border-subtle);
+            padding: 8px 14px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+        }}
+
+        .mi-chips-title {{
+            font-family: var(--font-mono);
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-right: 4px;
+        }}
+
+        .mi-chip {{
+            background: var(--bg-base);
+            border: 1px solid var(--border-default);
+            color: var(--text-secondary);
+            font-family: var(--font-mono);
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }}
+
+        .mi-chip:hover {{
+            border-color: var(--text-muted);
+            color: var(--text-primary);
+        }}
+
+        .mi-chip.active {{
+            background: var(--bg-highlight);
+            border-color: var(--text-accent);
+            color: var(--text-accent);
+            font-weight: 600;
+        }}
+
+        .mi-chip-color-dot {{
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+        }}
+
+        /* KPI Metric Grid inside Panel */
+        .mi-kpi-grid {{
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            border-bottom: 1px solid var(--border-default);
+            background: var(--bg-surface);
+        }}
+
+        @media (max-width: 640px) {{
+            .mi-kpi-grid {{
+                grid-template-columns: repeat(2, 1fr);
+            }}
+        }}
+
+        .mi-kpi-card {{
+            padding: 12px 14px;
+            border-right: 1px solid var(--border-subtle);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }}
+        .mi-kpi-card:last-child {{
+            border-right: none;
+        }}
+
+        .mi-kpi-lbl {{
+            font-family: var(--font-mono);
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+
+        .mi-kpi-val-group {{
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+        }}
+
+        .mi-kpi-val {{
+            font-family: var(--font-mono);
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1.2;
+        }}
+
+        .mi-kpi-sub {{
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 600;
+        }}
+
+        .mi-kpi-date {{
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-muted);
+        }}
+
+        .val-up {{ color: var(--color-up) !important; }}
+        .val-down {{ color: var(--color-down) !important; }}
+        .val-neutral {{ color: var(--color-neutral) !important; }}
+
+        /* Chart Viewport */
+        .mi-chart-container {{
+            height: 380px;
+            width: 100%;
+            background: var(--bg-surface);
+            position: relative;
+        }}
+
+        /* Terminal Table */
+        .mi-table-wrapper {{
+            border-top: 1px solid var(--border-default);
+            max-height: 260px;
+            overflow-y: auto;
+            background: var(--bg-surface);
+        }}
+
+        .mi-table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            text-align: left;
+        }}
+
+        .mi-table thead {{
+            position: sticky;
+            top: 0;
+            background: var(--bg-surface-elevated);
+            z-index: 10;
+        }}
+
+        .mi-table th {{
+            color: var(--text-secondary);
+            font-weight: 600;
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border-default);
+            text-transform: uppercase;
+            font-size: 10px;
+            white-space: nowrap;
+        }}
+
+        .mi-table td {{
+            padding: 6px 12px;
+            border-bottom: 1px solid var(--border-subtle);
+            color: var(--text-primary);
+            white-space: nowrap;
+        }}
+
+        .mi-table tr:hover {{
+            background: var(--bg-surface-hover);
+        }}
+
+        .mi-table th:not(:first-child),
+        .mi-table td:not(:first-child) {{
+            text-align: right;
+        }}
+
+        /* Status Footer */
+        .mi-footer {{
+            margin-top: 8px;
+            padding: 12px 16px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-default);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-secondary);
+        }}
+
+        .mi-footer a {{
+            color: var(--text-accent);
+            text-decoration: none;
+        }}
+        .mi-footer a:hover {{
+            text-decoration: underline;
+        }}
+
+        .mi-empty {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+            font-size: 12px;
+        }}
+    </style>
 </head>
-
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="brand-mark">MI&lt;GO&gt;</span>
-      <span class="brand-divider"></span>
-      <span class="brand-title">SHIPPING INDEX</span>
-      <span class="brand-subtitle">SCFI / BDI MARKET MONITOR</span>
-    </div>
-    <div id="lastUpdated" class="top-status">DATA LOADING...</div>
-  </header>
 
-  <main class="terminal">
-    <section class="status-strip">
-      <div class="status-left">
-        <span id="statusDot" class="status-dot"></span>
-        <strong id="statusTitle">MARKET DATA / LOADING</strong>
-      </div>
-      <span id="periodDisplay">PERIOD: -</span>
-    </section>
-
-    <div class="workspace">
-      <aside class="filter-panel">
-        <div class="panel-header">
-          <span class="panel-title">04. Watchlist / Functions</span>
-          <span class="panel-title">SCFI · BDI</span>
-        </div>
-
-        <section class="filter-section">
-          <span class="label">Index Selection</span>
-          <div class="index-switch">
-            <button id="scfiTab" class="terminal-btn active" onclick="selectIndex('SCFI')">SCFI</button>
-            <button id="bdiTab" class="terminal-btn" onclick="selectIndex('BDI')">BDI</button>
-          </div>
-        </section>
-
-        <section class="filter-section">
-          <span class="label">Historical Range</span>
-          <div class="period-grid">
-            <button class="terminal-btn" data-period="1Y" onclick="setPreset('1Y')">1Y</button>
-            <button class="terminal-btn" data-period="3Y" onclick="setPreset('3Y')">3Y</button>
-            <button class="terminal-btn" data-period="5Y" onclick="setPreset('5Y')">5Y</button>
-            <button class="terminal-btn" data-period="YTD" onclick="setPreset('YTD')">YTD</button>
-            <button class="terminal-btn" data-period="ALL" onclick="setPreset('ALL')">ALL HISTORY</button>
-          </div>
-        </section>
-
-        <section class="filter-section">
-          <span class="label">Series Watchlist</span>
-
-          <input
-            id="routeSearch"
-            class="search-input"
-            type="search"
-            placeholder="SEARCH SERIES..."
-            oninput="renderRouteList()"
-          >
-
-          <div class="selection-actions">
-            <button class="small-action" onclick="selectVisibleRoutes()">SELECT VISIBLE</button>
-            <button class="small-action" onclick="clearRoutes()">CLEAR ALL</button>
-          </div>
-
-          <div id="selectedSummary" class="selected-summary"></div>
-          <div id="routeList" class="route-list"></div>
-        </section>
-      </aside>
-
-      <section class="main-area">
-        <div class="main-titlebar">
-          <div>
-            <h1 id="dashboardTitle" class="instrument-title">SCFI</h1>
-            <div id="dashboardDescription" class="instrument-meta">
-              Shanghai Containerized Freight Index
+    <!-- =========================================================
+         1. Bloomberg / MI Terminal Top Header
+         ========================================================= -->
+    <header class="mi-terminal-header">
+        <div class="mi-header-left">
+            <a href="../index.html" class="mi-brand">
+                <span class="mi-brand-tag">MI</span>
+            </a>
+            <span class="mi-module-name">SHIPPING FREIGHT INDEX</span>
+            <div class="mi-source-text">
+                <span class="mi-source-badge">FEED</span> KSG (KOREA SHIPPING GAZETTE)
             </div>
-          </div>
-          <button class="terminal-btn download-btn" onclick="downloadCSV()">EXPORT CSV</button>
         </div>
 
-        <section class="kpi-grid">
-          <div class="kpi">
-            <span class="kpi-label">Latest<br>Selected Average</span>
-            <span id="latestValue" class="kpi-value">-</span>
-            <span id="latestValueDate" class="kpi-sub">-</span>
-          </div>
-
-          <div class="kpi">
-            <span class="kpi-label">Period<br>Average</span>
-            <span id="periodAverage" class="kpi-value">-</span>
-            <span id="periodAverageSub" class="kpi-sub">-</span>
-          </div>
-
-          <div class="kpi">
-            <span class="kpi-label">Period<br>High / Low</span>
-            <span id="highLowValue" class="kpi-value">-</span>
-            <span id="highLowSub" class="kpi-sub">-</span>
-          </div>
-
-          <div class="kpi">
-            <span class="kpi-label">Change<br>First To Last</span>
-            <span id="changeValue" class="kpi-value neutral">-</span>
-            <span id="changeRate" class="kpi-sub">-</span>
-          </div>
-
-          <div class="kpi">
-            <span class="kpi-label">Observations<br>/ Series</span>
-            <span id="recordCount" class="kpi-value">-</span>
-            <span id="regionCount" class="kpi-sub">-</span>
-          </div>
-        </section>
-
-        <section class="chart-panel">
-          <div class="panel-header">
-            <span class="panel-title">03. Main Market Chart / Price History</span>
-            <span class="panel-title">Range Slider Enabled</span>
-          </div>
-          <div id="chart"></div>
-        </section>
-
-        <section class="panel">
-          <div class="panel-header">
-            <span class="panel-title">05. Macro & Market Heatmap / Data Grid</span>
-            <span class="panel-title">Selected Period</span>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead id="dataTableHead"></thead>
-              <tbody id="dataTableBody">
-                <tr><td class="empty-message">DATA LOADING...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </section>
-    </div>
-  </main>
-
-  <script>
-    let dashboardData = null;
-    let currentIndex = "SCFI";
-    let selectedRegions = new Set();
-    let currentRange = null;
-    let currentPreset = "ALL";
-
-    const INDEX_INFO = {
-      SCFI: {
-        title: "SCFI / SHANGHAI CONTAINERIZED FREIGHT INDEX",
-        description: "컨테이너 운임 항로별 시계열 및 선택 항로 평균 모니터링"
-      },
-      BDI: {
-        title: "BDI / BALTIC DRY INDEX",
-        description: "벌크선 시황 대표지수 및 세부 선형별 시계열 모니터링"
-      }
-    };
-
-    const SERIES_COLORS = [
-      "#f6a623", "#42a8f5", "#35ca82", "#b791ff",
-      "#ff6565", "#ffd166", "#39c7e2", "#d7e2eb"
-    ];
-
-    function formatNumber(value, decimals = 2) {
-      if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
-      return Number(value).toLocaleString("ko-KR", {
-        minimumFractionDigits: decimals,
-        maximumFractionDigits: decimals
-      });
-    }
-
-    function formatInteger(value) {
-      if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
-      return Number(value).toLocaleString("ko-KR");
-    }
-
-    function formatDate(value) {
-      if (!value) return "-";
-      const date = new Date(value + "T00:00:00");
-      if (Number.isNaN(date.getTime())) return value;
-      return date.toLocaleDateString("ko-KR", {
-        year: "numeric", month: "2-digit", day: "2-digit"
-      });
-    }
-
-    function escapeHtml(value) {
-      return String(value)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-    }
-
-    function setStatus(ok, title, message) {
-      document.getElementById("statusDot").className =
-        ok ? "status-dot" : "status-dot error";
-
-      document.getElementById("statusTitle").textContent = title;
-      document.getElementById("lastUpdated").textContent = message;
-    }
-
-    function getIndexData() {
-      if (!dashboardData || !dashboardData.indexes) {
-        return { regions: [], records: [] };
-      }
-
-      return dashboardData.indexes[currentIndex] || {
-        regions: [],
-        records: []
-      };
-    }
-
-    function getAllRecords() {
-      return [...getIndexData().records].sort(
-        (a, b) => String(a.DATE).localeCompare(String(b.DATE))
-      );
-    }
-
-    function getDefaultRegions(regions) {
-      if (!regions || regions.length === 0) return [];
-
-      if (currentIndex === "BDI") {
-        if (regions.includes("BDI")) return ["BDI"];
-        return [regions[0]];
-      }
-
-      const compositeCandidates = [
-        "SCFI",
-        "종합",
-        "종합지수",
-        "COMPOSITE",
-        "COMPREHENSIVE",
-        "SCFI 종합",
-        "SCFI(종합)"
-      ];
-
-      for (const candidate of compositeCandidates) {
-        const matched = regions.find(
-          region => region.trim().toUpperCase() === candidate
-        );
-
-        if (matched) return [matched];
-      }
-
-      const partialMatched = regions.find(
-        region =>
-          region.includes("종합") ||
-          region.toUpperCase().includes("COMPOSITE") ||
-          region.toUpperCase().includes("SCFI")
-      );
-
-      if (partialMatched) return [partialMatched];
-
-      return [regions[0]];
-    }
-
-    function renderRouteList() {
-      const indexData = getIndexData();
-      const keyword = document
-        .getElementById("routeSearch")
-        .value
-        .trim()
-        .toLowerCase();
-
-      const visibleRegions = indexData.regions.filter(
-        region => region.toLowerCase().includes(keyword)
-      );
-
-      document.getElementById("routeList").innerHTML =
-        visibleRegions.length
-          ? visibleRegions.map(region => `
-              <label class="route-item">
-                <input
-                  type="checkbox"
-                  value="${escapeHtml(region)}"
-                  ${selectedRegions.has(region) ? "checked" : ""}
-                  onchange="toggleRegion(this.value, this.checked)"
-                >
-                <span>${escapeHtml(region)}</span>
-              </label>
-            `).join("")
-          : `<div class="empty-message">NO MATCHING SERIES</div>`;
-
-      renderSelectedSummary();
-    }
-
-    function renderSelectedSummary() {
-      const container = document.getElementById("selectedSummary");
-
-      if (!selectedRegions.size) {
-        container.innerHTML =
-          `<span style="color:#8298aa;font-size:8px;">NO SERIES SELECTED</span>`;
-        return;
-      }
-
-      container.innerHTML = [...selectedRegions].map(region => `
-        <span class="chip">
-          ${escapeHtml(region)}
-          <button onclick="removeRegion('${String(region).replaceAll("'", "\\'")}')">×</button>
-        </span>
-      `).join("");
-    }
-
-    function toggleRegion(region, checked) {
-      if (checked) selectedRegions.add(region);
-      else selectedRegions.delete(region);
-
-      renderRouteList();
-      renderDashboard();
-    }
-
-    function removeRegion(region) {
-      selectedRegions.delete(region);
-      renderRouteList();
-      renderDashboard();
-    }
-
-    function selectVisibleRoutes() {
-      const keyword = document
-        .getElementById("routeSearch")
-        .value
-        .trim()
-        .toLowerCase();
-
-      getIndexData().regions
-        .filter(region => region.toLowerCase().includes(keyword))
-        .forEach(region => selectedRegions.add(region));
-
-      renderRouteList();
-      renderDashboard();
-    }
-
-    function clearRoutes() {
-      selectedRegions.clear();
-      renderRouteList();
-      renderDashboard();
-    }
-
-    function getDateBounds() {
-      const records = getAllRecords();
-
-      if (!records.length) {
-        return { min: null, max: null };
-      }
-
-      return {
-        min: records[0].DATE,
-        max: records[records.length - 1].DATE
-      };
-    }
-
-    function addYears(dateString, years) {
-      const date = new Date(dateString + "T00:00:00");
-      date.setFullYear(date.getFullYear() - years);
-      return date.toISOString().slice(0, 10);
-    }
-
-    function setPreset(preset) {
-      const bounds = getDateBounds();
-
-      if (!bounds.max) return;
-
-      currentPreset = preset;
-
-      if (preset === "ALL") {
-        currentRange = null;
-      } else if (preset === "YTD") {
-        currentRange = {
-          start: `${bounds.max.slice(0, 4)}-01-01`,
-          end: bounds.max
-        };
-      } else {
-        const years = Number(preset.replace("Y", ""));
-        currentRange = {
-          start: addYears(bounds.max, years),
-          end: bounds.max
-        };
-      }
-
-      updatePeriodButtons();
-      renderDashboard();
-    }
-
-    function updatePeriodButtons() {
-      document.querySelectorAll("[data-period]").forEach(button => {
-        button.classList.toggle(
-          "active",
-          button.getAttribute("data-period") === currentPreset
-        );
-      });
-    }
-
-    function getFilteredRecords() {
-      let records = getAllRecords();
-
-      if (!selectedRegions.size) return [];
-
-      records = records.filter(
-        record => selectedRegions.has(record.REGION)
-      );
-
-      if (currentRange) {
-        records = records.filter(
-          record =>
-            record.DATE >= currentRange.start &&
-            record.DATE <= currentRange.end
-        );
-      }
-
-      return records;
-    }
-
-    function getDailyAverages(records) {
-      const byDate = {};
-
-      records.forEach(record => {
-        if (!byDate[record.DATE]) byDate[record.DATE] = [];
-        byDate[record.DATE].push(Number(record.VALUE));
-      });
-
-      return Object.keys(byDate).sort().map(date => ({
-        date,
-        value:
-          byDate[date].reduce(
-            (sum, value) => sum + value,
-            0
-          ) / byDate[date].length
-      }));
-    }
-
-    function updateKpis(records) {
-      const selectedCount = selectedRegions.size;
-
-      document.getElementById("recordCount").textContent =
-        formatInteger(records.length);
-
-      document.getElementById("regionCount").textContent =
-        `${formatInteger(selectedCount)} SERIES SELECTED`;
-
-      if (!records.length) {
-        [
-          "latestValue",
-          "periodAverage",
-          "highLowValue",
-          "changeValue"
-        ].forEach(id => {
-          document.getElementById(id).textContent = "-";
-        });
-
-        document.getElementById("latestValueDate").textContent = "NO DATA";
-        document.getElementById("periodAverageSub").textContent = "-";
-        document.getElementById("highLowSub").textContent = "-";
-        document.getElementById("changeRate").textContent = "-";
-
-        return;
-      }
-
-      const daily = getDailyAverages(records);
-      const latest = daily[daily.length - 1];
-      const first = daily[0];
-
-      const periodAverage =
-        records.reduce(
-          (sum, record) => sum + Number(record.VALUE),
-          0
-        ) / records.length;
-
-      const values = records.map(record => Number(record.VALUE));
-      const high = Math.max(...values);
-      const low = Math.min(...values);
-
-      const change = latest.value - first.value;
-      const changeRate =
-        first.value !== 0
-          ? (change / first.value) * 100
-          : 0;
-
-      const changeClass =
-        change > 0
-          ? "positive"
-          : change < 0
-            ? "negative"
-            : "neutral";
-
-      document.getElementById("latestValue").textContent =
-        formatNumber(latest.value);
-
-      document.getElementById("latestValueDate").textContent =
-        `${formatDate(latest.date)} AVG`;
-
-      document.getElementById("periodAverage").textContent =
-        formatNumber(periodAverage);
-
-      document.getElementById("periodAverageSub").textContent =
-        "SELECTED PERIOD / SIMPLE AVG";
-
-      document.getElementById("highLowValue").textContent =
-        `${formatNumber(high, 0)} / ${formatNumber(low, 0)}`;
-
-      document.getElementById("highLowSub").textContent =
-        "HIGH / LOW";
-
-      const sign = change > 0 ? "+" : "";
-      const changeElement = document.getElementById("changeValue");
-
-      changeElement.textContent =
-        `${sign}${formatNumber(change)}`;
-
-      changeElement.className =
-        `kpi-value ${changeClass}`;
-
-      document.getElementById("changeRate").textContent =
-        `${sign}${formatNumber(changeRate)}% / ` +
-        `${formatDate(first.date)} → ${formatDate(latest.date)}`;
-    }
-
-    function renderChart(records) {
-      const chart = document.getElementById("chart");
-      const bounds = getDateBounds();
-
-      if (!records.length) {
-        Plotly.purge(chart);
-        chart.innerHTML =
-          `<div class="empty-message">SELECT AT LEAST ONE SERIES TO DISPLAY DATA</div>`;
-        return;
-      }
-
-      const grouped = {};
-
-      records.forEach(record => {
-        if (!grouped[record.REGION]) {
-          grouped[record.REGION] = [];
-        }
-
-        grouped[record.REGION].push(record);
-      });
-
-      const traces = Object.entries(grouped).map(
-        ([region, rows], index) => ({
-          x: rows.map(row => row.DATE),
-          y: rows.map(row => Number(row.VALUE)),
-          type: "scatter",
-          mode: "lines",
-          name: region,
-          line: {
-            color: SERIES_COLORS[index % SERIES_COLORS.length],
-            width: region === "BDI" ? 2.7 : 1.8
-          },
-          hovertemplate:
-            `<b>${escapeHtml(region)}</b>` +
-            "<br>DATE: %{x}<br>VALUE: %{y:,.2f}<extra></extra>"
-        })
-      );
-
-      const xRange = currentRange
-        ? [currentRange.start, currentRange.end]
-        : [bounds.min, bounds.max];
-
-      const layout = {
-        margin: { l: 72, r: 26, t: 26, b: 66 },
-        paper_bgcolor: "#07111c",
-        plot_bgcolor: "#07111c",
-        font: {
-          family: '"IBM Plex Mono", Consolas, monospace',
-          color: "#c4d2dc",
-          size: 10
-        },
-        hovermode: "x unified",
-        hoverlabel: {
-          bgcolor: "#07111c",
-          bordercolor: "#2b506d",
-          font: {
-            color: "#f1f6fa",
-            family: '"IBM Plex Mono", Consolas, monospace'
-          }
-        },
-        legend: {
-          orientation: "h",
-          y: 1.12,
-          x: 0,
-          font: {
-            size: 9,
-            color: "#c4d2dc"
-          }
-        },
-        xaxis: {
-          type: "date",
-          range: xRange,
-          gridcolor: "rgba(40, 76, 104, .38)",
-          linecolor: "#2b506d",
-          tickfont: {
-            color: "#8298aa",
-            size: 9
-          },
-          rangeslider: {
-            visible: true,
-            bgcolor: "#030a11",
-            bordercolor: "#1c3448",
-            thickness: 0.085
-          }
-        },
-        yaxis: {
-          title: {
-            text: "INDEX VALUE",
-            font: {
-              size: 9,
-              color: "#8298aa"
-            }
-          },
-          gridcolor: "rgba(40, 76, 104, .42)",
-          zerolinecolor: "#2b506d",
-          linecolor: "#2b506d",
-          tickfont: {
-            color: "#8298aa",
-            size: 9
-          }
-        }
-      };
-
-      Plotly.newPlot(chart, traces, layout, {
-        responsive: true,
-        displaylogo: false,
-        modeBarButtonsToRemove: [
-          "select2d",
-          "lasso2d"
-        ]
-      });
-
-      chart.removeAllListeners?.("plotly_relayout");
-
-      chart.on("plotly_relayout", eventData => {
-        const start = eventData["xaxis.range[0]"];
-        const end = eventData["xaxis.range[1]"];
-
-        if (start && end) {
-          currentRange = {
-            start: String(start).slice(0, 10),
-            end: String(end).slice(0, 10)
-          };
-
-          currentPreset = "CUSTOM";
-          updatePeriodButtons();
-          renderDashboard(false);
-        }
-
-        if (eventData["xaxis.autorange"]) {
-          currentRange = null;
-          currentPreset = "ALL";
-          updatePeriodButtons();
-          renderDashboard(false);
-        }
-      });
-    }
-
-    function renderTable(records) {
-      const tableHead = document.getElementById("dataTableHead");
-      const tableBody = document.getElementById("dataTableBody");
-      const regions = [...selectedRegions];
-
-      if (!records.length || !regions.length) {
-        tableHead.innerHTML = "<tr><th>DATE</th></tr>";
-        tableBody.innerHTML =
-          `<tr><td class="empty-message">NO DATA FOR SELECTED CONDITIONS</td></tr>`;
-        return;
-      }
-
-      const pivot = {};
-
-      records.forEach(record => {
-        if (!pivot[record.DATE]) {
-          pivot[record.DATE] = {};
-        }
-
-        pivot[record.DATE][record.REGION] = record.VALUE;
-      });
-
-      tableHead.innerHTML = `
-        <tr>
-          <th>DATE</th>
-          ${regions.map(region => `<th>${escapeHtml(region)}</th>`).join("")}
-        </tr>
-      `;
-
-      tableBody.innerHTML = Object.keys(pivot)
-        .sort()
-        .reverse()
-        .map(date => `
-          <tr>
-            <td>${escapeHtml(formatDate(date))}</td>
-            ${regions.map(region => `
-              <td>
-                ${
-                  pivot[date][region] !== undefined
-                    ? formatNumber(pivot[date][region])
-                    : "-"
-                }
-              </td>
-            `).join("")}
-          </tr>
-        `)
-        .join("");
-    }
-
-    function updatePeriodDisplay() {
-      const bounds = getDateBounds();
-      let text = "PERIOD: -";
-
-      if (bounds.min && bounds.max) {
-        text = currentRange
-          ? `PERIOD: ${currentRange.start} → ${currentRange.end}`
-          : `PERIOD: ${bounds.min} → ${bounds.max} / ALL HISTORY`;
-      }
-
-      document.getElementById("periodDisplay").textContent = text;
-    }
-
-    function renderDashboard(renderChartToo = true) {
-      const records = getFilteredRecords();
-
-      updatePeriodDisplay();
-      updateKpis(records);
-
-      if (renderChartToo) {
-        renderChart(records);
-      }
-
-      renderTable(records);
-    }
-
-    function selectIndex(indexName) {
-      currentIndex = indexName;
-      currentRange = null;
-      currentPreset = "ALL";
-
-      const indexData = getIndexData();
-
-      selectedRegions = new Set(
-        getDefaultRegions(indexData.regions)
-      );
-
-      document
-        .getElementById("scfiTab")
-        .classList
-        .toggle("active", indexName === "SCFI");
-
-      document
-        .getElementById("bdiTab")
-        .classList
-        .toggle("active", indexName === "BDI");
-
-      document.getElementById("dashboardTitle").textContent =
-        INDEX_INFO[indexName].title;
-
-      document.getElementById("dashboardDescription").textContent =
-        INDEX_INFO[indexName].description;
-
-      document.getElementById("routeSearch").value = "";
-
-      updatePeriodButtons();
-      renderRouteList();
-      renderDashboard();
-    }
-
-    function downloadCSV() {
-      const records = getFilteredRecords();
-      const regions = [...selectedRegions];
-
-      if (!records.length || !regions.length) {
-        alert("다운로드할 데이터가 없습니다.");
-        return;
-      }
-
-      const pivot = {};
-
-      records.forEach(record => {
-        if (!pivot[record.DATE]) {
-          pivot[record.DATE] = {};
-        }
-
-        pivot[record.DATE][record.REGION] = record.VALUE;
-      });
-
-      const rows = [
-        ["DATE", ...regions].join(","),
-        ...Object.keys(pivot)
-          .sort()
-          .reverse()
-          .map(date => [
-            date,
-            ...regions.map(
-              region => pivot[date][region] ?? ""
-            )
-          ].join(","))
-      ];
-
-      const blob = new Blob(
-        ["\uFEFF" + rows.join("\n")],
-        {
-          type: "text/csv;charset=utf-8;"
-        }
-      );
-
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-
-      anchor.href = url;
-      anchor.download =
-        `${currentIndex}_shipping_index_${currentPreset}.csv`;
-
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-
-      URL.revokeObjectURL(url);
-    }
-
-    async function loadDashboardData() {
-      try {
-        const response = await fetch(
-          "shipping_index_data.json?ts=" + Date.now(),
-          {
-            cache: "no-store"
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        dashboardData = await response.json();
-
-        setStatus(
-          true,
-          "SYSTEM / MARKET DATA ONLINE",
-          `LAST REFRESH: ${dashboardData.generated_at || "-"}`
-        );
-
-        selectIndex("SCFI");
-
-      } catch (error) {
-        console.error(error);
-
-        setStatus(
-          false,
-          "SYSTEM / DATA ERROR",
-          "shipping_index_data.json LOAD FAILED"
-        );
-      }
-    }
-
-    document.addEventListener(
-      "DOMContentLoaded",
-      loadDashboardData
-    );
-  </script>
+        <div class="mi-header-right">
+            <div class="mi-ticker-group">
+                <div class="mi-ticker" id="ticker-scfi">
+                    <span class="mi-ticker-label">SCFI</span>
+                    <span class="mi-ticker-val" id="ticker-scfi-val">--</span>
+                    <span class="mi-ticker-chg" id="ticker-scfi-chg">--</span>
+                </div>
+                <div class="mi-ticker" id="ticker-bdi">
+                    <span class="mi-ticker-label">BDI</span>
+                    <span class="mi-ticker-val" id="ticker-bdi-val">--</span>
+                    <span class="mi-ticker-chg" id="ticker-bdi-chg">--</span>
+                </div>
+            </div>
+
+            <div class="mi-status-indicator">
+                <span class="mi-pulse-dot"></span>
+                <span>SYNCED</span>
+            </div>
+
+            <a href="../index.html" class="mi-header-action">
+                <span>PORTAL</span> &rarr;
+            </a>
+        </div>
+    </header>
+
+    <!-- =========================================================
+         2. Main Application Body
+         ========================================================= -->
+    <main class="mi-page">
+
+        <!-- Global Control Bar -->
+        <div class="mi-control-bar">
+            <div class="mi-control-group">
+                <span class="mi-control-label">TIME HORIZON:</span>
+                <div class="mi-btn-group" id="range-btn-group">
+                    <button class="mi-btn-toggle" data-range="1M">1M</button>
+                    <button class="mi-btn-toggle" data-range="3M">3M</button>
+                    <button class="mi-btn-toggle" data-range="6M">6M</button>
+                    <button class="mi-btn-toggle active" data-range="1Y">1Y</button>
+                    <button class="mi-btn-toggle" data-range="3Y">3Y</button>
+                    <button class="mi-btn-toggle" data-range="5Y">5Y</button>
+                    <button class="mi-btn-toggle" data-range="ALL">MAX</button>
+                </div>
+            </div>
+
+            <div class="mi-control-group">
+                <span class="mi-control-label">DATA SNAPSHOT:</span>
+                <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-accent);" id="global-sync-date">--</span>
+            </div>
+        </div>
+
+        <!-- Dual Chart Matrix -->
+        <div class="mi-grid-dual">
+
+            <!-- SCFI Panel -->
+            <section class="mi-panel" id="panel-scfi">
+                <div class="mi-panel-header">
+                    <div class="mi-panel-title-group">
+                        <div class="mi-panel-indicator indicator-scfi"></div>
+                        <span class="mi-panel-title">SCFI</span>
+                        <span class="mi-panel-subtitle">Shanghai Containerized Freight Index</span>
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button class="mi-header-action" onclick="exportCSV('SCFI')">CSV EXPORT</button>
+                    </div>
+                </div>
+
+                <!-- SCFI Multi-select Chips -->
+                <div class="mi-chips-wrapper" id="chips-scfi">
+                    <span class="mi-chips-title">SELECT ROUTES:</span>
+                    <!-- Dynamic chips populated via JS -->
+                </div>
+
+                <div class="mi-kpi-grid">
+                    <div class="mi-kpi-card">
+                        <span class="mi-kpi-lbl">PRIMARY CLOSE</span>
+                        <div class="mi-kpi-val-group">
+                            <span class="mi-kpi-val" id="kpi-scfi-latest">--</span>
+                        </div>
+                        <span class="mi-kpi-date" id="kpi-scfi-date">--</span>
+                    </div>
+                    <div class="mi-kpi-card">
+                        <span class="mi-kpi-lbl">W-O-W CHANGE</span>
+                        <div class="mi-kpi-val-group">
+                            <span class="mi-kpi-val" id="kpi-scfi-chg">--</span>
+                            <span class="mi-kpi-sub" id="kpi-scfi-pct">--</span>
+                        </div>
+                        <span class="mi-kpi-date">VS PREV WEEK</span>
+                    </div>
+                    <div class="mi-kpi-card">
+                        <span class="mi-kpi-lbl">PERIOD HIGH</span>
+                        <div class="mi-kpi-val-group">
+                            <span class="mi-kpi-val" id="kpi-scfi-high">--</span>
+                        </div>
+                        <span class="mi-kpi-date" id="kpi-scfi-high-date">--</span>
+                    </div>
+                    <div class="mi-kpi-card">
+                        <span class="mi-kpi-lbl">PERIOD LOW</span>
+                        <div class="mi-kpi-val-group">
+                            <span class="mi-kpi-val" id="kpi-scfi-low">--</span>
+                        </div>
+                        <span class="mi-kpi-date" id="kpi-scfi-low-date">--</span>
+                    </div>
+                </div>
+
+                <div class="mi-chart-container" id="chart-scfi"></div>
+
+                <div class="mi-table-wrapper" id="table-wrap-scfi">
+                    <table class="mi-table" id="table-scfi">
+                        <thead>
+                            <tr id="table-head-scfi">
+                                <th>DATE</th>
+                                <th>VALUE</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- BDI Panel -->
+            <section class="mi-panel" id="panel-bdi">
+                <div class="mi-panel-header">
+                    <div class="mi-panel-title-group">
+                        <div class="mi-panel-indicator indicator-bdi"></div>
+                        <span class="mi-panel-title">BDI</span>
+                        <span class="mi-panel-subtitle">Baltic Dry Index & Sub-Indices</span>
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button class="mi-header-action" onclick="exportCSV('BDI')">CSV EXPORT</button>
+                    </div>
+                </div>
+
+                <!-- BDI Multi-select Chips -->
+                <div class="mi-chips-wrapper" id="chips-bdi">
+                    <span class="mi-chips-title">SELECT INDICES:</span>
+                    <!-- Dynamic chips populated via JS -->
+                </div>
+
+                <div class="mi-kpi-grid">
+                    <div class="mi-kpi-card">
+                        <span class="mi-kpi-lbl">PRIMARY CLOSE</span>
+                        <div class="mi-kpi-val-group">
+                            <span class="mi-kpi-val" id="kpi-bdi-latest">--</span>
+                        </div>
+                        <span class="mi-kpi-date" id="kpi-bdi-date">--</span>
+                    </div>
+                    <div class="mi-kpi-card">
+                        <span class="mi-kpi-lbl">D-O-D CHANGE</span>
+                        <div class="mi-kpi-val-group">
+                            <span class="mi-kpi-val" id="kpi-bdi-chg">--</span>
+                            <span class="mi-kpi-sub" id="kpi-bdi-pct">--</span>
+                        </div>
+                        <span class="mi-kpi-date">VS PREV TRADING DAY</span>
+                    </div>
+                    <div class="mi-kpi-card">
+                        <span class="mi-kpi-lbl">PERIOD HIGH</span>
+                        <div class="mi-kpi-val-group">
+                            <span class="mi-kpi-val" id="kpi-bdi-high">--</span>
+                        </div>
+                        <span class="mi-kpi-date" id="kpi-bdi-high-date">--</span>
+                    </div>
+                    <div class="mi-kpi-card">
+                        <span class="mi-kpi-lbl">PERIOD LOW</span>
+                        <div class="mi-kpi-val-group">
+                            <span class="mi-kpi-val" id="kpi-bdi-low">--</span>
+                        </div>
+                        <span class="mi-kpi-date" id="kpi-bdi-low-date">--</span>
+                    </div>
+                </div>
+
+                <div class="mi-chart-container" id="chart-bdi"></div>
+
+                <div class="mi-table-wrapper" id="table-wrap-bdi">
+                    <table class="mi-table" id="table-bdi">
+                        <thead>
+                            <tr id="table-head-bdi">
+                                <th>DATE</th>
+                                <th>VALUE</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+
+        </div>
+
+        <!-- Terminal Footer -->
+        <footer class="mi-footer">
+            <div>
+                SOURCE: <a href="https://www.ksg.co.kr" target="_blank" rel="noopener">Korea Shipping Gazette</a> | AUTOMATED DAILY PIPELINE
+            </div>
+            <div>
+                ENGINE: SQLITE3 &bull; PLOTLY.JS &bull; MI TERMINAL DESIGN SYSTEM
+            </div>
+        </footer>
+
+    </main>
+
+    <!-- =========================================================
+         3. Application State & Script
+         ========================================================= -->
+    <script>
+        const PAYLOAD_DATA = {embedded_json};
+
+        let currentRange = '1Y';
+        // Multi-select state: Array of selected region strings per index
+        let selectedRegions = {{
+            'SCFI': [],
+            'BDI': []
+        }};
+
+        // Distinct vibrant color palette for multi-line charts
+        const PALETTE = [
+            '#ff9800', '#00d2d3', '#2ed573', '#ff4757', '#a29bfe',
+            '#ffa502', '#70a1ff', '#eccc68', '#ff6b81', '#1dd1a1',
+            '#54a0ff', '#5f27cd', '#c8d6e5', '#ff9ff3', '#00d8d6'
+        ];
+
+        document.addEventListener('DOMContentLoaded', () => {{
+            initMultiSelectChips();
+            initControls();
+            renderAllPanels();
+            updateTopTickers();
+        }});
+
+        function initMultiSelectChips() {{
+            ['SCFI', 'BDI'].forEach(idx => {{
+                const idxData = PAYLOAD_DATA.indexes[idx];
+                const container = document.getElementById(`chips-${{idx.toLowerCase()}}`);
+                if (!idxData || !idxData.regions || !idxData.regions.length) return;
+
+                // Determine default selection
+                let defaultReg = idxData.regions[0];
+                if (idx === 'SCFI') {{
+                    const pref = idxData.regions.find(r => r === '종합' || r === '종합지수');
+                    if (pref) defaultReg = pref;
+                }} else if (idx === 'BDI') {{
+                    const pref = idxData.regions.find(r => r === 'BDI');
+                    if (pref) defaultReg = pref;
+                }}
+                selectedRegions[idx] = [defaultReg];
+
+                renderChipsUI(idx);
+            }});
+        }}
+
+        function renderChipsUI(idx) {{
+            const key = idx.toLowerCase();
+            const idxData = PAYLOAD_DATA.indexes[idx];
+            const container = document.getElementById(`chips-${{key}}`);
+            if (!container || !idxData) return;
+
+            // Preserve title label
+            const titleText = idx === 'SCFI' ? 'SELECT ROUTES:' : 'SELECT INDICES:';
+            container.innerHTML = `<span class="mi-chips-title">${{titleText}}</span>`;
+
+            idxData.regions.forEach((reg, i) => {{
+                const isSelected = selectedRegions[idx].includes(reg);
+                const color = PALETTE[i % PALETTE.length];
+
+                const chip = document.createElement('div');
+                chip.className = `mi-chip ${{isSelected ? 'active' : ''}}`;
+
+                const dot = document.createElement('span');
+                dot.className = 'mi-chip-color-dot';
+                dot.style.backgroundColor = isSelected ? color : 'var(--text-muted)';
+                chip.appendChild(dot);
+
+                const label = document.createElement('span');
+                label.textContent = reg;
+                chip.appendChild(label);
+
+                chip.addEventListener('click', () => {{
+                    toggleRegionSelection(idx, reg);
+                }});
+
+                container.appendChild(chip);
+            }});
+        }}
+
+        function toggleRegionSelection(idx, reg) {{
+            const currentList = selectedRegions[idx];
+            const idxInList = currentList.indexOf(reg);
+
+            if (idxInList >= 0) {{
+                // Prevent unselecting all (at least 1 must remain)
+                if (currentList.length > 1) {{
+                    currentList.splice(idxInList, 1);
+                }}
+            }} else {{
+                currentList.push(reg);
+            }}
+
+            renderChipsUI(idx);
+            renderIndexPanel(idx);
+        }}
+
+        function initControls() {{
+            document.querySelectorAll('#range-btn-group .mi-btn-toggle').forEach(btn => {{
+                btn.addEventListener('click', (e) => {{
+                    document.querySelectorAll('#range-btn-group .mi-btn-toggle').forEach(b => b.classList.remove('active'));
+                    e.currentTarget.classList.add('active');
+                    currentRange = e.currentTarget.getAttribute('data-range');
+                    renderAllPanels();
+                }});
+            }});
+        }}
+
+        function renderAllPanels() {{
+            ['SCFI', 'BDI'].forEach(idx => renderIndexPanel(idx));
+        }}
+
+        function filterSeriesByRange(dates, values, range) {{
+            if (range === 'ALL' || !dates.length) return {{ dates, values }};
+
+            const latestStr = dates[dates.length - 1];
+            const latestDate = new Date(latestStr);
+            const cutoff = new Date(latestDate);
+
+            switch (range) {{
+                case '1M': cutoff.setMonth(cutoff.getMonth() - 1); break;
+                case '3M': cutoff.setMonth(cutoff.getMonth() - 3); break;
+                case '6M': cutoff.setMonth(cutoff.getMonth() - 6); break;
+                case '1Y': cutoff.setFullYear(cutoff.getFullYear() - 1); break;
+                case '3Y': cutoff.setFullYear(cutoff.getFullYear() - 3); break;
+                case '5Y': cutoff.setFullYear(cutoff.getFullYear() - 5); break;
+                default: return {{ dates, values }};
+            }}
+
+            const cutoffStr = cutoff.toISOString().split('T')[0];
+            const filteredDates = [];
+            const filteredValues = [];
+
+            for (let i = 0; i < dates.length; i++) {{
+                if (dates[i] >= cutoffStr) {{
+                    filteredDates.push(dates[i]);
+                    filteredValues.push(values[i]);
+                }}
+            }}
+
+            return {{ dates: filteredDates, values: filteredValues }};
+        }}
+
+        function renderIndexPanel(indexName) {{
+            const key = indexName.toLowerCase();
+            const idxData = PAYLOAD_DATA.indexes[indexName];
+            const activeRegs = selectedRegions[indexName];
+
+            if (!idxData || !idxData.series || !activeRegs || !activeRegs.length) {{
+                renderEmptyPanel(indexName);
+                return;
+            }}
+
+            const traces = [];
+            const filteredDataByReg = {{}};
+            const allDateSet = new Set();
+
+            // 1. Process traces for each selected region
+            activeRegs.forEach(reg => {{
+                const rawSeries = idxData.series[reg];
+                if (!rawSeries) return;
+
+                const {{ dates, values }} = filterSeriesByRange(rawSeries.dates, rawSeries.values, currentRange);
+                if (!dates.length) return;
+
+                filteredDataByReg[reg] = {{ dates, values }};
+                dates.forEach(d => allDateSet.add(d));
+
+                const regIndex = idxData.regions.indexOf(reg);
+                const color = PALETTE[regIndex >= 0 ? regIndex % PALETTE.length : 0];
+
+                traces.push({{
+                    x: dates,
+                    y: values,
+                    name: reg,
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: {{
+                        color: color,
+                        width: 2,
+                        shape: 'spline',
+                        smoothing: 0.3
+                    }},
+                    hoverinfo: 'x+y+name',
+                    hovertemplate: `<b>${{reg}}</b><br>Date: %{{x}}<br>Value: %{{y:,.2f}}<extra></extra>`
+                }});
+            }});
+
+            if (!traces.length) {{
+                renderEmptyPanel(indexName);
+                return;
+            }}
+
+            // 2. Primary KPI Metrics based on the first selected region
+            const primaryReg = activeRegs[0];
+            const primarySeries = filteredDataByReg[primaryReg];
+
+            if (primarySeries && primarySeries.values.length) {{
+                const vals = primarySeries.values;
+                const dts = primarySeries.dates;
+                const latestVal = vals[vals.length - 1];
+                const latestDate = dts[dts.length - 1];
+                const prevVal = vals.length > 1 ? vals[vals.length - 2] : latestVal;
+
+                const chg = latestVal - prevVal;
+                const pct = prevVal !== 0 ? (chg / prevVal) * 100 : 0;
+
+                let highVal = -Infinity, lowVal = Infinity;
+                let highDate = '', lowDate = '';
+
+                for (let i = 0; i < vals.length; i++) {{
+                    if (vals[i] > highVal) {{ highVal = vals[i]; highDate = dts[i]; }}
+                    if (vals[i] < lowVal) {{ lowVal = vals[i]; lowDate = dts[i]; }}
+                }}
+
+                document.getElementById(`kpi-${{key}}-latest`).textContent = latestVal.toLocaleString(undefined, {{ minimumFractionDigits: 1, maximumFractionDigits: 2 }});
+                document.getElementById(`kpi-${{key}}-date`).textContent = `${{primaryReg}} (${{latestDate}})`;
+
+                const chgElem = document.getElementById(`kpi-${{key}}-chg`);
+                const pctElem = document.getElementById(`kpi-${{key}}-pct`);
+
+                const chgPrefix = chg > 0 ? '+' : '';
+                chgElem.textContent = `${{chgPrefix}}${{chg.toFixed(2)}}`;
+                pctElem.textContent = `(${{chgPrefix}}${{pct.toFixed(2)}}%)`;
+
+                chgElem.className = 'mi-kpi-val ' + (chg > 0 ? 'val-up' : chg < 0 ? 'val-down' : 'val-neutral');
+                pctElem.className = 'mi-kpi-sub ' + (chg > 0 ? 'val-up' : chg < 0 ? 'val-down' : 'val-neutral');
+
+                document.getElementById(`kpi-${{key}}-high`).textContent = highVal.toLocaleString(undefined, {{ minimumFractionDigits: 1, maximumFractionDigits: 2 }});
+                document.getElementById(`kpi-${{key}}-high-date`).textContent = highDate;
+                document.getElementById(`kpi-${{key}}-low`).textContent = lowVal.toLocaleString(undefined, {{ minimumFractionDigits: 1, maximumFractionDigits: 2 }});
+                document.getElementById(`kpi-${{key}}-low-date`).textContent = lowDate;
+
+                // Sync Global Date
+                if (indexName === 'SCFI' || document.getElementById('global-sync-date').textContent === '--') {{
+                    document.getElementById('global-sync-date').textContent = latestDate;
+                }}
+            }}
+
+            // 3. Render Plotly Multiline Chart
+            const layout = {{
+                paper_bgcolor: 'transparent',
+                plot_bgcolor: 'transparent',
+                margin: {{ l: 50, r: 20, t: 20, b: 40 }},
+                autosize: true,
+                showlegend: true,
+                legend: {{
+                    orientation: 'h',
+                    x: 0,
+                    y: 1.15,
+                    font: {{ family: 'JetBrains Mono', size: 10, color: '#8b949e' }}
+                }},
+                xaxis: {{
+                    type: 'date',
+                    gridcolor: '#1b2430',
+                    linecolor: '#243142',
+                    tickfont: {{ family: 'JetBrains Mono', size: 10, color: '#8b949e' }},
+                    showspikes: true,
+                    spikethickness: 1,
+                    spikedash: 'dot',
+                    spikecolor: '#ff9800'
+                }},
+                yaxis: {{
+                    gridcolor: '#1b2430',
+                    linecolor: '#243142',
+                    tickfont: {{ family: 'JetBrains Mono', size: 10, color: '#8b949e' }},
+                    side: 'left',
+                    showspikes: true,
+                    spikethickness: 1,
+                    spikedash: 'dot',
+                    spikecolor: '#ff9800'
+                }},
+                hoverlabel: {{
+                    bgcolor: '#151c26',
+                    bordercolor: '#ff9800',
+                    font: {{ family: 'JetBrains Mono', size: 11, color: '#e6edf3' }}
+                }}
+            }};
+
+            const config = {{
+                responsive: true,
+                displayModeBar: false
+            }};
+
+            Plotly.newPlot(`chart-${{key}}`, traces, layout, config);
+
+            // 4. Render Pivot Table
+            renderMultiTable(indexName, activeRegs, filteredDataByReg, Array.from(allDateSet).sort());
+        }}
+
+        function renderMultiTable(indexName, activeRegs, filteredDataByReg, sortedDates) {{
+            const key = indexName.toLowerCase();
+            const headRow = document.getElementById(`table-head-${{key}}`);
+            const tbody = document.querySelector(`#table-${{key}} tbody`);
+
+            // Dynamically construct Table Headers
+            headRow.innerHTML = '<th>DATE</th>';
+            activeRegs.forEach(reg => {{
+                const th = document.createElement('th');
+                th.textContent = reg;
+                headRow.appendChild(th);
+            }});
+
+            // Construct Quick Map per Region: date -> value
+            const dateValMaps = {{}};
+            activeRegs.forEach(reg => {{
+                dateValMaps[reg] = {{}};
+                if (filteredDataByReg[reg]) {{
+                    const dts = filteredDataByReg[reg].dates;
+                    const vals = filteredDataByReg[reg].values;
+                    for (let i = 0; i < dts.length; i++) {{
+                        dateValMaps[reg][dts[i]] = vals[i];
+                    }}
+                }}
+            }});
+
+            tbody.innerHTML = '';
+            const tableLen = Math.min(sortedDates.length, 50);
+
+            for (let i = sortedDates.length - 1; i >= sortedDates.length - tableLen; i--) {{
+                const d = sortedDates[i];
+                const tr = document.createElement('tr');
+
+                let rowHtml = `<td style="color: var(--text-secondary);">${{d}}</td>`;
+                activeRegs.forEach(reg => {{
+                    const v = dateValMaps[reg][d];
+                    if (v !== undefined) {{
+                        rowHtml += `<td style="font-weight: 600;">${{v.toLocaleString(undefined, {{ minimumFractionDigits: 1, maximumFractionDigits: 2 }})}}</td>`;
+                    }} else {{
+                        rowHtml += `<td style="color: var(--text-muted);">-</td>`;
+                    }}
+                }});
+
+                tr.innerHTML = rowHtml;
+                tbody.appendChild(tr);
+            }}
+        }}
+
+        function renderEmptyPanel(indexName) {{
+            const key = indexName.toLowerCase();
+            document.getElementById(`kpi-${{key}}-latest`).textContent = '--';
+            document.getElementById(`kpi-${{key}}-date`).textContent = '--';
+            document.getElementById(`kpi-${{key}}-chg`).textContent = '--';
+            document.getElementById(`kpi-${{key}}-pct`).textContent = '--';
+            document.getElementById(`chart-${{key}}`).innerHTML = '<div class="mi-empty">NO DATA AVAILABLE IN SELECTED RANGE</div>';
+            document.querySelector(`#table-${{key}} tbody`).innerHTML = '';
+        }}
+
+        function updateTopTickers() {{
+            ['SCFI', 'BDI'].forEach(idx => {{
+                const key = idx.toLowerCase();
+                const idxData = PAYLOAD_DATA.indexes[idx];
+                if (!idxData || !idxData.regions || !idxData.regions.length) return;
+
+                const primaryReg = idxData.regions[0];
+                const series = idxData.series[primaryReg];
+                if (!series || !series.values.length) return;
+
+                const vals = series.values;
+                const latest = vals[vals.length - 1];
+                const prev = vals.length > 1 ? vals[vals.length - 2] : latest;
+                const chg = latest - prev;
+                const pct = prev !== 0 ? (chg / prev) * 100 : 0;
+
+                const valElem = document.getElementById(`ticker-${{key}}-val`);
+                const chgElem = document.getElementById(`ticker-${{key}}-chg`);
+
+                valElem.textContent = latest.toLocaleString(undefined, {{ minimumFractionDigits: 1, maximumFractionDigits: 2 }});
+                const prefix = chg > 0 ? '+' : '';
+                chgElem.textContent = `${{prefix}}${{pct.toFixed(2)}}%`;
+                chgElem.className = 'mi-ticker-chg ' + (chg > 0 ? 'val-up' : chg < 0 ? 'val-down' : 'val-neutral');
+            }});
+        }}
+
+        function exportCSV(indexName) {{
+            const idxData = PAYLOAD_DATA.indexes[indexName];
+            const activeRegs = selectedRegions[indexName];
+            if (!idxData || !idxData.series || !activeRegs || !activeRegs.length) {{
+                alert('No data available to export.');
+                return;
+            }}
+
+            let csvContent = 'data:text/csv;charset=utf-8,Date,Index,Region,Value\\n';
+
+            activeRegs.forEach(reg => {{
+                const series = idxData.series[reg];
+                if (series) {{
+                    for (let i = 0; i < series.dates.length; i++) {{
+                        csvContent += `${{series.dates[i]}},${{indexName}},${{reg}},${{series.values[i]}}\\n`;
+                    }}
+                }}
+            }});
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement('a');
+            link.setAttribute('href', encodedUri);
+            link.setAttribute('download', `${{indexName}}_multi_series.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }}
+    </script>
 </body>
 </html>
 """
 
-    atomic_write_text(HTML_PATH, html_content)
-    log(f"[HTML] 저장 완료: {HTML_PATH}")
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
 
+    print(f"[SUCCESS] Dashboard exported successfully: {html_path}")
 
-    
 # =============================================================================
-# 11. Main Execution
+# 5. Main Execution Flow
 # =============================================================================
 
 def main():
-    """
-    Run complete workflow:
-    1. SCFI / BDI crawl
-    2. SQLite upsert
-    3. JSON generation
-    4. Static HTML generation
-    """
-    log("=" * 72)
-    log("[CRON] Shipping Index 크롤링 및 정적 대시보드 갱신 시작")
-    log(f"[INFO] Script directory: {SCRIPT_DIR}")
-    log(f"[INFO] DB path: {DB_PATH}")
-    log("=" * 72)
+    print(
+        f"================================================================================"
+    )
+    print(f" Shipping Index Automated Pipeline (SQLite & Static Exporter)")
+    print(f" Execution Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S KST')}")
+    print(
+        f"================================================================================"
+    )
 
-    try:
-        get_db_connection().close()
+    init_db(DB_PATH)
 
-        cleanup_invalid_regions()
+    ksg_id = os.environ.get("KSG_ID", "").strip()
+    ksg_pw = os.environ.get("KSG_PW", "").strip()
 
-        # 1. KSG에서 SCFI / BDI 수집 및 DB 저장
-        crawl_all_indexes()
+    if ksg_id and ksg_pw:
+        print("[INFO] Credentials detected. Initializing KSG Crawler...")
+        crawler = KSGCrawler(user_id=ksg_id, user_pw=ksg_pw, headless=True)
 
-        # 2. SQLite index_raw → shipping_index_data.json
-        build_json()
+        login_success = crawler.login()
+        if login_success:
+            for idx_name in SUPPORTED_INDEXES:
+                start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                latest_dt = get_latest_date_in_db(DB_PATH, idx_name)
+                print(
+                    f"[INFO] Index [{idx_name}] - Current latest date in DB: {latest_dt}"
+                )
 
-        # 3. GitHub Pages용 index.html 생성
-        generate_html_file()
+                if idx_name == "SCFI":
+                    scraped_records = crawler.scrape_scfi_recent(
+                        stop_date=latest_dt
+                    )
+                elif idx_name == "BDI":
+                    scraped_records = crawler.scrape_bdi_recent(
+                        stop_date=latest_dt
+                    )
+                else:
+                    scraped_records = []
 
-        log("=" * 72)
-        log("[CRON] Shipping Index 크롤링 및 정적 대시보드 갱신 완료")
-        log("=" * 72)
+                rows_added = upsert_index_records(DB_PATH, scraped_records)
+                finish_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    except Exception as error:
-        log("=" * 72)
-        log(f"[CRITICAL] Shipping Index 처리 실패: {error}")
-        log("=" * 72)
-        raise
+                conn = sqlite3.connect(DB_PATH)
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT COUNT(*) FROM index_raw WHERE index_name = ?",
+                    (idx_name,),
+                )
+                total_cnt = cur.fetchone()[0]
+                conn.close()
+
+                log_audit(
+                    DB_PATH,
+                    started_at=start_time,
+                    finished_at=finish_time,
+                    status="SUCCESS" if rows_added >= 0 else "FAILED",
+                    message=f"Added {rows_added} new records",
+                    rows_added=rows_added,
+                    total_rows=total_cnt,
+                    index_name=idx_name,
+                )
+        else:
+            print(
+                "[WARN] Login failed. Skipping incremental scraping, using existing DB..."
+            )
+
+        crawler.close()
+    else:
+        print(
+            "[WARN] KSG_ID/KSG_PW not provided. Skipping scraping, refreshing static assets from DB..."
+        )
+
+    generate_static_files(DB_PATH, JSON_PATH, HTML_PATH)
 
 if __name__ == "__main__":
     main()
