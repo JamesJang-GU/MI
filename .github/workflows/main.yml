@@ -1,18 +1,19 @@
 name: Update MI Dashboards
 
 on:
-  # 매주 월요일~금요일 한국시간 09:30 / 15:30 실행 (UTC 00:30, 06:30)
+  # 평일 KST 09:30 / 15:30
+  # UTC 00:30 / 06:30
   schedule:
     - cron: "30 0 * * 1-5"
     - cron: "30 6 * * 1-5"
 
-  # GitHub Actions 화면에서 수동 실행 가능
+  # Actions 화면에서 수동 실행
   workflow_dispatch:
 
 permissions:
   contents: write
 
-# 동시 실행 방지
+# 동일 워크플로우의 동시 실행 방지
 concurrency:
   group: mi-dashboard-update
   cancel-in-progress: false
@@ -47,7 +48,8 @@ jobs:
           cache-dependency-path: requirements.txt
 
       # =====================================================
-      # 3. Chrome 및 호환 ChromeDriver 설치 & 환경변수 글로벌 등록
+      # 3. Chrome / ChromeDriver 설치
+      #    Selenium 기반 모듈용
       # =====================================================
       - name: Set up Google Chrome and matching ChromeDriver
         id: setup-chrome
@@ -56,7 +58,7 @@ jobs:
           chrome-version: stable
           install-chromedriver: true
 
-      - name: Configure Chrome and ChromeDriver in Global Environment
+      - name: Configure Chrome and ChromeDriver environment
         shell: bash
         run: |
           set -euo pipefail
@@ -67,7 +69,6 @@ jobs:
           echo "Chrome path: ${CHROME_PATH}"
           echo "ChromeDriver path: ${CHROMEDRIVER_PATH}"
 
-          # PATH에 바이너리 디렉토리 추가
           if [ -n "${CHROME_PATH}" ] && [ -f "${CHROME_PATH}" ]; then
             dirname "${CHROME_PATH}" >> "$GITHUB_PATH"
           fi
@@ -76,27 +77,22 @@ jobs:
             dirname "${CHROMEDRIVER_PATH}" >> "$GITHUB_PATH"
           fi
 
-          # 이후 모든 스텝에서 사용할 수 있도록 GITHUB_ENV에 등록
           echo "CHROME_BINARY=${CHROME_PATH}" >> "$GITHUB_ENV"
           echo "GOOGLE_CHROME_BIN=${CHROME_PATH}" >> "$GITHUB_ENV"
           echo "CHROMEDRIVER_PATH=${CHROMEDRIVER_PATH}" >> "$GITHUB_ENV"
 
-      - name: Verify Chrome and ChromeDriver environment
+      - name: Verify Chrome and ChromeDriver
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "===== Google Chrome version ====="
+          echo "===== Google Chrome ====="
           "${CHROME_BINARY}" --version || true
           google-chrome --version || true
 
-          echo "===== ChromeDriver version ====="
+          echo "===== ChromeDriver ====="
           "${CHROMEDRIVER_PATH}" --version || true
           chromedriver --version || true
-
-          echo "===== Global Environment Variables ====="
-          echo "CHROME_BINARY: ${CHROME_BINARY}"
-          echo "CHROMEDRIVER_PATH: ${CHROMEDRIVER_PATH}"
 
       # =====================================================
       # 4. Python 라이브러리 설치
@@ -109,7 +105,8 @@ jobs:
           python -m pip install -r requirements.txt
 
       # =====================================================
-      # 5. Playwright Chromium 및 Linux 시스템 의존성 설치
+      # 5. Playwright Chromium 설치
+      #    Linerlytica 모듈용
       # =====================================================
       - name: Install Playwright Chromium and dependencies
         shell: bash
@@ -118,7 +115,7 @@ jobs:
           python -m playwright install --with-deps chromium
 
       # =====================================================
-      # 6. Shipping Index 크롤링 및 정적 파일 생성
+      # 6. Shipping Index
       # =====================================================
       - name: Crawl Shipping Index and generate static dashboard
         env:
@@ -129,9 +126,6 @@ jobs:
           set -euo pipefail
           python "Shipping Index/ShippingIndex_SCFI&BDI.py"
 
-      # =====================================================
-      # 7. Shipping Index 생성 파일 확인
-      # =====================================================
       - name: Verify Shipping Index generated files
         shell: bash
         run: |
@@ -143,30 +137,28 @@ jobs:
           test -f "Shipping Index/index_history.db"
           test -f "Shipping Index/shipping_index_data.json"
           test -f "Shipping Index/index.html"
+          test -s "Shipping Index/index.html"
 
           echo "Shipping Index verification passed."
 
       # =====================================================
-      # 8. Alphaliner 크롤링 및 정적 파일 생성
+      # 7. Alphaliner
       # =====================================================
       - name: Crawl Alphaliner and generate static dashboard
         shell: bash
         run: |
           set -euo pipefail
 
-          # 대소문자 차이 방지를 위해 존재하는 스크립트 실행
-          if [ -f "Alphaliner/Alphaliner.py" ]; then
-            python "Alphaliner/Alphaliner.py" --cron
-          elif [ -f "Alphaliner/alphaliner.py" ]; then
+          # 실제 표준 파일명: Alphaliner/alphaliner.py
+          if [ -f "Alphaliner/alphaliner.py" ]; then
             python "Alphaliner/alphaliner.py" --cron
+          elif [ -f "Alphaliner/Alphaliner.py" ]; then
+            python "Alphaliner/Alphaliner.py" --cron
           else
             echo "ERROR: Alphaliner Python script was not found."
             exit 1
           fi
 
-      # =====================================================
-      # 9. Alphaliner 생성 결과 확인
-      # =====================================================
       - name: Verify Alphaliner generated files
         shell: bash
         run: |
@@ -183,14 +175,14 @@ jobs:
           if grep -qF \
             "Alphaliner Dashboard Template (alphaliner.html) Missing" \
             "Alphaliner/index.html"; then
-            echo "ERROR: Old Template Missing content still exists in Alphaliner/index.html"
+            echo "ERROR: Old Template Missing content exists in Alphaliner/index.html"
             exit 1
           fi
 
           echo "Alphaliner verification passed."
 
       # =====================================================
-      # 10. Forwarder 크롤링 및 정적 파일 생성
+      # 8. Forwarder
       # =====================================================
       - name: Crawl Forwarder and generate static dashboard
         shell: bash
@@ -207,61 +199,38 @@ jobs:
               "Forwarder" | head -n 1
           )
 
-          if [ -z "$FORWARDER_SCRIPT" ]; then
+          if [ -z "${FORWARDER_SCRIPT}" ]; then
             echo "ERROR: Forwarder Python script was not found."
             exit 1
           fi
 
-          echo "Forwarder script found: $FORWARDER_SCRIPT"
-          python "$FORWARDER_SCRIPT"
+          echo "Forwarder script found: ${FORWARDER_SCRIPT}"
+          python "${FORWARDER_SCRIPT}"
 
-          echo "===== Forwarder output files ====="
-          ls -alh "Forwarder"
-
-      # =====================================================
-      # 11. Forwarder 생성 결과 확인
-      # =====================================================
       - name: Verify Forwarder generated files
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "===== Verify Forwarder files ====="
+          echo "===== Forwarder files ====="
           ls -alh "Forwarder"
 
-          test -f "Forwarder/freight_forwarders_data.db" \
-            || { echo "ERROR: freight_forwarders_data.db is missing."; exit 1; }
+          test -f "Forwarder/freight_forwarders_data.db"
+          test -f "Forwarder/freight_forwarders_history.csv"
+          test -f "Forwarder/index.html"
+          test -s "Forwarder/index.html"
 
-          test -f "Forwarder/freight_forwarders_history.csv" \
-            || { echo "ERROR: freight_forwarders_history.csv is missing."; exit 1; }
+          grep -qF "FORWARDER MONITOR" "Forwarder/index.html"
+          grep -qF "MI&lt;GO&gt;" "Forwarder/index.html"
 
-          test -f "Forwarder/index.html" \
-            || { echo "ERROR: index.html is missing."; exit 1; }
+          grep -qF 'id="currentDateSelect"' "Forwarder/index.html"
+          grep -qF 'id="compareDateSelect"' "Forwarder/index.html"
+          grep -qF 'id="rankingTableBody"' "Forwarder/index.html"
 
-          test -s "Forwarder/index.html" \
-            || { echo "ERROR: index.html is empty."; exit 1; }
-
-          echo "===== Dashboard identity verification ====="
-          grep -qF "FORWARDER MONITOR" "Forwarder/index.html" \
-            || { echo "ERROR: FORWARDER MONITOR identifier is missing."; exit 1; }
-
-          grep -qF "MI&lt;GO&gt;" "Forwarder/index.html" \
-            || { echo "ERROR: MI&lt;GO&gt; terminal label is missing."; exit 1; }
-
-          echo "===== Historical comparison UI verification ====="
-          grep -qF 'id="currentDateSelect"' "Forwarder/index.html" \
-            || { echo "ERROR: currentDateSelect control is missing."; exit 1; }
-
-          grep -qF 'id="compareDateSelect"' "Forwarder/index.html" \
-            || { echo "ERROR: compareDateSelect control is missing."; exit 1; }
-
-          grep -qF 'id="rankingTableBody"' "Forwarder/index.html" \
-            || { echo "ERROR: rankingTableBody is missing."; exit 1; }
-
-          echo "Forwarder dashboard verification passed."
+          echo "Forwarder verification passed."
 
       # =====================================================
-      # 12. Bunker Price / Crude Oil 크롤링 및 정적 파일 생성
+      # 9. Bunker Price / Crude Oil
       # =====================================================
       - name: Crawl Bunker Price and generate static dashboard
         shell: bash
@@ -269,9 +238,6 @@ jobs:
           set -euo pipefail
           python "BunkerPrice/bunker_price.py" --build-static --refresh
 
-      # =====================================================
-      # 13. Bunker Price / Crude Oil 생성 결과 확인
-      # =====================================================
       - name: Verify Bunker Price generated files
         shell: bash
         run: |
@@ -283,35 +249,23 @@ jobs:
           echo "===== OilPrice files ====="
           ls -alh "BunkerPrice/OilPrice"
 
-          test -f "BunkerPrice/bunker_price_data.db" \
-            || { echo "ERROR: bunker_price_data.db is missing."; exit 1; }
+          test -f "BunkerPrice/bunker_price_data.db"
+          test -f "BunkerPrice/shipandbunker_vlsfo.csv"
+          test -f "BunkerPrice/index.html"
+          test -s "BunkerPrice/index.html"
 
-          test -f "BunkerPrice/shipandbunker_vlsfo.csv" \
-            || { echo "ERROR: shipandbunker_vlsfo.csv is missing."; exit 1; }
-
-          test -f "BunkerPrice/index.html" \
-            || { echo "ERROR: BunkerPrice/index.html is missing."; exit 1; }
-
-          test -s "BunkerPrice/index.html" \
-            || { echo "ERROR: BunkerPrice/index.html is empty."; exit 1; }
-
-          test -f "BunkerPrice/OilPrice/index.html" \
-            || { echo "ERROR: OilPrice/index.html is missing."; exit 1; }
-
-          test -s "BunkerPrice/OilPrice/index.html" \
-            || { echo "ERROR: OilPrice/index.html is empty."; exit 1; }
-
-          test -f "BunkerPrice/OilPrice/opinet_oil_prices.csv" \
-            || { echo "ERROR: opinet_oil_prices.csv is missing."; exit 1; }
+          test -f "BunkerPrice/OilPrice/index.html"
+          test -s "BunkerPrice/OilPrice/index.html"
+          test -f "BunkerPrice/OilPrice/opinet_oil_prices.csv"
 
           if [ ! -f "BunkerPrice/bunker_forecast.csv" ]; then
             echo "WARNING: bunker_forecast.csv was not generated."
           fi
 
-          echo "Bunker Price / Crude Oil dashboard verification passed."
+          echo "Bunker Price / Crude Oil verification passed."
 
       # =====================================================
-      # 14. Linerlytica 크롤링 및 정적 파일 생성
+      # 10. Linerlytica
       # =====================================================
       - name: Crawl Linerlytica and generate static dashboard
         shell: bash
@@ -319,9 +273,6 @@ jobs:
           set -euo pipefail
           python "Linerlytica/Linerlytica.py"
 
-      # =====================================================
-      # 15. Linerlytica 생성 결과 확인
-      # =====================================================
       - name: Verify Linerlytica generated files
         shell: bash
         run: |
@@ -337,43 +288,92 @@ jobs:
           echo "Linerlytica verification passed."
 
       # =====================================================
-      # 16. 메인 포털 대시보드(루트 index.html) 생성
+      # 11. Macro Economies / GDP / Inflation / GSCPI
+      #    폴더명 변경: GDP&Inflation -> MacroEconomies
+      # =====================================================
+      - name: Update Macro Economies and GSCPI dashboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python "MacroEconomies/GDP_Inflation_GSCPI_DB.py" --cron
+
+      - name: Verify Macro Economies generated files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "===== MacroEconomies files ====="
+          ls -alh "MacroEconomies"
+
+          test -f "MacroEconomies/gdp_inflation_gscpi_cache.db"
+          test -f "MacroEconomies/macro_data.json"
+          test -f "MacroEconomies/gscpi_data.json"
+          test -f "MacroEconomies/dashboard_meta.json"
+          test -f "MacroEconomies/index.html"
+
+          test -s "MacroEconomies/macro_data.json"
+          test -s "MacroEconomies/gscpi_data.json"
+          test -s "MacroEconomies/index.html"
+
+          echo "Macro Economies verification passed."
+
+      # =====================================================
+      # 12. 루트 MI 포털 생성
+      #    개별 대시보드 생성이 전부 끝난 뒤 실행해야 함
       # =====================================================
       - name: Generate Main Portal Dashboard
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "===== Generating Portal Dashboard (index.html) ====="
+          echo "===== Generating Root MI Portal ====="
           python dashboard_generator.py
 
           test -f "index.html"
           test -s "index.html"
           test -f "dashboard_summary.json"
 
-          echo "Main Portal Dashboard verification passed."
+          echo "Root MI Portal verification passed."
 
       # =====================================================
-      # 17. 변경된 DB / CSV / JSON / HTML Commit & Push
+      # 13. 변경 파일 Commit / Push
       # =====================================================
       - name: Commit and push dashboard data
+        shell: bash
         run: |
           set -euo pipefail
+
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 1. 변경된 파일이 있는지 확인
-          if [ -n "$(git status --porcelain)" ]; then
-            git add .
-            git commit -m "Auto: update MI dashboards [skip ci]" || exit 0
+          # 신규·수정·삭제·이동 파일을 모두 포함
+          git add -A
 
-            # 2. 푸시 전 원격 최신 커밋을 rebase로 통합 (최대 3회 재시도)
-            for i in {1..3}; do
-              git pull --rebase origin main && git push origin main && break || {
-                echo "[WARN] Push failed. Retrying ($i/3)..."
-                sleep 3
-              }
-            done
-          else
+          if git diff --staged --quiet; then
             echo "No changes to commit."
+            exit 0
           fi
+
+          git commit -m "Auto: update MI dashboards [skip ci]"
+
+          # 수동 커밋 또는 다른 Actions 실행과의 경합에 대비
+          for i in 1 2 3; do
+            echo "===== Push attempt ${i}/3 ====="
+
+            if git pull --rebase origin main && git push origin HEAD:main; then
+              echo "Dashboard data successfully pushed."
+              exit 0
+            fi
+
+            echo "[WARN] Push attempt ${i} failed."
+
+            # rebase 충돌 상태일 경우 원래 커밋 상태로 복구
+            git rebase --abort || true
+
+            if [ "${i}" -lt 3 ]; then
+              sleep 5
+            fi
+          done
+
+          echo "ERROR: Failed to push changes after 3 attempts."
+          exit 1
