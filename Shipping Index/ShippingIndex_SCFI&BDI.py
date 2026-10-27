@@ -196,7 +196,7 @@ class KSGCrawler:
         self.user_pw = user_pw
         self.driver = self._init_driver(headless)
 
-    def _init_driver(self, headless: bool):
+    def _init_driver(self, headless: bool) -> webdriver.Chrome:
         options = webdriver.ChromeOptions()
         if headless:
             options.add_argument("--headless=new")
@@ -205,11 +205,25 @@ class KSGCrawler:
         options.add_argument("--disable-gpu")
         options.add_argument("--window-size=1920,1080")
         options.add_argument(
-            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
 
-        service = Service()
-        return webdriver.Chrome(service=service, options=options)
+        # -------------------------------------------------------------
+        # GitHub Actions 등 환경변수에 Chrome 바이너리 경로가 지정된 경우 적용
+        # -------------------------------------------------------------
+        chrome_bin = os.environ.get("CHROME_BINARY") or os.environ.get("GOOGLE_CHROME_BIN")
+        if chrome_bin and os.path.exists(chrome_bin):
+            options.binary_location = chrome_bin
+
+        # 환경변수에 chromedriver 경로가 지정된 경우 적용
+        chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
+        if chromedriver_path and os.path.exists(chromedriver_path):
+            service = Service(executable_path=chromedriver_path)
+            return webdriver.Chrome(service=service, options=options)
+
+        return webdriver.Chrome(options=options)
+
 
     def login(self) -> bool:
         try:
