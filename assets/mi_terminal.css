@@ -1,41 +1,81 @@
 /* =========================================================
    MI TERMINAL DESIGN SYSTEM
    Standardized Bloomberg / MI Terminal Theme
+   Shipping Index Visual Language Aligned
    ========================================================= */
 
 /* ---------------------------------------------------------
-   1. Design Tokens (Theme Variables)
+   1. Design Tokens
    --------------------------------------------------------- */
 :root {
-    --mi-bg: #030b13;
+    /* Core Background */
+    --mi-bg: #02060b;
     --mi-bg-deep: #02070d;
+    --mi-bg-2: #050b12;
 
-    --mi-header: #06111d;
-    --mi-header-2: #050d16;
+    /* Header */
+    --mi-header: #0d1f2f;
+    --mi-header-2: #03090f;
+    --mi-header-gradient:
+        linear-gradient(
+            180deg,
+            rgba(13, 31, 47, 0.98),
+            rgba(3, 9, 15, 0.98)
+        );
 
-    --mi-panel: #091521;
-    --mi-panel-hover: #0c1d2b;
+    /* Panel */
+    --mi-panel: #07111c;
+    --mi-panel-hover: #0a1724;
     --mi-panel-strong: #0d1d2b;
+    --mi-panel-gradient:
+        linear-gradient(
+            145deg,
+            rgba(13, 31, 47, 0.78),
+            rgba(3, 10, 17, 0.98)
+        );
 
-    --mi-border: #16334b;
-    --mi-border-soft: #0d2639;
-    --mi-grid: rgba(22, 51, 75, 0.42);
+    /* Borders / Grid */
+    --mi-border: #1c3448;
+    --mi-border-soft: #132536;
+    --mi-border-strong: #2b506d;
+    --mi-grid: rgba(40, 76, 104, 0.42);
 
-    --mi-amber: #f5a623;
-    --mi-cyan: #27c7e8;
-    --mi-blue: #4fa3ff;
-    --mi-green: #31d0a0;
-    --mi-red: #ff5b68;
+    /* Text */
+    --mi-white: #f1f6fa;
+    --mi-text: #c4d2dc;
+    --mi-muted: #8298aa;
+    --mi-dim: #536c80;
 
-    --mi-white: #f2f6fa;
-    --mi-text: #9eb3c7;
-    --mi-muted: #5f7892;
+    /* Semantic Accent */
+    --mi-amber: #f6a623;
+    --mi-amber-soft: #ffbe5c;
+    --mi-blue: #42a8f5;
+    --mi-cyan: #39c7e2;
+    --mi-green: #35ca82;
+    --mi-red: #ff6565;
+    --mi-purple: #b791ff;
 
-    --mi-font: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    /* Typography */
+    --mi-font:
+        "IBM Plex Mono",
+        "Roboto Mono",
+        "JetBrains Mono",
+        "SFMono-Regular",
+        Consolas,
+        "Noto Sans KR",
+        monospace;
 
-    --mi-header-height: 40px;
-    --mi-status-height: 30px;
-    --mi-page-max-width: 1680px;
+    /* Layout */
+    --mi-header-height: 48px;
+    --mi-status-height: 35px;
+    --mi-page-max-width: 1920px;
+
+    /* Shadow */
+    --mi-shadow:
+        0 8px 28px rgba(0, 0, 0, 0.48),
+        0 0 18px rgba(47, 133, 191, 0.08);
+
+    --mi-transition: 0.15s ease;
 }
 
 /* ---------------------------------------------------------
@@ -47,26 +87,46 @@
     box-sizing: border-box;
 }
 
-html {
+html,
+body {
     min-height: 100%;
+}
+
+html {
     background: var(--mi-bg);
 }
 
 body {
-    min-height: 100%;
+    min-width: 320px;
     margin: 0;
-    background:
-        linear-gradient(180deg, rgba(7, 21, 33, 0.3) 0%, transparent 320px),
-        var(--mi-bg);
     color: var(--mi-text);
+    background:
+        radial-gradient(
+            circle at 50% -20%,
+            rgba(37, 106, 156, 0.15),
+            transparent 43%
+        ),
+        linear-gradient(
+            180deg,
+            rgba(246, 166, 35, 0.025),
+            transparent 260px
+        ),
+        var(--mi-bg);
     font-family: var(--mi-font);
     font-size: 12px;
     line-height: 1.45;
     -webkit-font-smoothing: antialiased;
 }
 
-button, input, select, textarea {
+button,
+input,
+select,
+textarea {
     font: inherit;
+}
+
+button {
+    border-radius: 0;
 }
 
 a {
@@ -74,139 +134,215 @@ a {
     text-decoration: none;
 }
 
+::selection {
+    color: #02060b;
+    background: var(--mi-amber);
+}
+
 /* ---------------------------------------------------------
-   3. Bloomberg-style Terminal Top Header
+   3. Bloomberg / MI Terminal Standard Header
    --------------------------------------------------------- */
 .mi-terminal-header {
     position: sticky;
     top: 0;
     z-index: 1000;
     width: 100%;
-    border-top: 1px solid var(--mi-border);
-    border-bottom: 1px solid var(--mi-border);
-    background: var(--mi-header);
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+    border-bottom: 1px solid var(--mi-border-strong);
+    background: var(--mi-header-gradient);
+    box-shadow: var(--mi-shadow);
 }
 
 .mi-ticker-bar {
     display: flex;
-    align-items: stretch;
+    align-items: center;
     min-height: var(--mi-header-height);
     overflow-x: auto;
     overflow-y: hidden;
     white-space: nowrap;
 }
 
+/* Left: Function Key + Module Identity */
 .mi-module-name {
     display: flex;
     flex: 0 0 auto;
     align-items: center;
-    padding: 0 18px 0 12px;
-    border-right: 1px solid var(--mi-border);
+    gap: 10px;
+    min-height: var(--mi-header-height);
+    padding: 0 16px 0 14px;
     color: var(--mi-white);
     font-size: 12px;
     font-weight: 900;
-    letter-spacing: 0.6px;
+    letter-spacing: 0.09em;
 }
 
 .mi-function-key {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    height: 18px;
-    margin-right: 10px;
-    padding: 0 6px;
+    min-width: 46px;
+    height: 22px;
+    padding: 0 7px;
+    color: #02060b;
     background: var(--mi-amber);
-    color: #06111d;
     font-size: 10px;
     font-weight: 900;
-    letter-spacing: -0.3px;
+    letter-spacing: 0.04em;
 }
 
+/* Optional divider between module title and ticker */
+.mi-module-name::after {
+    width: 1px;
+    height: 18px;
+    margin-left: 3px;
+    background: var(--mi-border-strong);
+    content: "";
+}
+
+/* Middle: Market Ticker / Snapshot Data */
 .mi-ticker {
     display: flex;
     flex: 0 0 auto;
     flex-direction: column;
     justify-content: center;
-    min-width: 150px;
-    padding: 0 16px;
-    border-right: 1px solid var(--mi-border);
+    min-width: 145px;
+    min-height: var(--mi-header-height);
+    padding: 0 15px;
+    border-right: 1px solid var(--mi-border-soft);
+}
+
+.mi-ticker:first-of-type {
+    border-left: 1px solid var(--mi-border-soft);
 }
 
 .mi-ticker-label {
     color: var(--mi-muted);
-    font-size: 9px;
-    font-weight: 800;
-    letter-spacing: 0.8px;
+    font-size: 8px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
     line-height: 1.1;
+    text-transform: uppercase;
 }
 
 .mi-ticker-data {
     display: flex;
     align-items: baseline;
     gap: 8px;
-    margin-top: 3px;
+    margin-top: 4px;
 }
 
 .mi-ticker-value {
     color: var(--mi-white);
     font-size: 13px;
     font-weight: 900;
+    font-variant-numeric: tabular-nums;
 }
 
 .mi-ticker-change {
     font-size: 9px;
     font-weight: 900;
+    font-variant-numeric: tabular-nums;
 }
 
-.mi-up { color: var(--mi-green) !important; }
-.mi-down { color: var(--mi-red) !important; }
-.mi-neutral { color: var(--mi-cyan) !important; }
+.mi-up,
+.mi-positive {
+    color: var(--mi-green) !important;
+}
 
+.mi-down,
+.mi-negative {
+    color: var(--mi-red) !important;
+}
+
+.mi-neutral {
+    color: var(--mi-text) !important;
+}
+
+.mi-info {
+    color: var(--mi-cyan) !important;
+}
+
+/* Right: KST Clock / Portal Navigation */
 .mi-header-action {
     display: flex;
+    flex: 0 0 auto;
     align-items: center;
+    gap: 8px;
     margin-left: auto;
     padding: 0 14px;
 }
 
-.mi-header-action a {
+.mi-header-action a,
+.mi-header-action button {
     display: inline-flex;
     align-items: center;
-    padding: 5px 12px;
-    border: 1px solid #1e5575;
+    justify-content: center;
+    min-height: 27px;
+    padding: 5px 10px;
+    color: var(--mi-blue);
+    border: 1px solid #28506d;
     background: #061624;
-    color: var(--mi-cyan);
-    font-size: 10px;
+    cursor: pointer;
+    font-size: 9px;
     font-weight: 900;
-    letter-spacing: 0.6px;
-    transition: all 0.15s ease;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    transition: var(--mi-transition);
 }
 
-.mi-header-action a:hover {
+.mi-header-action a:hover,
+.mi-header-action button:hover {
+    color: var(--mi-white);
     border-color: var(--mi-cyan);
     background: #0b2639;
-    color: var(--mi-white);
 }
 
+/* Header lower status strip */
 .mi-status-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
+    gap: 15px;
     min-height: var(--mi-status-height);
     padding: 0 12px;
     border-top: 1px solid var(--mi-border-soft);
-    background: var(--mi-header-2);
-    color: var(--mi-text);
+    background:
+        linear-gradient(
+            90deg,
+            rgba(246, 166, 35, 0.10),
+            rgba(4, 12, 20, 0.96) 25%,
+            rgba(4, 12, 20, 0.96)
+        );
+    color: var(--mi-muted);
     font-size: 9px;
     font-weight: 800;
-    letter-spacing: 0.55px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
 }
 
 .mi-system-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     padding-left: 10px;
-    border-left: 2px solid var(--mi-green);
+    border-left: 3px solid var(--mi-green);
+}
+
+.mi-system-status::before {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--mi-green);
+    box-shadow: 0 0 9px rgba(53, 202, 130, 0.72);
+    content: "";
+}
+
+.mi-system-status.is-error {
+    border-left-color: var(--mi-red);
+}
+
+.mi-system-status.is-error::before {
+    background: var(--mi-red);
+    box-shadow: 0 0 9px rgba(255, 101, 101, 0.72);
 }
 
 .mi-status-emphasis,
@@ -219,35 +355,100 @@ a {
 }
 
 /* ---------------------------------------------------------
-   4. Layout & UI Components
+   4. Layout & Panels
    --------------------------------------------------------- */
 .mi-page {
-    width: min(var(--mi-page-max-width), calc(100% - 32px));
+    width: min(var(--mi-page-max-width), calc(100% - 16px));
+    max-width: var(--mi-page-max-width);
     margin: 0 auto;
-    padding: 18px 0 36px;
+    padding: 7px 0 24px;
 }
 
 .mi-panel {
+    position: relative;
+    overflow: hidden;
     border: 1px solid var(--mi-border);
-    background: var(--mi-panel);
-    transition: background 0.15s ease;
+    background: var(--mi-panel-gradient);
+    box-shadow: var(--mi-shadow);
+    transition:
+        border-color var(--mi-transition),
+        background var(--mi-transition);
 }
 
 .mi-panel:hover {
-    background: var(--mi-panel-hover);
+    border-color: var(--mi-border-strong);
+    background:
+        linear-gradient(
+            145deg,
+            rgba(15, 37, 56, 0.88),
+            rgba(3, 10, 17, 0.98)
+        );
+}
+
+/* Shipping Index 기준 상단 amber accent */
+.mi-panel.mi-panel-accent::before,
+.mi-panel[data-accent="amber"]::before {
+    display: block;
+    width: 100%;
+    height: 2px;
+    background:
+        linear-gradient(
+            90deg,
+            var(--mi-amber),
+            rgba(246, 166, 35, 0.16) 45%,
+            transparent 82%
+        );
+    content: "";
+}
+
+.mi-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 31px;
+    padding: 0 10px;
+    border-bottom: 1px solid var(--mi-border);
+    background:
+        linear-gradient(
+            180deg,
+            rgba(14, 34, 51, 0.90),
+            rgba(6, 16, 25, 0.92)
+        );
+}
+
+.mi-panel-title {
+    color: var(--mi-amber);
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+
+.mi-panel-meta {
+    color: var(--mi-muted);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.mi-panel-body {
+    padding: 10px;
 }
 
 .mi-section-title {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 9px;
     margin: 20px 0 10px;
-    padding-bottom: 8px;
+    padding: 0 0 8px;
     border-bottom: 1px solid var(--mi-border);
     color: var(--mi-white);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 900;
-    letter-spacing: 0.8px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 .mi-section-title::before {
@@ -260,45 +461,223 @@ a {
 
 .mi-data-label {
     color: var(--mi-muted);
-    font-size: 10px;
-    font-weight: 800;
-    letter-spacing: 0.7px;
+    font-size: 8px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 .mi-data-value {
     color: var(--mi-white);
     font-weight: 900;
+    font-variant-numeric: tabular-nums;
 }
 
 /* ---------------------------------------------------------
-   5. Terminal Tables
+   5. KPI Cards
    --------------------------------------------------------- */
+.mi-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+    gap: 6px;
+}
+
+.mi-kpi {
+    min-height: 102px;
+    padding: 10px;
+    overflow: hidden;
+    border: 1px solid var(--mi-border);
+    border-top: 2px solid var(--mi-blue);
+    background: var(--mi-panel-gradient);
+    box-shadow: var(--mi-shadow);
+}
+
+.mi-kpi:nth-child(2) {
+    border-top-color: var(--mi-green);
+}
+
+.mi-kpi:nth-child(3) {
+    border-top-color: var(--mi-amber);
+}
+
+.mi-kpi:nth-child(4) {
+    border-top-color: var(--mi-purple);
+}
+
+.mi-kpi:nth-child(5) {
+    border-top-color: var(--mi-cyan);
+}
+
+.mi-kpi-label {
+    display: block;
+    min-height: 25px;
+    color: var(--mi-muted);
+    font-size: 8px;
+    font-weight: 900;
+    letter-spacing: 0.07em;
+    line-height: 1.45;
+    text-transform: uppercase;
+}
+
+.mi-kpi-value {
+    display: block;
+    margin-top: 10px;
+    overflow: hidden;
+    color: var(--mi-white);
+    font-size: clamp(16px, 1.35vw, 22px);
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.06em;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mi-kpi-sub {
+    display: block;
+    min-height: 13px;
+    margin-top: 7px;
+    color: var(--mi-muted);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    text-align: right;
+    text-transform: uppercase;
+}
+
+/* ---------------------------------------------------------
+   6. Buttons, Inputs & Filter Controls
+   --------------------------------------------------------- */
+.mi-button,
+.mi-terminal-btn {
+    min-height: 29px;
+    padding: 6px 9px;
+    color: var(--mi-muted);
+    border: 1px solid var(--mi-border);
+    background: #07101a;
+    cursor: pointer;
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    transition: var(--mi-transition);
+}
+
+.mi-button:hover,
+.mi-terminal-btn:hover {
+    color: var(--mi-amber-soft);
+    border-color: var(--mi-amber);
+    background: rgba(246, 166, 35, 0.07);
+}
+
+.mi-button.active,
+.mi-button.is-active,
+.mi-terminal-btn.active,
+.mi-terminal-btn.is-active {
+    color: #071018;
+    border-color: var(--mi-amber);
+    background: var(--mi-amber);
+    box-shadow: 0 0 12px rgba(246, 166, 35, 0.24);
+}
+
+.mi-button.primary,
+.mi-terminal-btn.primary {
+    color: #02060b;
+    border-color: var(--mi-amber);
+    background: var(--mi-amber);
+}
+
+.mi-button.primary:hover,
+.mi-terminal-btn.primary:hover {
+    color: #02060b;
+    background: var(--mi-amber-soft);
+}
+
+.mi-button.download,
+.mi-terminal-btn.download {
+    color: var(--mi-blue);
+    border-color: #28506d;
+}
+
+.mi-input,
+.mi-select,
+.mi-textarea {
+    width: 100%;
+    padding: 8px 9px;
+    color: var(--mi-white);
+    outline: 0;
+    border: 1px solid var(--mi-border);
+    background: #030a11;
+    font-size: 10px;
+    transition: var(--mi-transition);
+}
+
+.mi-input::placeholder,
+.mi-textarea::placeholder {
+    color: var(--mi-dim);
+}
+
+.mi-input:focus,
+.mi-select:focus,
+.mi-textarea:focus {
+    border-color: var(--mi-amber);
+    box-shadow: 0 0 0 1px rgba(246, 166, 35, 0.12);
+}
+
+.mi-select option {
+    color: var(--mi-white);
+    background: #07111c;
+}
+
+/* ---------------------------------------------------------
+   7. Terminal Tables
+   --------------------------------------------------------- */
+.mi-table-wrap {
+    max-width: 100%;
+    overflow: auto;
+}
+
 .mi-table {
     width: 100%;
     border-collapse: collapse;
-    background: var(--mi-panel);
+    background: transparent;
     color: var(--mi-text);
-    font-size: 11px;
+    font-size: 10px;
+}
+
+.mi-table th,
+.mi-table td {
+    padding: 9px 10px;
+    border-bottom: 1px solid rgba(32, 60, 82, 0.64);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
 }
 
 .mi-table th {
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--mi-border);
-    background: #07111c;
-    color: var(--mi-muted);
-    font-size: 9px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    color: var(--mi-amber-soft);
+    background: var(--mi-panel-strong);
+    font-size: 8px;
     font-weight: 900;
-    letter-spacing: 0.65px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.mi-table th:first-child,
+.mi-table td:first-child,
+.mi-table .text {
     text-align: left;
 }
 
-.mi-table td {
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--mi-border-soft);
+.mi-table tbody tr {
+    transition: background var(--mi-transition);
 }
 
 .mi-table tbody tr:hover {
-    background: rgba(39, 199, 232, 0.05);
+    background: rgba(66, 168, 245, 0.055);
 }
 
 .mi-table .number {
@@ -306,8 +685,122 @@ a {
     font-variant-numeric: tabular-nums;
 }
 
+.mi-table .positive {
+    color: var(--mi-green);
+}
+
+.mi-table .negative {
+    color: var(--mi-red);
+}
+
+.mi-table .empty-message {
+    padding: 25px;
+    color: var(--mi-muted);
+    text-align: center !important;
+}
+
 /* ---------------------------------------------------------
-   6. Terminal Custom Scrollbar
+   8. Charts
+   --------------------------------------------------------- */
+.mi-chart-panel {
+    overflow: hidden;
+    border: 1px solid var(--mi-border);
+    background: var(--mi-panel-gradient);
+    box-shadow: var(--mi-shadow);
+}
+
+.mi-chart {
+    width: 100%;
+    min-height: 400px;
+}
+
+.js-plotly-plot .plotly .modebar {
+    background: rgba(7, 17, 28, 0.72) !important;
+}
+
+.js-plotly-plot .plotly .modebar-btn path {
+    fill: var(--mi-muted) !important;
+}
+
+.js-plotly-plot .plotly .modebar-btn:hover path {
+    fill: var(--mi-amber) !important;
+}
+
+/* ---------------------------------------------------------
+   9. Status / Chips / Tags
+   --------------------------------------------------------- */
+.mi-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin: 2px;
+    padding: 3px 5px;
+    color: var(--mi-amber-soft);
+    border: 1px solid #634b27;
+    background: #21190e;
+    font-size: 8px;
+    font-weight: 800;
+}
+
+.mi-chip button {
+    padding: 0;
+    color: var(--mi-amber-soft);
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+}
+
+.mi-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 18px;
+    padding: 2px 6px;
+    border: 1px solid var(--mi-border);
+    background: #06111c;
+    color: var(--mi-text);
+    font-size: 8px;
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.mi-badge.success {
+    color: var(--mi-green);
+    border-color: rgba(53, 202, 130, 0.45);
+}
+
+.mi-badge.warning {
+    color: var(--mi-amber-soft);
+    border-color: rgba(246, 166, 35, 0.45);
+}
+
+.mi-badge.danger {
+    color: var(--mi-red);
+    border-color: rgba(255, 101, 101, 0.45);
+}
+
+/* ---------------------------------------------------------
+   10. Footer System Status
+   --------------------------------------------------------- */
+.mi-terminal-footer {
+    min-height: 31px;
+    margin-top: 6px;
+    padding: 9px 11px;
+    color: var(--mi-muted);
+    border: 1px solid var(--mi-border);
+    border-left: 3px solid var(--mi-green);
+    background: #02070d;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    line-height: 1.4;
+    text-transform: uppercase;
+}
+
+/* ---------------------------------------------------------
+   11. Terminal Custom Scrollbar
    --------------------------------------------------------- */
 ::-webkit-scrollbar {
     width: 8px;
@@ -315,38 +808,104 @@ a {
 }
 
 ::-webkit-scrollbar-track {
-    background: #040b12;
+    background: #030a11;
 }
 
 ::-webkit-scrollbar-thumb {
-    border: 1px solid #040b12;
-    background: #1b4059;
+    border: 1px solid #030a11;
+    background: #1c3448;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #27647f;
+    background: #2b506d;
+}
+
+* {
+    scrollbar-color: #1c3448 #030a11;
+    scrollbar-width: thin;
 }
 
 /* ---------------------------------------------------------
-   7. Responsive Breakdown
+   12. Responsive
    --------------------------------------------------------- */
+@media (max-width: 900px) {
+    .mi-kpi-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .mi-chart {
+        min-height: 380px;
+    }
+}
+
 @media (max-width: 768px) {
     .mi-page {
-        width: calc(100% - 20px);
-        padding-top: 12px;
+        width: calc(100% - 10px);
+        padding-top: 5px;
     }
+
     .mi-module-name {
-        padding-right: 12px;
+        gap: 7px;
+        padding: 0 10px;
         font-size: 10px;
     }
+
+    .mi-module-name::after {
+        display: none;
+    }
+
+    .mi-function-key {
+        min-width: 40px;
+        height: 20px;
+        margin: 0;
+        font-size: 9px;
+    }
+
     .mi-ticker {
-        min-width: 130px;
+        min-width: 125px;
         padding: 0 10px;
     }
+
     .mi-header-action {
         display: none;
     }
+
     .mi-status-bar {
+        align-items: flex-start;
+        flex-direction: column;
+        justify-content: center;
+        gap: 2px;
+        padding: 7px 10px;
         font-size: 8px;
+    }
+
+    .mi-kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .mi-panel-header {
+        padding: 0 8px;
+    }
+
+    .mi-chart {
+        min-height: 340px;
+    }
+}
+
+@media (max-width: 480px) {
+    .mi-kpi-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .mi-kpi {
+        min-height: 88px;
+    }
+
+    .mi-ticker-bar {
+        min-height: 44px;
+    }
+
+    .mi-module-name {
+        min-height: 44px;
     }
 }
