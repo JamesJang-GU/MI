@@ -260,9 +260,13 @@ def fetch_gscpi_data(conn: sqlite3.Connection):
                             pass
 
                 page.on("response", on_response)
-                page.goto("https://www.newyorkfed.org/research/policy/gscpi#/interactive", timeout=30000, wait_until="networkidle")
-                page.wait_for_timeout(3000)
-                browser.close()
+                page.goto(
+                    "https://www.newyorkfed.org/research/policy/gscpi#/interactive", 
+                    wait_until="domcontentloaded",
+                    timeout=60000
+)
+
+page.wait_for_timeout(8000)
 
                 for blob in intercepted_json:
                     if isinstance(blob, list):
@@ -326,7 +330,14 @@ def export_assets(conn: sqlite3.Connection):
         json.dump(macro_dict, f, ensure_ascii=False, indent=2)
 
     # 2. GSCPI JSON
-    cursor.execute("SELECT date, value FROM gscpi_series ORDER BY date ASC")
+    cursor.execute("""
+    SELECT
+        period AS date,
+        gscpi_value AS value
+    FROM gscpi_series
+    ORDER BY period ASC
+""")
+
     gscpi_rows = cursor.fetchall()
     gscpi_list = [{"date": r[0], "value": r[1]} for r in gscpi_rows]
 
