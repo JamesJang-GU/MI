@@ -1,6 +1,9 @@
 {
-  "generated_at": "2026-10-27 11:52:59 KST",
-  "total_countries": 13,
-  "gscpi_points": 0,
-  "status": "ONLINE"
+  "updated_at": "2026-10-27 05:43:46",
+  "latest_gscpi": {
+    "date": "2026-09",
+    "value": 1.28
+  },
+  "total_countries": 14,
+  "source": "World Bank, Federal Reserve Bank of New York"
 }
