@@ -1,8 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-MacroEconomies Static Dashboard Generator
-(GDP Growth, Inflation & GSCPI)
-Standardized for Bloomberg/MI Terminal UI
+GDP, Inflation & GSCPI Bloomberg/MI Terminal Dashboard
+------------------------------------------------------
+로컬 개발 모드:
+    python GDP_Inflation_GSCPI_DB.py --host 0.0.0.0 --port 8000
+
+GitHub Actions / 배포 정적 생성 모드:
+    python GDP_Inflation_GSCPI_DB.py --cron
+
+생성 및 관리 자산:
+    - index.html (Bloomberg Dark Terminal UI)
+    - macro_data.json
+    - gscpi_data.json
+    - dashboard_meta.json
+    - gdp_inflation_gscpi_cache.db
 """
 
 import argparse
@@ -12,19 +23,26 @@ import json
 import logging
 import os
 import re
+import socket
 import sqlite3
 import sys
+import threading
+import time
+import webbrowser
 from pathlib import Path
 
 import pandas as pd
 import requests
 
+# =========================================================
+# 1. Global Configurations & Path Definitions
+# =========================================================
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
-logger = logging.getLogger("MacroEconomies")
+logger = logging.getLogger("MI_MacroEconomies")
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "gdp_inflation_gscpi_cache.db"
@@ -33,33 +51,47 @@ GSCPI_JSON_PATH = BASE_DIR / "gscpi_data.json"
 META_JSON_PATH = BASE_DIR / "dashboard_meta.json"
 HTML_PATH = BASE_DIR / "index.html"
 
+# 대상 국가군 및 그룹 분류
 COUNTRIES = [
-    {"code": "WLD", "name": "World", "group": "Global"},
-    {"code": "USA", "name": "United States", "group": "Advanced"},
-    {"code": "CHN", "name": "China", "group": "Emerging"},
-    {"code": "KOR", "name": "South Korea", "group": "Asia"},
-    {"code": "JPN", "name": "Japan", "group": "Advanced"},
-    {"code": "DEU", "name": "Germany", "group": "Europe"},
-    {"code": "GBR", "name": "United Kingdom", "group": "Europe"},
-    {"code": "FRA", "name": "France", "group": "Europe"},
-    {"code": "IND", "name": "India", "group": "Emerging"},
-    {"code": "VNM", "name": "Vietnam", "group": "Asia"},
-    {"code": "SGP", "name": "Singapore", "group": "Asia"},
-    {"code": "BRA", "name": "Brazil", "group": "Emerging"},
-    {"code": "MEX", "name": "Mexico", "group": "Emerging"},
-    {"code": "EUU", "name": "European Union", "group": "Europe"}
+    {"code": "WLD", "name": "World", "group": "Global", "color": "#00e5ff"},
+    {"code": "USA", "name": "United States", "group": "Advanced", "color": "#2979ff"},
+    {"code": "CHN", "name": "China", "group": "Emerging", "color": "#ff5252"},
+    {"code": "KOR", "name": "South Korea", "group": "Asia", "color": "#00e676"},
+    {"code": "JPN", "name": "Japan", "group": "Advanced", "color": "#ff9100"},
+    {"code": "DEU", "name": "Germany", "group": "Europe", "color": "#ffd600"},
+    {"code": "GBR", "name": "United Kingdom", "group": "Europe", "color": "#e040fb"},
+    {"code": "FRA", "name": "France", "group": "Europe", "color": "#00b0ff"},
+    {"code": "IND", "name": "India", "group": "Emerging", "color": "#ff6d00"},
+    {"code": "VNM", "name": "Vietnam", "group": "Asia", "color": "#76ff03"},
+    {"code": "SGP", "name": "Singapore", "group": "Asia", "color": "#1de9b6"},
+    {"code": "BRA", "name": "Brazil", "group": "Emerging", "color": "#c6ff00"},
+    {"code": "MEX", "name": "Mexico", "group": "Emerging", "color": "#ff3d00"},
+    {"code": "EUU", "name": "European Union", "group": "Europe", "color": "#651fff"}
 ]
 
 WB_INDICATORS = {
-    "GDP_GROWTH": "NY.GDP.MKTP.KD.ZG",
-    "CPI_INFLATION": "FP.CPI.TOTL.ZG"
+    "GDP_GROWTH": {
+        "id": "NY.GDP.MKTP.KD.ZG",
+        "name": "GDP Growth (Annual %)",
+        "unit": "%"
+    },
+    "CPI_INFLATION": {
+        "id": "FP.CPI.TOTL.ZG",
+        "name": "Inflation, Consumer Prices (Annual %)",
+        "unit": "%"
+    }
 }
 
+# =========================================================
+# 2. Database Schema Initialization & Auto-Migration
+# =========================================================
 def init_db(conn: sqlite3.Connection):
-    """DB 스키마 검증 및 자동 마이그레이션"""
+    """
+    DB 스키마 점검 및 기존 구버전 테이블 자동 마이그레이션
+    """
     cursor = conn.cursor()
 
-    # 1. macro_series 검증 및 생성
+    # 1. macro_series 스키마 검증
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS macro_series (
             indicator TEXT NOT NULL,
@@ -72,12 +104,13 @@ def init_db(conn: sqlite3.Connection):
         )
     """)
 
-    # 레거시 스키마(country 컬럼 등) 점검 및 보정
     cursor.execute("PRAGMA table_info(macro_series)")
-    columns = [row[1] for row in cursor.fetchall()]
+    columns = [col[1] for col in cursor.fetchall()]
+
+    # country_code 컬럼이 없거나 구조가 다른 경우 안전 마이그레이션
     if "country_code" not in columns:
-        logger.warning("[DB] macro_series 테이블 스키마가 구버전입니다. 마이그레이션을 진행합니다.")
-        cursor.execute("DROP TABLE macro_series")
+        logger.warning("[DB] macro_series 테이블 스키마 불일치 감지 -> 최신 규격으로 자동 마이그레이션 실행")
+        cursor.execute("ALTER TABLE macro_series RENAME TO macro_series_old")
         cursor.execute("""
             CREATE TABLE macro_series (
                 indicator TEXT NOT NULL,
@@ -89,8 +122,9 @@ def init_db(conn: sqlite3.Connection):
                 PRIMARY KEY (indicator, country_code, year)
             )
         """)
+        cursor.execute("DROP TABLE IF EXISTS macro_series_old")
 
-    # 2. gscpi_series 검증 및 생성
+    # 2. gscpi_series 테이블 생성
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS gscpi_series (
             date TEXT PRIMARY KEY,
@@ -98,56 +132,89 @@ def init_db(conn: sqlite3.Connection):
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    conn.commit()
 
+    # 3. meta 정보 테이블
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS system_meta (
+            key TEXT PRIMARY KEY,
+            val TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    conn.commit()
+    logger.info("[DB] SQLite 스키마 검증 및 준비 완료.")
+
+# =========================================================
+# 3. Data Collection Pipeline (World Bank & NY Fed GSCPI)
+# =========================================================
 def fetch_world_bank_data(conn: sqlite3.Connection):
-    """World Bank Open API 시계열 수집"""
-    logger.info("[WORLD_BANK] 거시경제 지표 수집 시작...")
+    """
+    World Bank Open API 배치 수집
+    """
+    logger.info("[COLLECT] World Bank 거시경제 지표 수집 시작...")
     cursor = conn.cursor()
     current_year = datetime.datetime.now().year
-    start_year = current_year - 25
+    start_year = current_year - 30
 
     session = requests.Session()
-    session.headers.update({"User-Agent": "Mozilla/5.0 (MI-Platform/WorldBankCrawler)"})
+    session.headers.update({"User-Agent": "MI-Platform-Terminal/2.0"})
 
-    for ind_key, ind_code in WB_INDICATORS.items():
-        total_records = 0
-        for c in COUNTRIES:
-            url = f"https://api.worldbank.org/v2/country/{c['code']}/indicator/{ind_code}?date={start_year}:{current_year}&format=json&per_page=100"
+    for ind_key, ind_meta in WB_INDICATORS.items():
+        ind_code = ind_meta["id"]
+        total_ingested = 0
+
+        for country in COUNTRIES:
+            c_code = country["code"]
+            c_name = country["name"]
+            url = f"https://api.worldbank.org/v2/country/{c_code}/indicator/{ind_code}?date={start_year}:{current_year}&format=json&per_page=100"
+
             try:
-                res = session.get(url, timeout=10)
+                res = session.get(url, timeout=12)
                 if res.status_code == 200:
-                    data = res.json()
-                    if len(data) >= 2 and isinstance(data[1], list):
-                        for row in data[1]:
-                            year_val = int(row.get("date", 0))
-                            val = row.get("value")
-                            if year_val and val is not None:
-                                cursor.execute("""
-                                    INSERT OR REPLACE INTO macro_series (indicator, country_code, country_name, year, value, updated_at)
-                                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                                """, (ind_key, c["code"], c["name"], year_val, float(val)))
-                                total_records += 1
+                    payload = res.json()
+                    if len(payload) >= 2 and isinstance(payload[1], list):
+                        for item in payload[1]:
+                            year_str = item.get("date")
+                            val = item.get("value")
+                            if year_str and val is not None:
+                                try:
+                                    y_int = int(year_str)
+                                    v_float = float(val)
+                                    cursor.execute("""
+                                        INSERT OR REPLACE INTO macro_series
+                                        (indicator, country_code, country_name, year, value, updated_at)
+                                        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                                    """, (ind_key, c_code, c_name, y_int, v_float))
+                                    total_ingested += 1
+                                except ValueError:
+                                    continue
             except Exception as e:
-                logger.warning(f"[WORLD_BANK WARN] {c['code']} {ind_key} 수집 오류: {e}")
+                logger.warning(f"[WORLD_BANK WARN] {c_code} ({ind_key}) 통신 장애: {e}")
+
         conn.commit()
-        logger.info(f"[WORLD_BANK] {ind_key} 적재 완료 ({total_records}건 갱신)")
+        logger.info(f"[COLLECT] {ind_key} 수집 완료 (적재 건수: {total_ingested}건)")
 
 def fetch_gscpi_data(conn: sqlite3.Connection):
-    """GSCPI 다계층 수집: 엑셀 직다운로드 -> Playwright 스니퍼 -> 기존 DB 캐시"""
-    logger.info("[GSCPI] New York Fed GSCPI 수집 시작...")
+    """
+    GSCPI 다계층 수집 (Triple-Fallback Engine)
+    1. NY Fed 공식 엑셀/CSV 다이렉트 엔드포인트 파싱
+    2. Playwright 브라우저 차트 JSON 스니핑
+    3. 기존 DB 캐시 유지 (Fail-Safe)
+    """
+    logger.info("[COLLECT] NY Fed GSCPI 공급망 압력 지수 수집 시작...")
     cursor = conn.cursor()
     records = []
 
-    # Strategy 1: NY Fed 공식 엑셀/CSV 다운로드 시도
-    excel_urls = [
+    # Strategy 1: Direct File Download
+    candidate_urls = [
         "https://www.newyorkfed.org/medialibrary/media/research/policy/gscpi/gscpi_data.xlsx",
         "https://www.newyorkfed.org/medialibrary/media/research/policy/gscpi/gscpi_data.xls",
         "https://www.newyorkfed.org/medialibrary/media/research/policy/gscpi/gscpi_data.csv"
     ]
-
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    for url in excel_urls:
+
+    for url in candidate_urls:
         try:
             res = requests.get(url, headers=headers, timeout=15)
             if res.status_code == 200 and len(res.content) > 1000:
@@ -156,116 +223,136 @@ def fetch_gscpi_data(conn: sqlite3.Connection):
                 else:
                     df = pd.read_excel(io.BytesIO(res.content))
 
-                # 시계열 데이터 행 파싱
                 for _, row in df.iterrows():
-                    d_str = str(row.iloc[0]).strip()
-                    val = row.iloc[1] if len(row) > 1 else None
-                    match = re.search(r"(\d{4})[-/.](\d{1,2})", d_str)
-                    if match and pd.notnull(val):
+                    d_raw = str(row.iloc[0]).strip()
+                    val_raw = row.iloc[1] if len(row) > 1 else None
+                    match = re.search(r"(\d{4})[-/.](\d{1,2})", d_raw)
+                    if match and pd.notnull(val_raw):
                         try:
-                            formatted_date = f"{int(match.group(1)):04d}-{int(match.group(2)):02d}"
-                            records.append((formatted_date, float(val)))
-                        except ValueError:
+                            d_fmt = f"{int(match.group(1)):04d}-{int(match.group(2)):02d}"
+                            v_float = float(val_raw)
+                            records.append((d_fmt, v_float))
+                        except (ValueError, TypeError):
                             continue
+
                 if records:
-                    logger.info(f"[GSCPI] 공식 데이터셋 파일 파싱 성공: {len(records)}건 확보")
+                    logger.info(f"[GSCPI] Strategy 1 성공 (공식 데이터셋 {len(records)}건 확보)")
                     break
         except Exception as e:
-            logger.debug(f"[GSCPI] Direct download attempt failed for {url}: {e}")
+            logger.debug(f"[GSCPI] Strategy 1 ({url}) 시도 실패: {e}")
 
-    # Strategy 2: Playwright 기반 웹 브라우저 스니핑
+    # Strategy 2: Playwright Sniffing
     if not records:
         try:
             from playwright.sync_api import sync_playwright
-            logger.info("[GSCPI] Playwright 브라우저 엔진으로 실시간 차트 스니핑 진행...")
+            logger.info("[GSCPI] Strategy 2: Playwright 브라우저 가동 및 네트워크 스니핑...")
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 page = browser.new_page()
-                sniffed_data = []
+                intercepted_json = []
 
-                def handle_response(response):
-                    if "gscpi" in response.url.lower() or "research" in response.url.lower():
+                def on_response(response):
+                    if "gscpi" in response.url.lower():
                         try:
-                            ct = response.headers.get("content-type", "")
-                            if "json" in ct:
-                                j = response.json()
-                                sniffed_data.append(j)
+                            if "json" in response.headers.get("content-type", ""):
+                                intercepted_json.append(response.json())
                         except Exception:
                             pass
 
-                page.on("response", handle_response)
+                page.on("response", on_response)
                 page.goto("https://www.newyorkfed.org/research/policy/gscpi#/interactive", timeout=30000, wait_until="networkidle")
                 page.wait_for_timeout(3000)
                 browser.close()
 
-                for j in sniffed_data:
-                    if isinstance(j, list):
-                        for item in j:
+                for blob in intercepted_json:
+                    if isinstance(blob, list):
+                        for item in blob:
                             if isinstance(item, dict) and "date" in item and "gscpi" in item:
                                 records.append((str(item["date"])[:7], float(item["gscpi"])))
+            if records:
+                logger.info(f"[GSCPI] Strategy 2 성공 ({len(records)}건 포착)")
         except Exception as e:
-            logger.warning(f"[GSCPI] Playwright 스니핑 실행 중 예외: {e}")
+            logger.warning(f"[GSCPI] Strategy 2 실행 예외: {e}")
 
-    # Strategy 3: DB 캐시 반영
+    # Strategy 3: DB Cache Fallback & Persistence
     if records:
-        for d, v in records:
-            cursor.execute("INSERT OR REPLACE INTO gscpi_series (date, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)", (d, v))
+        for date_str, val in records:
+            cursor.execute("""
+                INSERT OR REPLACE INTO gscpi_series (date, value, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+            """, (date_str, val))
         conn.commit()
-        logger.info(f"[GSCPI] DB 갱신 완료 ({len(records)}건)")
+        logger.info(f"[GSCPI] DB 적재 완료 ({len(records)}건)")
     else:
         cursor.execute("SELECT COUNT(*) FROM gscpi_series")
-        cnt = cursor.fetchone()[0]
-        if cnt > 0:
-            logger.warning(f"[GSCPI] 실시간 수집 실패. 기존 캐시된 {cnt}건의 데이터를 안전하게 유지합니다.")
+        cached_count = cursor.fetchone()[0]
+        if cached_count > 0:
+            logger.warning(f"[GSCPI] 외부 신규 수집 실패 -> 기존 DB 캐시({cached_count}건)를 보존하여 서비스를 지속합니다.")
         else:
-            logger.warning("[GSCPI] 신규 수집 실패 및 캐시 데이터가 없습니다.")
+            logger.warning("[GSCPI] 수집 실패 및 기존 캐시 데이터가 없습니다.")
 
-def export_json_and_html(conn: sqlite3.Connection):
-    """정적 JSON 및 Bloomberg 테마 HTML 생성"""
+# =========================================================
+# 4. JSON Export & Bloomberg Terminal HTML Generation
+# =========================================================
+def export_assets(conn: sqlite3.Connection):
+    """
+    대시보드 구동용 정적 JSON 및 Bloomberg UI HTML 렌더링
+    """
     cursor = conn.cursor()
 
     # 1. Macro JSON
-    cursor.execute("SELECT indicator, country_code, country_name, year, value FROM macro_series ORDER BY indicator, country_code, year ASC")
+    cursor.execute("""
+        SELECT indicator, country_code, country_name, year, value
+        FROM macro_series
+        ORDER BY indicator, country_code, year ASC
+    """)
     macro_rows = cursor.fetchall()
-    macro_data = {"GDP_GROWTH": {}, "CPI_INFLATION": {}}
+    macro_dict = {"GDP_GROWTH": {}, "CPI_INFLATION": {}}
 
     for ind, code, name, year, val in macro_rows:
-        if ind not in macro_data:
-            macro_data[ind] = {}
-        if code not in macro_data[ind]:
-            macro_data[ind][code] = {"name": name, "series": []}
-        macro_data[ind][code]["series"].append({"year": year, "value": val})
+        if ind not in macro_dict:
+            macro_dict[ind] = {}
+        if code not in macro_dict[ind]:
+            c_meta = next((c for c in COUNTRIES if c["code"] == code), {"group": "Other", "color": "#8b8e9b"})
+            macro_dict[ind][code] = {
+                "name": name,
+                "group": c_meta.get("group", "Other"),
+                "color": c_meta.get("color", "#8b8e9b"),
+                "series": []
+            }
+        macro_dict[ind][code]["series"].append({"year": year, "value": val})
 
     with open(MACRO_JSON_PATH, "w", encoding="utf-8") as f:
-        json.dump(macro_data, f, ensure_ascii=False, indent=2)
+        json.dump(macro_dict, f, ensure_ascii=False, indent=2)
 
     # 2. GSCPI JSON
     cursor.execute("SELECT date, value FROM gscpi_series ORDER BY date ASC")
     gscpi_rows = cursor.fetchall()
-    gscpi_data = [{"date": r[0], "value": r[1]} for r in gscpi_rows]
+    gscpi_list = [{"date": r[0], "value": r[1]} for r in gscpi_rows]
 
     with open(GSCPI_JSON_PATH, "w", encoding="utf-8") as f:
-        json.dump(gscpi_data, f, ensure_ascii=False, indent=2)
+        json.dump(gscpi_list, f, ensure_ascii=False, indent=2)
 
     # 3. Meta JSON
-    latest_gscpi = gscpi_data[-1] if gscpi_data else {"date": "N/A", "value": 0.0}
+    latest_gscpi = gscpi_list[-1] if gscpi_list else {"date": "N/A", "value": 0.0}
     meta_data = {
         "updated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "latest_gscpi": latest_gscpi,
-        "country_count": len(COUNTRIES)
+        "total_countries": len(COUNTRIES),
+        "source": "World Bank, Federal Reserve Bank of New York"
     }
     with open(META_JSON_PATH, "w", encoding="utf-8") as f:
         json.dump(meta_data, f, ensure_ascii=False, indent=2)
 
-    # 4. Bloomberg Dashboard HTML
-    html_content = generate_bloomberg_html(meta_data)
+    # 4. Generate Bloomberg Terminal HTML
+    html_content = build_bloomberg_html(meta_data)
     with open(HTML_PATH, "w", encoding="utf-8") as f:
         f.write(html_content)
 
-    logger.info("[EXPORT] JSON 데이터 및 index.html 대시보드 빌드 완료.")
+    logger.info("[EXPORT] 정적 JSON 자산 및 index.html 생성 완료.")
 
-def generate_bloomberg_html(meta: dict) -> str:
-    """Bloomberg Terminal Style Static Dashboard HTML Template"""
+def build_bloomberg_html(meta: dict) -> str:
+    """Bloomberg / MI Terminal 고도화 UI HTML 템플릿"""
     return f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -273,13 +360,14 @@ def generate_bloomberg_html(meta: dict) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MI Terminal - Macro Economies & GSCPI</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Noto+Sans+KR:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root {{
       --bg-base: #0a0a0c;
-      --bg-card: #121318;
+      --bg-panel: #121318;
       --bg-header: #181a20;
+      --bg-hover: #1f222e;
       --border: #282a36;
       --amber: #ff9800;
       --cyan: #00e5ff;
@@ -297,7 +385,8 @@ def generate_bloomberg_html(meta: dict) -> str:
       padding: 16px;
       font-size: 13px;
     }}
-    /* Top Terminal Header */
+
+    /* Top Standard Terminal Header */
     .terminal-header {{
       background-color: var(--bg-header);
       border: 1px solid var(--border);
@@ -306,30 +395,30 @@ def generate_bloomberg_html(meta: dict) -> str:
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }}
-    .terminal-title {{
+    .terminal-left {{
       display: flex;
       align-items: center;
       gap: 12px;
     }}
-    .terminal-title h1 {{
+    .terminal-title {{
       font-family: var(--font-mono);
       font-size: 16px;
       font-weight: 700;
       color: var(--amber);
       letter-spacing: 0.5px;
     }}
-    .terminal-badge {{
+    .badge {{
       background: #232733;
       color: var(--cyan);
       font-family: var(--font-mono);
       font-size: 11px;
-      padding: 2px 8px;
+      padding: 3px 8px;
       border-radius: 3px;
       border: 1px solid rgba(0, 229, 255, 0.3);
     }}
-    .terminal-nav {{
+    .terminal-right {{
       display: flex;
       align-items: center;
       gap: 16px;
@@ -340,24 +429,29 @@ def generate_bloomberg_html(meta: dict) -> str:
       background: #1e222d;
       color: var(--amber);
       border: 1px solid var(--amber);
-      padding: 4px 10px;
+      padding: 4px 12px;
       border-radius: 3px;
       text-decoration: none;
       font-weight: 600;
+      transition: all 0.2s ease;
     }}
     .nav-btn:hover {{
       background: var(--amber);
       color: #000;
     }}
-    /* KPI Cards */
+
+    /* KPI Summary Cards */
     .kpi-row {{
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      grid-template-columns: repeat(4, 1fr);
       gap: 12px;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
+    }}
+    @media (max-width: 1024px) {{
+      .kpi-row {{ grid-template-columns: repeat(2, 1fr); }}
     }}
     .kpi-card {{
-      background: var(--bg-card);
+      background: var(--bg-panel);
       border: 1px solid var(--border);
       border-left: 3px solid var(--amber);
       border-radius: 4px;
@@ -375,40 +469,78 @@ def generate_bloomberg_html(meta: dict) -> str:
       font-weight: 700;
       color: var(--cyan);
     }}
-    /* Main Layout */
-    .grid-layout {{
+    .kpi-sub {{
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }}
+
+    /* Main Grid Layout */
+    .grid-container {{
       display: grid;
       grid-template-columns: 2fr 1fr;
-      gap: 16px;
+      gap: 14px;
     }}
     @media (max-width: 1024px) {{
-      .grid-layout {{ grid-template-columns: 1fr; }}
+      .grid-container {{ grid-template-columns: 1fr; }}
     }}
-    .card {{
-      background: var(--bg-card);
+
+    .panel {{
+      background: var(--bg-panel);
       border: 1px solid var(--border);
       border-radius: 4px;
       padding: 14px;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
     }}
-    .card-title {{
-      font-family: var(--font-mono);
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--amber);
-      margin-bottom: 12px;
+    .panel-header {{
       display: flex;
       justify-content: space-between;
       align-items: center;
       border-bottom: 1px solid var(--border);
-      padding-bottom: 6px;
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+    }}
+    .panel-title {{
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--amber);
     }}
     .chart-container {{
       position: relative;
-      height: 320px;
+      height: 300px;
       width: 100%;
     }}
-    /* Tables */
+
+    /* Tab Controls */
+    .tab-bar {{
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }}
+    .tab-btn {{
+      background: #181a20;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 4px 10px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      cursor: pointer;
+      border-radius: 3px;
+    }}
+    .tab-btn.active {{
+      background: #232733;
+      border-color: var(--cyan);
+      color: var(--cyan);
+      font-weight: 600;
+    }}
+
+    /* Data Table */
+    .table-container {{
+      max-height: 680px;
+      overflow-y: auto;
+    }}
     table {{
       width: 100%;
       border-collapse: collapse;
@@ -424,216 +556,273 @@ def generate_bloomberg_html(meta: dict) -> str:
       color: var(--text-muted);
       font-weight: 600;
       background: #15171e;
+      position: sticky;
+      top: 0;
     }}
     th:first-child, td:first-child {{ text-align: left; }}
+    tr:hover td {{ background: var(--bg-hover); }}
     .pos {{ color: var(--green); }}
     .neg {{ color: var(--red); }}
   </style>
 </head>
 <body>
 
-  <!-- Top MI Header -->
+  <!-- Bloomberg MI Header -->
   <div class="terminal-header">
-    <div class="terminal-title">
-      <h1>MI TERMINAL // MACRO & GSCPI</h1>
-      <span class="terminal-badge">LIVE MONITOR</span>
+    <div class="terminal-left">
+      <div class="terminal-title">MI TERMINAL // 03. MACRO ECONOMIES &amp; GSCPI</div>
+      <span class="badge">PROD LIVE</span>
     </div>
-    <div class="terminal-nav">
-      <span style="color: var(--text-muted)">SRC: World Bank, NY Fed</span>
+    <div class="terminal-right">
+      <span style="color: var(--text-muted)">SRC: World Bank / NY Fed</span>
       <span style="color: var(--cyan)" id="liveClock">--:--:-- KST</span>
       <a href="../index.html" class="nav-btn">PORTAL &lt;GO&gt;</a>
     </div>
   </div>
 
-  <!-- KPI Section -->
+  <!-- KPI Ribbon -->
   <div class="kpi-row">
     <div class="kpi-card">
       <div class="kpi-label">GLOBAL SUPPLY CHAIN PRESSURE (GSCPI)</div>
       <div class="kpi-val" id="kpiGscpi">--</div>
+      <div class="kpi-sub" id="kpiGscpiDate">Standard Deviations (0 = Average)</div>
     </div>
     <div class="kpi-card" style="border-left-color: var(--cyan)">
-      <div class="kpi-label">LATEST US GDP GROWTH (WB)</div>
+      <div class="kpi-label">US GDP GROWTH (ANNUAL %)</div>
       <div class="kpi-val" id="kpiUsGdp">--%</div>
+      <div class="kpi-sub" id="kpiUsGdpYear">World Bank Benchmark</div>
     </div>
     <div class="kpi-card" style="border-left-color: var(--green)">
-      <div class="kpi-label">LATEST US CPI INFLATION (WB)</div>
+      <div class="kpi-label">US CPI INFLATION (ANNUAL %)</div>
       <div class="kpi-val" id="kpiUsCpi">--%</div>
+      <div class="kpi-sub" id="kpiUsCpiYear">World Bank Benchmark</div>
+    </div>
+    <div class="kpi-card" style="border-left-color: #ffd600">
+      <div class="kpi-label">CHINA GDP GROWTH (ANNUAL %)</div>
+      <div class="kpi-val" id="kpiChnGdp">--%</div>
+      <div class="kpi-sub" id="kpiChnGdpYear">World Bank Benchmark</div>
     </div>
   </div>
 
-  <!-- Charts & Tables -->
-  <div class="grid-layout">
+  <!-- Main Content Layout -->
+  <div class="grid-container">
     <div>
-      <div class="card">
-        <div class="card-title">
-          <span>01. GLOBAL SUPPLY CHAIN PRESSURE INDEX (GSCPI)</span>
-          <span style="font-size:11px; color:var(--text-muted);">Standard Deviations from Avg</span>
+      <!-- GSCPI Chart Panel -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">01. GLOBAL SUPPLY CHAIN PRESSURE INDEX (GSCPI)</span>
+          <span style="font-family:var(--font-mono); font-size:11px; color:var(--text-muted);">Monthly Historical Trend</span>
         </div>
         <div class="chart-container">
           <canvas id="gscpiChart"></canvas>
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-title">
-          <span>02. GDP GROWTH RATE (%) - MAJOR ECONOMIES</span>
+      <!-- Macro Chart Panel with Tabs -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">02. MACRO INDICATORS BY MAJOR ECONOMIES</span>
+          <div class="tab-bar" style="margin-bottom:0;">
+            <button class="tab-btn active" onclick="switchMacroTab('GDP_GROWTH')">GDP GROWTH (%)</button>
+            <button class="tab-btn" onclick="switchMacroTab('CPI_INFLATION')">CPI INFLATION (%)</button>
+          </div>
         </div>
         <div class="chart-container">
-          <canvas id="gdpChart"></canvas>
+          <canvas id="macroChart"></canvas>
         </div>
       </div>
     </div>
 
+    <!-- Country Snapshot Table Panel -->
     <div>
-      <div class="card">
-        <div class="card-title">
-          <span>03. MACRO SNAPSHOT (LATEST)</span>
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">03. CROSS-COUNTRY SNAPSHOT</span>
+          <span style="font-family:var(--font-mono); font-size:11px; color:var(--text-muted);">Latest WB Data</span>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Country</th>
-              <th>GDP (%)</th>
-              <th>CPI (%)</th>
-            </tr>
-          </thead>
-          <tbody id="macroTableBody">
-            <tr><td colspan="3" style="text-align:center;">Loading...</td></tr>
-          </tbody>
-        </table>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Country</th>
+                <th>Group</th>
+                <th>GDP (%)</th>
+                <th>CPI (%)</th>
+              </tr>
+            </thead>
+            <tbody id="macroTableBody">
+              <tr><td colspan="4" style="text-align:center;">Loading Data...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
 
   <script>
-    // Live KST Clock
-    function updateClock() {{
+    // Live KST Clock Generator
+    function updateKstClock() {{
       const now = new Date();
       const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
       const kst = new Date(utc + (3600000 * 9));
       document.getElementById('liveClock').textContent =
         kst.toISOString().replace('T', ' ').substring(0, 19) + ' KST';
     }}
-    setInterval(updateClock, 1000);
-    updateClock();
+    setInterval(updateKstClock, 1000);
+    updateKstClock();
 
-    // Data Load & Chart Initialization
+    let globalMacroData = {{}};
+    let currentIndicator = 'GDP_GROWTH';
+    let macroChartInstance = null;
+
     async function initDashboard() {{
       try {{
-        const [macroRes, gscpiRes] = await Promise.all([
+        const [mRes, gRes] = await Promise.all([
           fetch('macro_data.json'),
           fetch('gscpi_data.json')
         ]);
-        const macroData = await macroRes.json();
-        const gscpiData = await gscpiRes.json();
+        globalMacroData = await mRes.json();
+        const gscpiData = await gRes.json();
 
-        // 1. GSCPI KPI & Chart
-        if (gscpiData.length > 0) {{
+        // 1. Render GSCPI
+        if (gscpiData && gscpiData.length > 0) {{
           const latest = gscpiData[gscpiData.length - 1];
-          const valEl = document.getElementById('kpiGscpi');
-          valEl.textContent = `${{latest.value.toFixed(2)}}σ (${{latest.date}})`;
-          valEl.className = 'kpi-val ' + (latest.value > 0 ? 'neg' : 'pos');
+          const el = document.getElementById('kpiGscpi');
+          el.textContent = `${{latest.value >= 0 ? '+' : ''}}${{latest.value.toFixed(2)}}σ`;
+          el.className = 'kpi-val ' + (latest.value > 0 ? 'neg' : 'pos');
+          document.getElementById('kpiGscpiDate').textContent = `Latest: ${{latest.date}} (New York Fed)`;
 
-          const ctxGscpi = document.getElementById('gscpiChart').getContext('2d');
-          new Chart(ctxGscpi, {{
-            type: 'line',
-            data: {{
-              labels: gscpiData.slice(-60).map(d => d.date),
-              datasets: [{{
-                label: 'GSCPI (Standard Deviations)',
-                data: gscpiData.slice(-60).map(d => d.value),
-                borderColor: '#00e5ff',
-                backgroundColor: 'rgba(0, 229, 255, 0.08)',
-                fill: true,
-                borderWidth: 1.5,
-                pointRadius: 0
-              }}]
-            }},
-            options: {{
-              responsive: true,
-              maintainAspectRatio: false,
-              scales: {{
-                x: {{ grid: {{ color: '#1c1e26' }}, ticks: {{ color: '#8b8e9b', font: {{ family: 'JetBrains Mono', size: 10 }} }} }},
-                y: {{ grid: {{ color: '#1c1e26' }}, ticks: {{ color: '#8b8e9b', font: {{ family: 'JetBrains Mono', size: 10 }} }} }}
-              }},
-              plugins: {{ legend: {{ display: false }} }}
-            }}
-          }});
+          renderGscpiChart(gscpiData);
         }}
 
-        // 2. Macro Table & KPI
-        const gdpObj = macroData.GDP_GROWTH || {{}};
-        const cpiObj = macroData.CPI_INFLATION || {{}};
+        // 2. Render Macro KPIs
+        const gdp = globalMacroData.GDP_GROWTH || {{}};
+        const cpi = globalMacroData.CPI_INFLATION || {{}};
 
-        if (gdpObj.USA && gdpObj.USA.series.length > 0) {{
-          const usGdp = gdpObj.USA.series[gdpObj.USA.series.length - 1];
-          document.getElementById('kpiUsGdp').textContent = `${{usGdp.value.toFixed(2)}}% (${{usGdp.year}})`;
+        if (gdp.USA?.series.length) {{
+          const usLastGdp = gdp.USA.series[gdp.USA.series.length - 1];
+          document.getElementById('kpiUsGdp').textContent = `${{usLastGdp.value.toFixed(2)}}%`;
+          document.getElementById('kpiUsGdpYear').textContent = `Period: ${{usLastGdp.year}} Annual`;
         }}
-        if (cpiObj.USA && cpiObj.USA.series.length > 0) {{
-          const usCpi = cpiObj.USA.series[cpiObj.USA.series.length - 1];
-          document.getElementById('kpiUsCpi').textContent = `${{usCpi.value.toFixed(2)}}% (${{usCpi.year}})`;
+        if (cpi.USA?.series.length) {{
+          const usLastCpi = cpi.USA.series[cpi.USA.series.length - 1];
+          document.getElementById('kpiUsCpi').textContent = `${{usLastCpi.value.toFixed(2)}}%`;
+          document.getElementById('kpiUsCpiYear').textContent = `Period: ${{usLastCpi.year}} Annual`;
+        }}
+        if (gdp.CHN?.series.length) {{
+          const chnLastGdp = gdp.CHN.series[gdp.CHN.series.length - 1];
+          document.getElementById('kpiChnGdp').textContent = `${{chnLastGdp.value.toFixed(2)}}%`;
+          document.getElementById('kpiChnGdpYear').textContent = `Period: ${{chnLastGdp.year}} Annual`;
         }}
 
-        // Populate Table
-        const tbody = document.getElementById('macroTableBody');
-        tbody.innerHTML = '';
-        const targetCountries = ['WLD', 'USA', 'CHN', 'KOR', 'JPN', 'DEU', 'IND', 'VNM'];
-
-        targetCountries.forEach(code => {{
-          const gdpSeries = gdpObj[code]?.series || [];
-          const cpiSeries = cpiObj[code]?.series || [];
-          const lastGdp = gdpSeries.length ? gdpSeries[gdpSeries.length - 1].value : null;
-          const lastCpi = cpiSeries.length ? cpiSeries[cpiSeries.length - 1].value : null;
-          const name = gdpObj[code]?.name || code;
-
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td style="color:#e0e2ec;">${{name}}</td>
-            <td class="${{lastGdp >= 0 ? 'pos' : 'neg'}}">${{lastGdp !== null ? lastGdp.toFixed(1) + '%' : '-'}}</td>
-            <td style="color:var(--amber);">${{lastCpi !== null ? lastCpi.toFixed(1) + '%' : '-'}}</td>
-          `;
-          tbody.appendChild(tr);
-        }});
-
-        // 3. GDP Chart
-        const ctxGdp = document.getElementById('gdpChart').getContext('2d');
-        const chartCountries = ['USA', 'CHN', 'KOR', 'DEU'];
-        const colors = ['#00e5ff', '#ff5252', '#00e676', '#ff9800'];
-        const years = gdpObj.USA?.series.slice(-10).map(s => s.year) || [];
-
-        const datasets = chartCountries.map((c, idx) => {{
-          const s = gdpObj[c]?.series.slice(-10) || [];
-          return {{
-            label: c,
-            data: s.map(item => item.value),
-            borderColor: colors[idx],
-            borderWidth: 1.5,
-            fill: false,
-            pointRadius: 2
-          }};
-        }});
-
-        new Chart(ctxGdp, {{
-          type: 'line',
-          data: {{ labels: years, datasets: datasets }},
-          options: {{
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {{
-              x: {{ grid: {{ color: '#1c1e26' }}, ticks: {{ color: '#8b8e9b', font: {{ family: 'JetBrains Mono', size: 10 }} }} }},
-              y: {{ grid: {{ color: '#1c1e26' }}, ticks: {{ color: '#8b8e9b', font: {{ family: 'JetBrains Mono', size: 10 }} }} }}
-            }},
-            plugins: {{
-              legend: {{
-                labels: {{ color: '#e0e2ec', font: {{ family: 'JetBrains Mono', size: 11 }} }}
-              }}
-            }}
-          }}
-        }});
+        // 3. Render Table & Macro Chart
+        renderMacroTable();
+        renderMacroChart(currentIndicator);
 
       }} catch (err) {{
-        console.error('Dashboard Init Error:', err);
+        console.error('Data Loading Error:', err);
       }}
+    }}
+
+    function renderGscpiChart(data) {{
+      const ctx = document.getElementById('gscpiChart').getContext('2d');
+      const recent = data.slice(-72); // Last 6 years
+      new Chart(ctx, {{
+        type: 'line',
+        data: {{
+          labels: recent.map(d => d.date),
+          datasets: [{{
+            label: 'GSCPI (Standard Deviations)',
+            data: recent.map(d => d.value),
+            borderColor: '#00e5ff',
+            backgroundColor: 'rgba(0, 229, 255, 0.08)',
+            fill: true,
+            borderWidth: 1.5,
+            pointRadius: 0
+          }}]
+        }},
+        options: {{
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {{
+            x: {{ grid: {{ color: '#1c1e26' }}, ticks: {{ color: '#8b8e9b', font: {{ family: 'JetBrains Mono', size: 10 }} }} }},
+            y: {{ grid: {{ color: '#1c1e26' }}, ticks: {{ color: '#8b8e9b', font: {{ family: 'JetBrains Mono', size: 10 }} }} }}
+          }},
+          plugins: {{ legend: {{ display: false }} }}
+        }}
+      }});
+    }}
+
+    function switchMacroTab(indicator) {{
+      currentIndicator = indicator;
+      document.querySelectorAll('.tab-btn').forEach(btn => {{
+        btn.classList.toggle('active', btn.textContent.includes(indicator === 'GDP_GROWTH' ? 'GDP' : 'CPI'));
+      }});
+      renderMacroChart(indicator);
+    }}
+
+    function renderMacroChart(indicator) {{
+      const ctx = document.getElementById('macroChart').getContext('2d');
+      if (macroChartInstance) macroChartInstance.destroy();
+
+      const obj = globalMacroData[indicator] || {{}};
+      const targetCodes = ['WLD', 'USA', 'CHN', 'KOR', 'DEU', 'VNM'];
+      const years = obj.USA?.series.slice(-12).map(s => s.year) || [];
+
+      const datasets = targetCodes.map(code => {{
+        const item = obj[code];
+        if (!item) return null;
+        const series = item.series.slice(-12);
+        return {{
+          label: item.name,
+          data: series.map(s => s.value),
+          borderColor: item.color || '#2979ff',
+          borderWidth: 1.5,
+          fill: false,
+          pointRadius: 2
+        }};
+      }}).filter(Boolean);
+
+      macroChartInstance = new Chart(ctx, {{
+        type: 'line',
+        data: {{ labels: years, datasets: datasets }},
+        options: {{
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {{
+            x: {{ grid: {{ color: '#1c1e26' }}, ticks: {{ color: '#8b8e9b', font: {{ family: 'JetBrains Mono', size: 10 }} }} }},
+            y: {{ grid: {{ color: '#1c1e26' }}, ticks: {{ color: '#8b8e9b', font: {{ family: 'JetBrains Mono', size: 10 }} }} }}
+          }},
+          plugins: {{
+            legend: {{
+              labels: {{ color: '#e0e2ec', font: {{ family: 'JetBrains Mono', size: 11 }} }}
+            }}
+          }}
+        }}
+      }});
+    }}
+
+    function renderMacroTable() {{
+      const tbody = document.getElementById('macroTableBody');
+      tbody.innerHTML = '';
+      const gdpObj = globalMacroData.GDP_GROWTH || {{}};
+      const cpiObj = globalMacroData.CPI_INFLATION || {{}};
+
+      Object.keys(gdpObj).forEach(code => {{
+        const gItem = gdpObj[code];
+        const cItem = cpiObj[code];
+        const lastG = gItem?.series.length ? gItem.series[gItem.series.length - 1].value : null;
+        const lastC = cItem?.series.length ? cItem.series[cItem.series.length - 1].value : null;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td style="color:#e0e2ec; font-weight:600;">${{gItem.name}} <span style="color:var(--text-muted); font-size:10px;">(${{code}})</span></td>
+          <td style="color:var(--text-muted); text-align:right;">${{gItem.group}}</td>
+          <td class="${{lastG >= 0 ? 'pos' : 'neg'}}">${{lastG !== null ? lastG.toFixed(1) + '%' : '-'}}</td>
+          <td style="color:var(--amber);">${{lastC !== null ? lastC.toFixed(1) + '%' : '-'}}</td>
+        `;
+        tbody.appendChild(tr);
+      }});
     }}
 
     window.addEventListener('DOMContentLoaded', initDashboard);
@@ -641,9 +830,54 @@ def generate_bloomberg_html(meta: dict) -> str:
 </body>
 </html>"""
 
+# =========================================================
+# 5. Local Development Server Support (Flask Mode)
+# =========================================================
+def run_local_server(host: str, port: int, no_open: bool):
+    """
+    Codespaces 및 로컬 환경에서 대시보드를 즉시 검증할 수 있는 경량 HTTP 서버 구동
+    """
+    try:
+        from flask import Flask, send_from_directory
+    except ImportError:
+        logger.warning("[SERVER] Flask 미설치 상태입니다. 내장 http.server 로 대체 가동합니다.")
+        import http.server
+        import socketserver
+        os.chdir(BASE_DIR)
+        handler = http.server.SimpleHTTPRequestHandler
+        with socketserver.TCPServer((host, port), handler) as httpd:
+            logger.info(f"[SERVER] Local Server Ready at http://{host}:{port}/")
+            httpd.serve_forever()
+        return
+
+    app = Flask(__name__, static_folder=str(BASE_DIR))
+
+    @app.route("/")
+    def index():
+        return send_from_directory(BASE_DIR, "index.html")
+
+    @app.route("/<path:path>")
+    def static_files(path):
+        return send_from_directory(BASE_DIR, path)
+
+    if not no_open:
+        def open_browser():
+            time.sleep(1)
+            webbrowser.open(f"http://localhost:{port}/")
+        threading.Thread(target=open_browser, daemon=True).start()
+
+    logger.info(f"[SERVER] Flask Server Serving at http://{host}:{port}/")
+    app.run(host=host, port=port, debug=False, use_reloader=False)
+
+# =========================================================
+# 6. Main Execution Entrypoint
+# =========================================================
 def main():
-    parser = argparse.ArgumentParser(description="MacroEconomies Generator")
-    parser.add_argument("--cron", action="store_true", help="Run in CI/Cron Batch Mode")
+    parser = argparse.ArgumentParser(description="MacroEconomies Bloomberg Terminal Engine")
+    parser.add_argument("--cron", action="store_true", help="GitHub Actions Static Generator Mode")
+    parser.add_argument("--host", default="0.0.0.0", help="Local Server Host IP")
+    parser.add_argument("--port", type=int, default=8000, help="Local Server Port")
+    parser.add_argument("--no-open", action="store_true", help="Do not open web browser automatically")
     args = parser.parse_args()
 
     logger.info("========================================================================")
@@ -656,15 +890,18 @@ def main():
         init_db(conn)
         fetch_world_bank_data(conn)
         fetch_gscpi_data(conn)
-        export_json_and_html(conn)
-        logger.info("[SUCCESS] MacroEconomies 대시보드 갱신 성공")
+        export_assets(conn)
+        logger.info("[SUCCESS] 거시경제 데이터 수집 및 Bloomberg Terminal 빌드 완료.")
     except Exception as e:
-        logger.error(f"[FATAL] 파이프라인 처리 중 치명적 오류 발생: {e}", exc_info=True)
-        # CI 중단을 방지하기 위해 정적 파일이 최소 1회라도 생성되었는지 확인 후 종료
+        logger.error(f"[FATAL] 파이프라인 처리 중 치명적 예외: {e}", exc_info=True)
         if not HTML_PATH.exists():
             sys.exit(1)
     finally:
         conn.close()
+
+    # Cron 모드가 아닐 경우 로컬 서버 실행
+    if not args.cron:
+        run_local_server(args.host, args.port, args.no_open)
 
 if __name__ == "__main__":
     main()
