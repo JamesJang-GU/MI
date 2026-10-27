@@ -3,709 +3,503 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Linerlytica | MI Fleet Terminal</title>
+
+<title>Linerlytica | MI Terminal</title>
+
+<link rel="stylesheet" href="../assets/mi_terminal.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
 
 <style>
-:root {
-    --bg-core: #02060b;
-    --bg-base: #040a11;
-    --panel: #07111c;
-    --panel-2: #0a1724;
-    --panel-3: #0d1d2b;
-    --line: #193348;
-    --line-strong: #294b66;
-
-    --text: #f3f7fb;
-    --text-soft: #b5c5d2;
-    --muted: #8298aa;
-    --dim: #4c6579;
-
-    --amber: #f6a623;
-    --amber-soft: #ffc05e;
-    --blue: #42a8f5;
-    --cyan: #37c7e0;
-    --green: #36ca82;
-    --red: #ff6666;
-    --yellow: #ffd166;
-    --purple: #b18cff;
-
-    --shadow:
-        0 6px 22px rgba(0, 0, 0, .58),
-        0 0 18px rgba(38, 127, 184, .08);
-}
-
-* {
-    box-sizing: border-box;
-}
-
-html,
-body {
-    min-height: 100%;
-}
+/* =========================================================
+   Linerlytica Module Extension
+   공통 assets/mi_terminal.css 위에서만 동작하는 모듈 전용 보완 스타일
+   ========================================================= */
 
 body {
-    margin: 0;
-    color: var(--text);
-    background:
-        radial-gradient(
-            circle at 50% -20%,
-            rgba(38, 112, 163, .15),
-            transparent 44%
-        ),
-        linear-gradient(
-            180deg,
-            rgba(246, 166, 35, .025),
-            transparent 250px
-        ),
-        var(--bg-core);
-    font-family:
-        "IBM Plex Mono",
-        "Roboto Mono",
-        "SFMono-Regular",
-        Consolas,
-        "Liberation Mono",
-        monospace;
-    font-size: 11px;
-    line-height: 1.35;
-    -webkit-font-smoothing: antialiased;
+    background: var(--mi-bg);
 }
 
-.container {
-    width: min(1920px, calc(100% - 16px));
-    max-width: 1920px;
-    margin: 8px auto 14px;
+.mi-page {
+    width: min(1920px, calc(100% - 20px));
+    margin: 0 auto;
+    padding: 10px 0 18px;
 }
 
-.terminal-header {
-    min-height: 54px;
+.mi-terminal-header {
     display: flex;
     align-items: stretch;
     justify-content: space-between;
-    gap: 14px;
-    overflow: hidden;
-    border: 1px solid var(--line-strong);
-    background:
-        linear-gradient(
-            180deg,
-            rgba(13, 32, 49, .98),
-            rgba(3, 9, 15, .98)
-        );
-    box-shadow: var(--shadow);
+    min-height: 56px;
+    border: 1px solid var(--mi-border);
+    background: var(--mi-header);
 }
 
-.terminal-brand {
-    min-width: 58px;
+.mi-terminal-brand {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #02060b;
-    background: var(--amber);
-    font-size: 13px;
-    font-weight: 900;
-    letter-spacing: .10em;
-    box-shadow: 0 0 16px rgba(246, 166, 35, .35);
-}
-
-.terminal-title {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    min-width: 0;
-}
-
-.terminal-title h1 {
-    margin: 0;
-    color: #ffffff;
+    width: 62px;
+    flex: 0 0 62px;
+    color: var(--mi-bg-deep);
+    background: var(--mi-amber);
     font-size: 14px;
     font-weight: 900;
-    letter-spacing: .10em;
+    letter-spacing: .12em;
+}
+
+.mi-terminal-title {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 14px;
+}
+
+.mi-terminal-title h1 {
+    margin: 0;
+    color: var(--mi-white);
+    font-size: 14px;
+    font-weight: 900;
+    letter-spacing: .08em;
     text-transform: uppercase;
 }
 
-.terminal-title p {
-    margin: 4px 0 0;
-    color: var(--muted);
-    font-size: 8px;
-    font-weight: 800;
-    letter-spacing: .07em;
-    text-transform: uppercase;
-}
-
-.header-meta {
-    min-width: 320px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 3px;
-    padding: 7px 14px;
-    color: var(--muted);
-    border-left: 1px solid var(--line);
-    font-size: 8px;
-    font-weight: 800;
+.mi-terminal-title p {
+    margin: 5px 0 0;
+    color: var(--mi-text-muted);
+    font-size: 9px;
+    font-weight: 700;
     letter-spacing: .05em;
-    line-height: 1.5;
+    text-transform: uppercase;
+}
+
+.mi-terminal-meta {
+    min-width: 350px;
+    padding: 9px 14px;
+    border-left: 1px solid var(--mi-border);
+    color: var(--mi-text-muted);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    line-height: 1.7;
     text-align: right;
     text-transform: uppercase;
 }
 
-.header-meta strong {
-    color: var(--text-soft);
+.mi-terminal-meta strong {
+    color: var(--mi-white);
 }
 
-.ticker-bar {
+.fleet-ticker-wrap {
     display: flex;
     margin-top: 6px;
     overflow-x: auto;
-    border: 1px solid var(--line);
-    background: #02070d;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, .32);
+    border: 1px solid var(--mi-border);
+    background: var(--mi-bg-deep);
 }
 
-.ticker-heading {
-    min-width: 116px;
+.fleet-ticker-heading {
     display: flex;
     align-items: center;
+    flex: 0 0 118px;
     padding: 0 12px;
-    color: #071018;
-    background: var(--amber);
-    font-size: 8px;
+    color: var(--mi-bg-deep);
+    background: var(--mi-amber);
+    font-size: 9px;
     font-weight: 900;
-    letter-spacing: .09em;
+    letter-spacing: .08em;
     text-transform: uppercase;
 }
 
-.ticker-item {
-    min-width: 230px;
+.fleet-ticker {
+    min-width: 215px;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 1fr auto;
     gap: 3px 10px;
-    padding: 7px 12px;
-    border-right: 1px solid var(--line);
-    background:
-        linear-gradient(
-            180deg,
-            rgba(13, 29, 43, .68),
-            rgba(2, 8, 14, .88)
-        );
+    padding: 8px 12px;
+    border-right: 1px solid var(--mi-border);
 }
 
-.ticker-label {
+.fleet-ticker-label {
     overflow: hidden;
-    color: var(--muted);
-    font-size: 8px;
-    font-weight: 800;
-    letter-spacing: .06em;
+    color: var(--mi-text-muted);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .04em;
     text-overflow: ellipsis;
     text-transform: uppercase;
     white-space: nowrap;
 }
 
-.ticker-value {
-    color: var(--text);
-    font-size: 11px;
-    font-weight: 800;
+.fleet-ticker-value {
+    color: var(--mi-white);
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
     text-align: right;
 }
 
-.ticker-delta {
+.fleet-ticker-delta {
     grid-column: 1 / -1;
     font-size: 9px;
     font-weight: 800;
     text-align: right;
 }
 
-.dashboard-grid {
+.fleet-grid {
     display: grid;
     grid-template-columns: repeat(12, minmax(0, 1fr));
-    gap: 6px;
-    margin-top: 6px;
+    gap: 8px;
+    margin-top: 8px;
 }
 
-.panel {
+.fleet-panel {
     min-width: 0;
     overflow: hidden;
-    border: 1px solid var(--line);
-    background:
-        linear-gradient(
-            145deg,
-            rgba(14, 33, 49, .76),
-            rgba(4, 11, 18, .98)
-        );
-    box-shadow: var(--shadow);
+    border: 1px solid var(--mi-border);
+    background: var(--mi-panel);
 }
 
-.panel::before {
-    display: block;
-    height: 2px;
-    content: "";
-    background: linear-gradient(
-        90deg,
-        var(--amber),
-        rgba(246, 166, 35, .18) 42%,
-        transparent 78%
-    );
-}
-
-.panel-title {
-    min-height: 31px;
+.fleet-panel-title {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    min-height: 33px;
     gap: 10px;
     margin: 0;
-    padding: 0 10px;
-    color: var(--amber);
-    border-bottom: 1px solid var(--line);
-    background:
-        linear-gradient(
-            180deg,
-            rgba(13, 31, 47, .94),
-            rgba(7, 17, 27, .90)
-        );
-    font-size: 9px;
+    padding: 0 11px;
+    color: var(--mi-amber);
+    border-bottom: 1px solid var(--mi-border);
+    background: var(--mi-header-2);
+    font-size: 10px;
     font-weight: 900;
-    letter-spacing: .09em;
+    letter-spacing: .07em;
     text-transform: uppercase;
 }
 
-.panel-title span:last-child {
-    color: var(--muted);
+.fleet-panel-title small {
+    color: var(--mi-text-muted);
     font-size: 8px;
     font-weight: 700;
-    text-align: right;
 }
 
-.kpi-grid {
+.fleet-kpi-grid {
     grid-column: span 12;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 6px;
+    gap: 8px;
 }
 
-.kpi {
-    min-height: 91px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    padding: 9px 10px;
-    border: 1px solid var(--line);
-    border-top: 2px solid var(--blue);
-    background:
-        linear-gradient(
-            135deg,
-            rgba(38, 108, 155, .18),
-            transparent 62%
-        ),
-        var(--panel);
-    box-shadow: var(--shadow);
+.fleet-kpi {
+    min-height: 104px;
+    padding: 11px;
+    border: 1px solid var(--mi-border);
+    border-top: 3px solid var(--mi-cyan);
+    background: var(--mi-panel);
 }
 
-.kpi:nth-child(2) {
-    border-top-color: var(--green);
+.fleet-kpi:nth-child(2) {
+    border-top-color: var(--mi-green);
 }
 
-.kpi:nth-child(3) {
-    border-top-color: var(--amber);
+.fleet-kpi:nth-child(3) {
+    border-top-color: var(--mi-amber);
 }
 
-.kpi:nth-child(4) {
-    border-top-color: var(--purple);
+.fleet-kpi:nth-child(4) {
+    border-top-color: var(--mi-blue);
 }
 
-.kpi-label {
-    color: var(--muted);
-    font-size: 8px;
+.fleet-kpi-label {
+    color: var(--mi-text-muted);
+    font-size: 9px;
     font-weight: 800;
-    letter-spacing: .08em;
+    letter-spacing: .07em;
     text-transform: uppercase;
 }
 
-.kpi-value {
-    margin-top: 8px;
-    overflow: hidden;
-    color: #ffffff;
-    font-size: clamp(17px, 1.55vw, 25px);
+.fleet-kpi-value {
+    margin-top: 13px;
+    color: var(--mi-white);
+    font-size: clamp(20px, 2vw, 29px);
     font-weight: 900;
     font-variant-numeric: tabular-nums;
-    letter-spacing: -.06em;
+    letter-spacing: -.05em;
     text-align: right;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
-.kpi-sub {
-    min-height: 15px;
-    margin-top: 5px;
+.fleet-kpi-delta {
+    min-height: 16px;
+    margin-top: 8px;
     font-size: 9px;
     font-weight: 800;
     text-align: right;
 }
 
-.main-chart-panel {
+.fleet-chart-panel {
     grid-column: span 8;
 }
 
-.watchlist-panel {
+.fleet-watchlist-panel {
     grid-column: span 4;
 }
 
-.chart-wrap {
+.fleet-chart-wrap {
     position: relative;
-    min-height: 389px;
-    padding: 10px;
+    height: 392px;
+    padding: 12px;
 }
 
-.watchlist-table {
+.fleet-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 10px;
 }
 
-.watchlist-table th {
+.fleet-table th {
     padding: 9px 10px;
-    color: var(--muted);
-    border-bottom: 1px solid var(--line);
-    background: rgba(2, 8, 14, .58);
+    color: var(--mi-text-muted);
+    border-bottom: 1px solid var(--mi-border);
+    background: var(--mi-bg-deep);
     font-size: 8px;
-    font-weight: 800;
-    letter-spacing: .06em;
+    letter-spacing: .05em;
     text-align: right;
     text-transform: uppercase;
 }
 
-.watchlist-table th:first-child {
-    text-align: left;
-}
-
-.watchlist-table td {
+.fleet-table td {
     padding: 11px 10px;
-    color: var(--text-soft);
-    border-bottom: 1px solid rgba(39, 71, 95, .52);
+    color: var(--mi-text);
+    border-bottom: 1px solid var(--mi-border-soft);
     font-variant-numeric: tabular-nums;
     text-align: right;
 }
 
-.watchlist-table td:first-child {
+.fleet-table th:first-child,
+.fleet-table td:first-child {
     text-align: left;
 }
 
-.watchlist-table tr:hover {
-    background: rgba(66, 168, 245, .05);
-}
-
-.status {
-    color: #ffffff !important;
+.fleet-status-name {
+    color: var(--mi-white) !important;
     font-weight: 800;
 }
 
-.number {
-    color: var(--text) !important;
-}
-
-.watchlist-note {
+.fleet-note {
     padding: 9px 10px;
-    color: var(--muted);
-    border-top: 1px solid var(--line);
-    background: rgba(2, 8, 14, .58);
+    color: var(--mi-text-muted);
+    background: var(--mi-header-2);
     font-size: 8px;
     font-weight: 700;
-    letter-spacing: .03em;
+    letter-spacing: .04em;
     line-height: 1.6;
     text-transform: uppercase;
 }
 
-.heatmap-panel {
+.fleet-allocation-panel {
     grid-column: span 4;
 }
 
-.news-panel {
+.fleet-insight-panel {
     grid-column: span 4;
 }
 
-.risk-panel {
+.fleet-risk-panel {
     grid-column: span 4;
 }
 
-.heatmap-content {
-    padding: 9px 10px 10px;
+.fleet-allocation-content,
+.fleet-risk-content {
+    padding: 10px;
 }
 
-.heatmap-row {
-    padding: 7px 0;
-    border-bottom: 1px solid rgba(39, 71, 95, .48);
+.fleet-allocation-row {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--mi-border-soft);
 }
 
-.heatmap-row:last-child {
+.fleet-allocation-row:last-child {
     border-bottom: 0;
 }
 
-.heatmap-header,
-.heatmap-footer {
+.fleet-allocation-header,
+.fleet-allocation-footer {
     display: flex;
-    align-items: center;
     justify-content: space-between;
     gap: 8px;
 }
 
-.heatmap-header {
-    color: var(--text-soft);
+.fleet-allocation-header {
+    color: var(--mi-text);
     font-size: 9px;
     font-weight: 800;
 }
 
-.heatmap-header span:last-child {
-    color: #ffffff;
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-}
-
-.heatmap-track {
-    height: 6px;
-    margin: 6px 0;
-    overflow: hidden;
-    background: #02070d;
-    border: 1px solid #173249;
-}
-
-.heatmap-bar {
-    height: 100%;
-    min-width: 2px;
-    background:
-        linear-gradient(
-            90deg,
-            #1676b5,
-            var(--blue),
-            var(--cyan)
-        );
-    box-shadow: 0 0 10px rgba(55, 199, 224, .35);
-}
-
-.heatmap-footer {
-    color: var(--dim);
+.fleet-allocation-footer {
+    margin-top: 5px;
+    color: var(--mi-text-muted);
     font-size: 8px;
-    font-weight: 700;
-    text-transform: uppercase;
 }
 
-.terminal-list {
-    min-height: 264px;
-    margin: 0;
-    padding: 7px 11px 10px 28px;
-    color: var(--text-soft);
-    background:
-        linear-gradient(
-            180deg,
-            rgba(4, 12, 20, .34),
-            rgba(2, 7, 12, .12)
-        );
-}
-
-.terminal-list li {
-    padding: 8px 2px;
-    border-bottom: 1px solid rgba(39, 71, 95, .52);
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: .01em;
-    line-height: 1.5;
-}
-
-.terminal-list li:last-child {
-    border-bottom: 0;
-}
-
-.terminal-list li::marker {
-    color: var(--amber);
-}
-
-.risk-metrics {
-    padding: 8px 10px 10px;
-}
-
-.risk-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 9px 0;
-    border-bottom: 1px solid rgba(39, 71, 95, .52);
-}
-
-.risk-row:last-child {
-    border-bottom: 0;
-}
-
-.risk-label {
-    color: var(--muted);
-    font-size: 8px;
-    font-weight: 800;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-}
-
-.risk-value {
-    color: #ffffff;
-    font-size: 10px;
-    font-weight: 900;
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-}
-
-.risk-meter {
-    width: 82px;
-    height: 5px;
+.fleet-progress-track {
+    height: 7px;
+    margin-top: 6px;
     overflow: hidden;
-    border: 1px solid #1c3a52;
-    background: #02070d;
+    border: 1px solid var(--mi-border);
+    background: var(--mi-bg-deep);
 }
 
-.risk-meter span {
+.fleet-progress-track span {
     display: block;
     height: 100%;
-    background: var(--amber);
-    box-shadow: 0 0 9px rgba(246, 166, 35, .40);
 }
 
-.footer-status {
-    min-height: 30px;
-    grid-column: span 12;
+.fleet-insight-list {
+    min-height: 278px;
+    margin: 0;
+    padding: 5px 15px 8px 30px;
+}
+
+.fleet-insight-list li {
+    padding: 9px 0;
+    color: var(--mi-text);
+    border-bottom: 1px solid var(--mi-border-soft);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1.55;
+}
+
+.fleet-insight-list li::marker {
+    color: var(--mi-amber);
+}
+
+.fleet-risk-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 0 10px;
-    color: var(--muted);
-    border: 1px solid var(--line);
-    border-left: 3px solid var(--green);
-    background: #02070d;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--mi-border-soft);
+}
+
+.fleet-risk-row:last-child {
+    border-bottom: 0;
+}
+
+.fleet-risk-label {
+    color: var(--mi-text-muted);
     font-size: 8px;
     font-weight: 800;
-    letter-spacing: .06em;
+    letter-spacing: .05em;
     text-transform: uppercase;
 }
 
-.footer-status strong {
-    color: var(--text-soft);
+.fleet-risk-value {
+    margin-top: 3px;
+    color: var(--mi-white);
+    font-size: 10px;
+    font-weight: 900;
+    text-align: right;
+}
+
+.fleet-status-footer {
+    grid-column: span 12;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 11px;
+    color: var(--mi-text-muted);
+    border: 1px solid var(--mi-border);
+    border-left: 3px solid var(--mi-green);
+    background: var(--mi-header-2);
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
 }
 
 .up {
-    color: var(--green) !important;
+    color: var(--mi-green) !important;
 }
 
 .down {
-    color: var(--red) !important;
+    color: var(--mi-red) !important;
 }
 
 .neutral {
-    color: var(--muted) !important;
+    color: var(--mi-text-muted) !important;
 }
 
 @media (max-width: 1200px) {
-    .terminal-header {
+    .mi-terminal-header {
         flex-wrap: wrap;
     }
 
-    .header-meta {
+    .mi-terminal-meta {
         width: 100%;
         min-width: 100%;
-        border-top: 1px solid var(--line);
+        border-top: 1px solid var(--mi-border);
         border-left: 0;
         text-align: left;
     }
 
-    .main-chart-panel {
-        grid-column: span 12;
-    }
-
-    .watchlist-panel {
-        grid-column: span 12;
-    }
-
-    .heatmap-panel,
-    .news-panel,
-    .risk-panel {
+    .fleet-chart-panel,
+    .fleet-watchlist-panel,
+    .fleet-allocation-panel,
+    .fleet-insight-panel,
+    .fleet-risk-panel {
         grid-column: span 12;
     }
 }
 
 @media (max-width: 760px) {
-    .container {
-        width: calc(100% - 10px);
-        margin-top: 5px;
-    }
-
-    .terminal-brand {
-        min-width: 46px;
-    }
-
-    .terminal-title h1 {
-        font-size: 11px;
-        letter-spacing: .06em;
-    }
-
-    .terminal-title p {
-        font-size: 7px;
-    }
-
-    .kpi-grid {
+    .fleet-kpi-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .ticker-heading {
-        min-width: 95px;
-    }
-
-    .ticker-item {
-        min-width: 205px;
-    }
-
-    .footer-status {
-        align-items: flex-start;
+    .fleet-status-footer {
         flex-direction: column;
-        justify-content: center;
-        padding: 7px 10px;
+    }
+
+    .fleet-watchlist-panel {
+        overflow-x: auto;
+    }
+
+    .fleet-table {
+        min-width: 700px;
     }
 }
 
 @media (max-width: 480px) {
-    .kpi-grid {
+    .fleet-kpi-grid {
         grid-template-columns: 1fr;
     }
 
-    .watchlist-panel {
-        overflow-x: auto;
-    }
-
-    .watchlist-table {
-        min-width: 580px;
+    .mi-terminal-title h1 {
+        font-size: 11px;
     }
 }
 </style>
 </head>
 
 <body>
-<div class="container">
+<div class="mi-page">
 
-    <header class="terminal-header">
-        <div class="terminal-brand">MI</div>
+    <header class="mi-terminal-header">
+        <div class="mi-terminal-brand">MI</div>
 
-        <div class="terminal-title">
-            <h1>Linerlytica Global Containership Fleet Terminal</h1>
+        <div class="mi-terminal-title">
+            <h1>Linerlytica | Global Containership Fleet</h1>
             <p>
-                Fleet Supply Intelligence | Monthly 17th Snapshot History |
-                Ships and Capacity Monitoring
+                Fleet Supply Intelligence · Monthly 17th Snapshot History ·
+                Ships &amp; Capacity Monitoring
             </p>
         </div>
 
-        <div class="header-meta">
+        <div class="mi-terminal-meta">
             <div>
-                LATEST SNAPSHOT:
+                DATA SNAPSHOT:
                 <strong>2026-10-17</strong>
             </div>
             <div>
-                PREVIOUS SNAPSHOT:
+                PREVIOUS:
                 <strong>2026-09-17</strong>
             </div>
             <div>
@@ -715,270 +509,274 @@ body {
         </div>
     </header>
 
-    <section class="ticker-bar">
-        <div class="ticker-heading">Fleet Ticker</div>
+    <section class="fleet-ticker-wrap">
+        <div class="fleet-ticker-heading">Fleet Ticker</div>
         
-        <div class="ticker-item">
-            <span class="ticker-label">Ships at port</span>
-            <span class="ticker-value">1,129</span>
-            <span class="ticker-delta down">↘ -27</span>
+        <div class="mi-ticker fleet-ticker">
+            <span class="fleet-ticker-label">Ships at port</span>
+            <strong class="fleet-ticker-value">1,129</strong>
+            <span class="down fleet-ticker-delta">↘ -27</span>
         </div>
         
-        <div class="ticker-item">
-            <span class="ticker-label">Active Ships</span>
-            <span class="ticker-value">5,751</span>
-            <span class="ticker-delta up">↗ +249</span>
+        <div class="mi-ticker fleet-ticker">
+            <span class="fleet-ticker-label">Active Ships</span>
+            <strong class="fleet-ticker-value">5,751</strong>
+            <span class="up fleet-ticker-delta">↗ +249</span>
         </div>
         
-        <div class="ticker-item">
-            <span class="ticker-label">Inactive Ships</span>
-            <span class="ticker-value">74</span>
-            <span class="ticker-delta up">↗ +10</span>
+        <div class="mi-ticker fleet-ticker">
+            <span class="fleet-ticker-label">Inactive Ships</span>
+            <strong class="fleet-ticker-value">74</strong>
+            <span class="up fleet-ticker-delta">↗ +10</span>
         </div>
         
-        <div class="ticker-item">
-            <span class="ticker-label">Ships at anchorage</span>
-            <span class="ticker-value">968</span>
-            <span class="ticker-delta down">↘ -186</span>
+        <div class="mi-ticker fleet-ticker">
+            <span class="fleet-ticker-label">Ships at anchorage</span>
+            <strong class="fleet-ticker-value">968</strong>
+            <span class="down fleet-ticker-delta">↘ -186</span>
         </div>
         
-        <div class="ticker-item">
-            <span class="ticker-label">Ships in shipyard</span>
-            <span class="ticker-value">235</span>
-            <span class="ticker-delta up">↗ +22</span>
+        <div class="mi-ticker fleet-ticker">
+            <span class="fleet-ticker-label">Ships in shipyard</span>
+            <strong class="fleet-ticker-value">235</strong>
+            <span class="up fleet-ticker-delta">↗ +22</span>
         </div>
         
     </section>
 
-    <main class="dashboard-grid">
+    <main class="fleet-grid">
 
-        <section class="kpi-grid">
-            <div class="kpi">
-                <div class="kpi-label">Total Fleet Ships</div>
-                <div class="kpi-value">
+        <section class="fleet-kpi-grid">
+            <article class="fleet-kpi">
+                <div class="fleet-kpi-label">Total Fleet Ships</div>
+                <div class="fleet-kpi-value">
                     8,157
                 </div>
-                <div class="kpi-sub">
+                <div class="fleet-kpi-delta">
                     <span class="up">↗ +68 (+0.8%)</span>
                 </div>
-            </div>
+            </article>
 
-            <div class="kpi">
-                <div class="kpi-label">Total Fleet Capacity</div>
-                <div class="kpi-value">
+            <article class="fleet-kpi">
+                <div class="fleet-kpi-label">Observed Fleet Capacity</div>
+                <div class="fleet-kpi-value">
                     35,320,218
                 </div>
-                <div class="kpi-sub">
+                <div class="fleet-kpi-delta">
                     <span class="up">↗ +218,636 (+0.6%)</span>
                 </div>
-            </div>
+            </article>
 
-            <div class="kpi">
-                <div class="kpi-label">Active Fleet Capacity</div>
-                <div class="kpi-value">
+            <article class="fleet-kpi">
+                <div class="fleet-kpi-label">Active Fleet Capacity</div>
+                <div class="fleet-kpi-value">
                     24,488,025
                 </div>
-                <div class="kpi-sub">
+                <div class="fleet-kpi-delta">
                     <span class="up">↗ +1,218,741 (+5.2%)</span>
                 </div>
-            </div>
+            </article>
 
-            <div class="kpi">
-                <div class="kpi-label">Historical Observations</div>
-                <div class="kpi-value">
+            <article class="fleet-kpi">
+                <div class="fleet-kpi-label">Historical Observations</div>
+                <div class="fleet-kpi-value">
                     34 MOS
                 </div>
-                <div class="kpi-sub">
+                <div class="fleet-kpi-delta">
                     <span class="neutral">17TH OF EACH MONTH</span>
                 </div>
-            </div>
+            </article>
         </section>
 
-        <section class="panel main-chart-panel">
-            <h2 class="panel-title">
+        <section class="fleet-panel fleet-chart-panel">
+            <h2 class="fleet-panel-title">
                 <span>01. Fleet Capacity Trend | TEU</span>
-                <span>2024-01-17 — 2026-10-17</span>
+                <small>
+                    2024-01-17 — 2026-10-17
+                </small>
             </h2>
 
-            <div class="chart-wrap">
+            <div class="fleet-chart-wrap">
                 <canvas id="teuChart"></canvas>
             </div>
         </section>
 
-        <section class="panel watchlist-panel">
-            <h2 class="panel-title">
+        <section class="fleet-panel fleet-watchlist-panel">
+            <h2 class="fleet-panel-title">
                 <span>02. Fleet Status Watchlist</span>
-                <span>Latest Snapshot</span>
+                <small>Latest Snapshot</small>
             </h2>
 
-            <table class="watchlist-table">
+            <table class="fleet-table">
                 <thead>
                     <tr>
                         <th>Fleet Segment</th>
                         <th>Ships</th>
                         <th>Capacity</th>
-                        <th>MoM Change</th>
+                        <th>Ships Δ</th>
+                        <th>TEU Δ</th>
                     </tr>
                 </thead>
                 <tbody>
                     
         <tr>
-            <td class="status">Active Ships</td>
-            <td class="number">5,751</td>
-            <td class="number">24,488,025</td>
-            <td class="number">
-                <span class="up">↗ +249 (+4.5%)</span>
-            </td>
+            <td class="fleet-status-name">Active Ships</td>
+            <td>5,751</td>
+            <td>24,488,025</td>
+            <td><span class="up">↗ +249 (+4.5%)</span></td>
+            <td><span class="up">↗ +1,218,741 (+5.2%)</span></td>
         </tr>
         
         <tr>
-            <td class="status">Ships at port</td>
-            <td class="number">1,129</td>
-            <td class="number">5,639,764</td>
-            <td class="number">
-                <span class="down">↘ -27 (-2.3%)</span>
-            </td>
+            <td class="fleet-status-name">Ships at port</td>
+            <td>1,129</td>
+            <td>5,639,764</td>
+            <td><span class="down">↘ -27 (-2.3%)</span></td>
+            <td><span class="down">↘ -80,512 (-1.4%)</span></td>
         </tr>
         
         <tr>
-            <td class="status">Ships at anchorage</td>
-            <td class="number">968</td>
-            <td class="number">4,182,132</td>
-            <td class="number">
-                <span class="down">↘ -186 (-16.1%)</span>
-            </td>
+            <td class="fleet-status-name">Ships at anchorage</td>
+            <td>968</td>
+            <td>4,182,132</td>
+            <td><span class="down">↘ -186 (-16.1%)</span></td>
+            <td><span class="down">↘ -1,195,074 (-22.2%)</span></td>
         </tr>
         
         <tr>
-            <td class="status">Ships in shipyard</td>
-            <td class="number">235</td>
-            <td class="number">832,537</td>
-            <td class="number">
-                <span class="up">↗ +22 (+10.3%)</span>
-            </td>
+            <td class="fleet-status-name">Ships in shipyard</td>
+            <td>235</td>
+            <td>832,537</td>
+            <td><span class="up">↗ +22 (+10.3%)</span></td>
+            <td><span class="up">↗ +268,304 (+47.6%)</span></td>
         </tr>
         
         <tr>
-            <td class="status">Inactive Ships</td>
-            <td class="number">74</td>
-            <td class="number">177,760</td>
-            <td class="number">
-                <span class="up">↗ +10 (+15.6%)</span>
-            </td>
+            <td class="fleet-status-name">Inactive Ships</td>
+            <td>74</td>
+            <td>177,760</td>
+            <td><span class="up">↗ +10 (+15.6%)</span></td>
+            <td><span class="up">↗ +7,177 (+4.2%)</span></td>
         </tr>
         
                 </tbody>
             </table>
 
-            <div class="watchlist-note">
-                CHANGE METRIC REPRESENTS MONTH-ON-MONTH SHIP COUNT MOVEMENT.
-                CAPACITY VALUES ARE REPORTED IN TEU.
+            <div class="fleet-note">
+                DELTA VALUES COMPARE THE LATEST SNAPSHOT WITH THE IMMEDIATELY
+                PRECEDING COMPLETE MONTHLY SNAPSHOT.
             </div>
         </section>
 
-        <section class="panel heatmap-panel">
-            <h2 class="panel-title">
-                <span>03. Capacity Heatmap</span>
-                <span>TEU Distribution</span>
+        <section class="fleet-panel fleet-allocation-panel">
+            <h2 class="fleet-panel-title">
+                <span>03. Capacity Allocation</span>
+                <small>TEU Distribution</small>
             </h2>
 
-            <div class="heatmap-content">
+            <div class="fleet-allocation-content">
                 
-        <div class="heatmap-row">
-            <div class="heatmap-header">
+        <div class="fleet-allocation-row">
+            <div class="fleet-allocation-header">
                 <span>Active Ships</span>
-                <span>24,488,025 TEU</span>
+                <strong>24,488,025 TEU</strong>
             </div>
-            <div class="heatmap-track">
-                <div class="heatmap-bar" style="width:100.0%"></div>
+            <div class="fleet-progress-track">
+                <span
+                    style="width:69.33%; background:#31d0a0;"
+                ></span>
             </div>
-            <div class="heatmap-footer">
-                <span class="up">MOM: +1,218,741</span>
-                <span>100.0% OF MAX</span>
+            <div class="fleet-allocation-footer">
+                <span>69.3% OF OBSERVED CAPACITY</span>
             </div>
         </div>
         
-        <div class="heatmap-row">
-            <div class="heatmap-header">
+        <div class="fleet-allocation-row">
+            <div class="fleet-allocation-header">
                 <span>Ships at port</span>
-                <span>5,639,764 TEU</span>
+                <strong>5,639,764 TEU</strong>
             </div>
-            <div class="heatmap-track">
-                <div class="heatmap-bar" style="width:23.0%"></div>
+            <div class="fleet-progress-track">
+                <span
+                    style="width:15.97%; background:#f5a623;"
+                ></span>
             </div>
-            <div class="heatmap-footer">
-                <span class="down">MOM: -80,512</span>
-                <span>23.0% OF MAX</span>
+            <div class="fleet-allocation-footer">
+                <span>16.0% OF OBSERVED CAPACITY</span>
             </div>
         </div>
         
-        <div class="heatmap-row">
-            <div class="heatmap-header">
+        <div class="fleet-allocation-row">
+            <div class="fleet-allocation-header">
                 <span>Ships at anchorage</span>
-                <span>4,182,132 TEU</span>
+                <strong>4,182,132 TEU</strong>
             </div>
-            <div class="heatmap-track">
-                <div class="heatmap-bar" style="width:17.1%"></div>
+            <div class="fleet-progress-track">
+                <span
+                    style="width:11.84%; background:#4fa3ff;"
+                ></span>
             </div>
-            <div class="heatmap-footer">
-                <span class="down">MOM: -1,195,074</span>
-                <span>17.1% OF MAX</span>
-            </div>
-        </div>
-        
-        <div class="heatmap-row">
-            <div class="heatmap-header">
-                <span>Ships in shipyard</span>
-                <span>832,537 TEU</span>
-            </div>
-            <div class="heatmap-track">
-                <div class="heatmap-bar" style="width:3.4%"></div>
-            </div>
-            <div class="heatmap-footer">
-                <span class="up">MOM: +268,304</span>
-                <span>3.4% OF MAX</span>
+            <div class="fleet-allocation-footer">
+                <span>11.8% OF OBSERVED CAPACITY</span>
             </div>
         </div>
         
-        <div class="heatmap-row">
-            <div class="heatmap-header">
+        <div class="fleet-allocation-row">
+            <div class="fleet-allocation-header">
                 <span>Inactive Ships</span>
-                <span>177,760 TEU</span>
+                <strong>177,760 TEU</strong>
             </div>
-            <div class="heatmap-track">
-                <div class="heatmap-bar" style="width:0.7%"></div>
+            <div class="fleet-progress-track">
+                <span
+                    style="width:0.50%; background:#ff5b68;"
+                ></span>
             </div>
-            <div class="heatmap-footer">
-                <span class="up">MOM: +7,177</span>
-                <span>0.7% OF MAX</span>
+            <div class="fleet-allocation-footer">
+                <span>0.5% OF OBSERVED CAPACITY</span>
+            </div>
+        </div>
+        
+        <div class="fleet-allocation-row">
+            <div class="fleet-allocation-header">
+                <span>Ships in shipyard</span>
+                <strong>832,537 TEU</strong>
+            </div>
+            <div class="fleet-progress-track">
+                <span
+                    style="width:2.36%; background:#27c7e8;"
+                ></span>
+            </div>
+            <div class="fleet-allocation-footer">
+                <span>2.4% OF OBSERVED CAPACITY</span>
             </div>
         </div>
         
             </div>
         </section>
 
-        <section class="panel news-panel">
-            <h2 class="panel-title">
+        <section class="fleet-panel fleet-insight-panel">
+            <h2 class="fleet-panel-title">
                 <span>04. Market Intelligence</span>
-                <span>Supply Narrative</span>
+                <small>Supply Narrative</small>
             </h2>
 
-            <ul class="terminal-list">
+            <ul class="fleet-insight-list">
                 <li>
                     ACTIVE FLEET REPRESENTS
-                    69.3% OF THE LATEST OBSERVED
-                    FLEET CAPACITY.
+                    69.3% OF OBSERVED GLOBAL CONTAINERSHIP
+                    CAPACITY.
                 </li>
                 <li>
-                    ACTIVE FLEET CAPACITY EXPANDED MONTH-ON-MONTH.
+                    ACTIVE CAPACITY SIGNAL:
+                    <strong>EXPANDING</strong>.
                 </li>
                 <li>
-                    PORT-BASED CAPACITY DECLINED VERSUS THE PREVIOUS SNAPSHOT.
+                    PORT-BASED CAPACITY REPRESENTS
+                    16.0% OF TOTAL OBSERVED TEU.
                 </li>
                 <li>
-                    SHIPS AT ANCHORAGE ACCOUNT FOR
-                    11.8%
-                    OF OBSERVED CAPACITY.
+                    ANCHORAGE CAPACITY REPRESENTS
+                    11.8% OF TOTAL OBSERVED TEU.
                 </li>
                 <li>
                     SHIPYARD CAPACITY STANDS AT
@@ -987,104 +785,72 @@ body {
             </ul>
         </section>
 
-        <section class="panel risk-panel">
-            <h2 class="panel-title">
+        <section class="fleet-panel fleet-risk-panel">
+            <h2 class="fleet-panel-title">
                 <span>05. Risk Indicators</span>
-                <span>Fleet Utilization Signals</span>
+                <small>Fleet Utilization Signals</small>
             </h2>
 
-            <div class="risk-metrics">
-                <div class="risk-row">
+            <div class="fleet-risk-content">
+                <div class="fleet-risk-row">
                     <div>
-                        <div class="risk-label">Active Capacity Share</div>
-                        <div class="risk-value">
-                            69.3% OF TOTAL TEU
-                        </div>
-                    </div>
-                    <div class="risk-meter">
-                        <span style="width:69.3%"></span>
+                        <div class="fleet-risk-label">Active Capacity Share</div>
+                        <div class="fleet-risk-value">69.3% OF TEU</div>
                     </div>
                 </div>
 
-                <div class="risk-row">
+                <div class="fleet-risk-row">
                     <div>
-                        <div class="risk-label">Port Capacity Share</div>
-                        <div class="risk-value">
-                            16.0% OF TOTAL TEU
-                        </div>
-                    </div>
-                    <div class="risk-meter">
-                        <span style="width:16.0%"></span>
+                        <div class="fleet-risk-label">Port Capacity Share</div>
+                        <div class="fleet-risk-value">16.0% OF TEU</div>
                     </div>
                 </div>
 
-                <div class="risk-row">
+                <div class="fleet-risk-row">
                     <div>
-                        <div class="risk-label">Inactive Capacity Share</div>
-                        <div class="risk-value">
-                            0.5% OF TOTAL TEU
-                        </div>
-                    </div>
-                    <div class="risk-meter">
-                        <span style="width:0.5%"></span>
+                        <div class="fleet-risk-label">Inactive Capacity Share</div>
+                        <div class="fleet-risk-value">0.5% OF TEU</div>
                     </div>
                 </div>
 
-                <div class="risk-row">
+                <div class="fleet-risk-row">
                     <div>
-                        <div class="risk-label">Inactive Fleet Signal</div>
-                        <div class="risk-value">
+                        <div class="fleet-risk-label">Inactive Fleet Signal</div>
+                        <div class="fleet-risk-value">
                             177,760 TEU
                         </div>
                     </div>
-                    <div class="risk-meter">
-                        <span style="width:2.0%"></span>
-                    </div>
                 </div>
 
-                <div class="risk-row">
+                <div class="fleet-risk-row">
                     <div>
-                        <div class="risk-label">Risk Assessment</div>
-                        <div class="risk-value">
-                            MONITORED
+                        <div class="fleet-risk-label">Risk Assessment</div>
+                        <div class="fleet-risk-value up">
+                            NORMAL
                         </div>
-                    </div>
-                    <div class="risk-meter">
-                        <span style="width:18.0%"></span>
-                    </div>
-                </div>
-
-                <div class="risk-row">
-                    <div>
-                        <div class="risk-label">Capacity Signal</div>
-                        <div class="risk-value">
-                            EXPANDING
-                        </div>
-                    </div>
-                    <div class="risk-meter">
-                        <span style="width:70%"></span>
                     </div>
                 </div>
             </div>
 
-            <div class="watchlist-note">
-                INACTIVE CAPACITY ROSE, WARRANTING SUPPLY-SIDE MONITORING.
+            <div class="fleet-note">
+                INACTIVE CAPACITY MONTH-ON-MONTH CHANGE:
+                <span class="up">↗ +7,177 (+4.2%)</span>
             </div>
         </section>
 
-        <footer class="footer-status">
+        <footer class="fleet-status-footer">
             <div>
                 SYSTEM STATUS:
                 <strong>NORMAL</strong>
-                | MARKET HEALTH:
-                <strong>MONITORED</strong>
-                | SENTIMENT:
-                <strong>DATA-DRIVEN</strong>
+                | DATASET:
+                <strong>COMPLETE MONTHLY SNAPSHOTS ONLY</strong>
             </div>
+
             <div>
-                ALERTS:
-                <strong>NO CRITICAL DATA EXCEPTIONS</strong>
-                | GENERATED FROM LINERLYTICA.DB
+                GENERATED:
+                <strong>2026-10-27 06:30:00 UTC</strong>
+                | SOURCE:
+                <strong>LINERLYTICA.DB</strong>
             </div>
         </footer>
 
@@ -1092,67 +858,67 @@ body {
 </div>
 
 <script>
-const labels = ["2024-01-17", "2024-02-17", "2024-03-17", "2024-04-17", "2024-05-17", "2024-06-17", "2024-07-17", "2024-08-17", "2024-09-17", "2024-10-17", "2024-11-17", "2024-12-17", "2025-01-17", "2025-02-17", "2025-03-17", "2025-04-17", "2025-05-17", "2025-06-17", "2025-07-17", "2025-08-17", "2025-09-17", "2025-10-17", "2025-11-17", "2025-12-17", "2026-01-17", "2026-02-17", "2026-03-17", "2026-04-17", "2026-05-17", "2026-06-17", "2026-07-17", "2026-08-17", "2026-09-17", "2026-10-17"];
+const fleetLabels = ["2024-01-17", "2024-02-17", "2024-03-17", "2024-04-17", "2024-05-17", "2024-06-17", "2024-07-17", "2024-08-17", "2024-09-17", "2024-10-17", "2024-11-17", "2024-12-17", "2025-01-17", "2025-02-17", "2025-03-17", "2025-04-17", "2025-05-17", "2025-06-17", "2025-07-17", "2025-08-17", "2025-09-17", "2025-10-17", "2025-11-17", "2025-12-17", "2026-01-17", "2026-02-17", "2026-03-17", "2026-04-17", "2026-05-17", "2026-06-17", "2026-07-17", "2026-08-17", "2026-09-17", "2026-10-17"];
 
 new Chart(document.getElementById("teuChart"), {
     type: "line",
     data: {
-        labels: labels,
+        labels: fleetLabels,
         datasets: [
             {
                 label: "ACTIVE SHIPS",
                 data: [20689180, 20689180, 20689180, 20689180, 20689180, 20689180, 20689180, 20689180, 20689180, 23915105, 23915105, 23915105, 23915105, 23915105, 23915105, 23915105, 23915105, 23915105, 23915105, 23915105, 23915105, 24734399, 24734399, 24734399, 24894939, 24894939, 24894939, 25030534, 25030534, 25030534, 23334936, 23334936, 23269284, 24488025],
-                borderColor: "#36ca82",
-                backgroundColor: "rgba(54, 202, 130, .08)",
-                borderWidth: 2.5,
+                borderColor: "#31d0a0",
+                backgroundColor: "rgba(49, 208, 160, .08)",
+                borderWidth: 2.4,
                 pointRadius: 2,
                 pointHoverRadius: 4,
                 fill: true,
-                tension: 0.20
+                tension: .20
             },
             {
                 label: "SHIPS AT PORT",
                 data: [4847288, 4847288, 4847288, 4847288, 4847288, 4847288, 4847288, 4847288, 4847288, 4280939, 4280939, 4280939, 4280939, 4280939, 4280939, 4280939, 4280939, 4280939, 4280939, 4280939, 4280939, 5069289, 5069289, 5069289, 4981004, 4981004, 4981004, 5094684, 5094684, 5094684, 5954266, 5954266, 5720276, 5639764],
-                borderColor: "#f6a623",
+                borderColor: "#f5a623",
                 backgroundColor: "transparent",
                 borderWidth: 1.8,
                 pointRadius: 1.5,
                 pointHoverRadius: 3,
                 fill: false,
-                tension: 0.20
+                tension: .20
             },
             {
                 label: "SHIPS AT ANCHORAGE",
                 data: [1625067, 1625067, 1625067, 1625067, 1625067, 1625067, 1625067, 1625067, 1625067, 2262910, 2262910, 2262910, 2262910, 2262910, 2262910, 2262910, 2262910, 2262910, 2262910, 2262910, 2262910, 2789304, 2789304, 2789304, 3249633, 3249633, 3249633, 3283257, 3283257, 3283257, 4782043, 4782043, 5377206, 4182132],
-                borderColor: "#42a8f5",
+                borderColor: "#4fa3ff",
                 backgroundColor: "transparent",
                 borderWidth: 1.7,
                 pointRadius: 1.5,
                 pointHoverRadius: 3,
                 fill: false,
-                tension: 0.20
+                tension: .20
             },
             {
                 label: "INACTIVE SHIPS",
                 data: [405855, 405855, 405855, 405855, 405855, 405855, 405855, 405855, 405855, 117587, 117587, 117587, 117587, 117587, 117587, 117587, 117587, 117587, 117587, 117587, 117587, 122604, 122604, 122604, 127301, 127301, 127301, 99560, 99560, 99560, 135677, 135677, 170583, 177760],
-                borderColor: "#ff6666",
+                borderColor: "#ff5b68",
                 backgroundColor: "transparent",
-                borderWidth: 1.6,
+                borderWidth: 1.7,
                 pointRadius: 1.5,
                 pointHoverRadius: 3,
                 fill: false,
-                tension: 0.20
+                tension: .20
             },
             {
                 label: "SHIPS IN SHIPYARD",
                 data: [840639, 840639, 840639, 840639, 840639, 840639, 840639, 840639, 840639, 723230, 723230, 723230, 723230, 723230, 723230, 723230, 723230, 723230, 723230, 723230, 723230, 806321, 806321, 806321, 682767, 682767, 682767, 760777, 760777, 760777, 590203, 590203, 564233, 832537],
-                borderColor: "#ffd166",
+                borderColor: "#27c7e8",
                 backgroundColor: "transparent",
-                borderWidth: 1.6,
+                borderWidth: 1.7,
                 pointRadius: 1.5,
                 pointHoverRadius: 3,
                 fill: false,
-                tension: 0.20
+                tension: .20
             }
         ]
     },
@@ -1167,7 +933,7 @@ new Chart(document.getElementById("teuChart"), {
             legend: {
                 position: "bottom",
                 labels: {
-                    color: "#b5c5d2",
+                    color: "#b6c7d7",
                     boxWidth: 12,
                     boxHeight: 2,
                     padding: 14,
@@ -1179,21 +945,12 @@ new Chart(document.getElementById("teuChart"), {
                 }
             },
             tooltip: {
-                backgroundColor: "rgba(5, 14, 23, .96)",
-                titleColor: "#f3f7fb",
-                bodyColor: "#b5c5d2",
-                borderColor: "#294b66",
+                backgroundColor: "rgba(3, 11, 19, .97)",
+                titleColor: "#f2f6fa",
+                bodyColor: "#b6c7d7",
+                borderColor: "#16334b",
                 borderWidth: 1,
                 padding: 10,
-                titleFont: {
-                    family: "Consolas, monospace",
-                    size: 10,
-                    weight: "700"
-                },
-                bodyFont: {
-                    family: "Consolas, monospace",
-                    size: 10
-                },
                 callbacks: {
                     label: function(context) {
                         if (
@@ -1212,7 +969,7 @@ new Chart(document.getElementById("teuChart"), {
         scales: {
             x: {
                 grid: {
-                    color: "rgba(43, 80, 108, .32)",
+                    color: "rgba(22, 51, 75, .42)",
                     drawBorder: false
                 },
                 ticks: {
@@ -1227,7 +984,7 @@ new Chart(document.getElementById("teuChart"), {
             },
             y: {
                 grid: {
-                    color: "rgba(43, 80, 108, .38)",
+                    color: "rgba(22, 51, 75, .42)",
                     drawBorder: false
                 },
                 ticks: {
