@@ -238,146 +238,63 @@ def fetch_world_bank_data(conn: sqlite3.Connection):
         conn.commit()
         logger.info(f"[COLLECT] {ind_key} 수집 완료 (적재 건수: {total_ingested}건)")
 
-def fetch_gscpi_from_nyfed_csv():
+def fetch_gscpi_data(conn):
     """
-    NY Fed 공식 GSCPI revision-vintage CSV에서
-    최신 유효 빈티지(vintage) 열을 선택하여 월별 시계열을 반환한다.
+    NY Fed GSCPI 최신 vintage 데이터를 수집하고
+    SQLite gscpi_series 테이블에 저장한다.
 
-    CSV 구조:
-    - Date: 실제 GSCPI 관측월
-    - Jan-22, Feb-22, ...: 각 발표 시점의 GSCPI 개정 빈티지
-
-    Returns:
-        list[dict]:
-        [
-            {"date": "1997-09", "value": -0.44},
-            ...
-        ]
+    기존 main()의 fetch_gscpi_data(conn) 호출 구조를 유지하기 위한
+    호환 함수이다.
     """
-    csv_url = (
-        "https://www.newyorkfed.org/medialibrary/research/"
-        "interactives/data/gscpi/gscpi_interactive_data.csv"
-    )
+    gscpi_records = fetch_gscpi_from_nyfed_csv()
 
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (X11; Linux x86_64) "
-            "AppleWebKit/537.36 "
-            "Chrome/131.0.0.0 Safari/537.36"
-        ),
-        "Accept": "text/csv,text/plain,*/*",
+    if not gscpi_records:
+        log("[WARNING] [GSCPI] 신규 수집 데이터가 없습니다. 기존 DB 캐시를 유지합니다.")
+        return 0
+
+    cursor = conn.cursor()
+
+    # 현재 실제 테이블의 컬럼 구조를 확인
+    table_columns = {
+        row[1]
+        for row in cursor.execute("PRAGMA table_info(gscpi_series)").fetchall()
     }
 
-    try:
-        log("[GSCPI] Strategy 1: NY Fed 공식 CSV 직접 수집 시작...")
-
-        response = requests.get(
-            csv_url,
-            headers=headers,
-            timeout=60
+    if "date" not in table_columns or "value" not in table_columns:
+        raise RuntimeError(
+            "[GSCPI] gscpi_series 테이블에 필수 컬럼(date, value)이 없습니다. "
+            f"현재 컬럼: {sorted(table_columns)}"
         )
-        response.raise_for_status()
 
-        df = pd.read_csv(StringIO(response.text))
-
-        if "Date" not in df.columns:
-            raise ValueError(
-                f"NY Fed GSCPI CSV에 Date 컬럼이 없습니다: {df.columns.tolist()}"
+    # updated_at 컬럼 유무에 따라 안전하게 저장
+    if "updated_at" in table_columns:
+        cursor.executemany("""
+            INSERT OR REPLACE INTO gscpi_series (
+                date,
+                value,
+                updated_at
             )
-
-        # 첫 번째 열(Date)을 제외한 나머지는 개정 시점(vintage)별 값 열
-        vintage_columns = [col for col in df.columns if col != "Date"]
-
-        if not vintage_columns:
-            raise ValueError("NY Fed GSCPI CSV에서 vintage 열을 찾지 못했습니다.")
-
-        # 예: Jan-22, Feb-22, ..., Oct-26을 실제 날짜 기준으로 정렬
-        vintage_info = []
-        for col in vintage_columns:
-            vintage_date = pd.to_datetime(
-                str(col).strip(),
-                format="%b-%y",
-                errors="coerce"
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        """, [
+            (item["date"], item["value"])
+            for item in gscpi_records
+        ])
+    else:
+        cursor.executemany("""
+            INSERT OR REPLACE INTO gscpi_series (
+                date,
+                value
             )
+            VALUES (?, ?)
+        """, [
+            (item["date"], item["value"])
+            for item in gscpi_records
+        ])
 
-            if pd.notna(vintage_date):
-                valid_count = pd.to_numeric(
-                    df[col],
-                    errors="coerce"
-                ).notna().sum()
+    conn.commit()
 
-                # 값이 있는 열만 유효 vintage 후보로 포함
-                if valid_count > 0:
-                    vintage_info.append({
-                        "column": col,
-                        "vintage_date": vintage_date,
-                        "valid_count": int(valid_count),
-                    })
-
-        if not vintage_info:
-            raise ValueError("유효값을 가진 GSCPI vintage 열이 없습니다.")
-
-        # 최신 발표/개정 빈티지 선택
-        latest_vintage = max(
-            vintage_info,
-            key=lambda x: x["vintage_date"]
-        )
-
-        value_column = latest_vintage["column"]
-
-        log(
-            f"[GSCPI] 최신 vintage 선택: {value_column} "
-            f"(유효 관측치 {latest_vintage['valid_count']}건)"
-        )
-
-        parsed = pd.DataFrame({
-            "date": pd.to_datetime(
-                df["Date"],
-                format="%d-%b-%Y",
-                errors="coerce"
-            ),
-            "value": pd.to_numeric(
-                df[value_column],
-                errors="coerce"
-            ),
-        })
-
-        # CSV 하단의 빈 행과 아직 발표되지 않은 미래 월을 제거
-        parsed = parsed.dropna(subset=["date", "value"]).copy()
-
-        # 대시보드 및 SQLite의 표준 월 형식
-        parsed["date"] = parsed["date"].dt.strftime("%Y-%m")
-
-        # 중복 월 방지 및 시계열 정렬
-        parsed = (
-            parsed
-            .drop_duplicates(subset=["date"], keep="last")
-            .sort_values("date")
-            .reset_index(drop=True)
-        )
-
-        records = [
-            {
-                "date": row["date"],
-                "value": round(float(row["value"]), 4),
-            }
-            for _, row in parsed.iterrows()
-        ]
-
-        if not records:
-            raise ValueError("GSCPI CSV 파싱 후 유효한 시계열 데이터가 없습니다.")
-
-        log(
-            f"[GSCPI] NY Fed 공식 CSV 수집 성공: {len(records)}건 | "
-            f"범위: {records[0]['date']} ~ {records[-1]['date']} | "
-            f"최신값: {records[-1]['value']}"
-        )
-
-        return records
-
-    except Exception as exc:
-        log(f"[WARNING] [GSCPI] NY Fed 공식 CSV 수집 실패: {exc}")
-        return []
+    log(f"[GSCPI] SQLite 저장 완료: {len(gscpi_records)}건")
+    return len(gscpi_records)
 
 
 # =========================================================
