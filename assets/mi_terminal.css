@@ -1,0 +1,352 @@
+/* =========================================================
+   MI TERMINAL DESIGN SYSTEM
+   Standardized Bloomberg / MI Terminal Theme
+   ========================================================= */
+
+/* ---------------------------------------------------------
+   1. Design Tokens (Theme Variables)
+   --------------------------------------------------------- */
+:root {
+    --mi-bg: #030b13;
+    --mi-bg-deep: #02070d;
+
+    --mi-header: #06111d;
+    --mi-header-2: #050d16;
+
+    --mi-panel: #091521;
+    --mi-panel-hover: #0c1d2b;
+    --mi-panel-strong: #0d1d2b;
+
+    --mi-border: #16334b;
+    --mi-border-soft: #0d2639;
+    --mi-grid: rgba(22, 51, 75, 0.42);
+
+    --mi-amber: #f5a623;
+    --mi-cyan: #27c7e8;
+    --mi-blue: #4fa3ff;
+    --mi-green: #31d0a0;
+    --mi-red: #ff5b68;
+
+    --mi-white: #f2f6fa;
+    --mi-text: #9eb3c7;
+    --mi-muted: #5f7892;
+
+    --mi-font: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+    --mi-header-height: 40px;
+    --mi-status-height: 30px;
+    --mi-page-max-width: 1680px;
+}
+
+/* ---------------------------------------------------------
+   2. Reset & Global Styles
+   --------------------------------------------------------- */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html {
+    min-height: 100%;
+    background: var(--mi-bg);
+}
+
+body {
+    min-height: 100%;
+    margin: 0;
+    background:
+        linear-gradient(180deg, rgba(7, 21, 33, 0.3) 0%, transparent 320px),
+        var(--mi-bg);
+    color: var(--mi-text);
+    font-family: var(--mi-font);
+    font-size: 12px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+}
+
+button, input, select, textarea {
+    font: inherit;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+/* ---------------------------------------------------------
+   3. Bloomberg-style Terminal Top Header
+   --------------------------------------------------------- */
+.mi-terminal-header {
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    width: 100%;
+    border-top: 1px solid var(--mi-border);
+    border-bottom: 1px solid var(--mi-border);
+    background: var(--mi-header);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+}
+
+.mi-ticker-bar {
+    display: flex;
+    align-items: stretch;
+    min-height: var(--mi-header-height);
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+}
+
+.mi-module-name {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    padding: 0 18px 0 12px;
+    border-right: 1px solid var(--mi-border);
+    color: var(--mi-white);
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.6px;
+}
+
+.mi-function-key {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 18px;
+    margin-right: 10px;
+    padding: 0 6px;
+    background: var(--mi-amber);
+    color: #06111d;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: -0.3px;
+}
+
+.mi-ticker {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 150px;
+    padding: 0 16px;
+    border-right: 1px solid var(--mi-border);
+}
+
+.mi-ticker-label {
+    color: var(--mi-muted);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    line-height: 1.1;
+}
+
+.mi-ticker-data {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-top: 3px;
+}
+
+.mi-ticker-value {
+    color: var(--mi-white);
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.mi-ticker-change {
+    font-size: 9px;
+    font-weight: 900;
+}
+
+.mi-up { color: var(--mi-green) !important; }
+.mi-down { color: var(--mi-red) !important; }
+.mi-neutral { color: var(--mi-cyan) !important; }
+
+.mi-header-action {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+    padding: 0 14px;
+}
+
+.mi-header-action a {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 12px;
+    border: 1px solid #1e5575;
+    background: #061624;
+    color: var(--mi-cyan);
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0.6px;
+    transition: all 0.15s ease;
+}
+
+.mi-header-action a:hover {
+    border-color: var(--mi-cyan);
+    background: #0b2639;
+    color: var(--mi-white);
+}
+
+.mi-status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-height: var(--mi-status-height);
+    padding: 0 12px;
+    border-top: 1px solid var(--mi-border-soft);
+    background: var(--mi-header-2);
+    color: var(--mi-text);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.55px;
+}
+
+.mi-system-status {
+    padding-left: 10px;
+    border-left: 2px solid var(--mi-green);
+}
+
+.mi-status-emphasis,
+.mi-refresh-value {
+    color: var(--mi-white);
+}
+
+.mi-refresh-label {
+    color: var(--mi-muted);
+}
+
+/* ---------------------------------------------------------
+   4. Layout & UI Components
+   --------------------------------------------------------- */
+.mi-page {
+    width: min(var(--mi-page-max-width), calc(100% - 32px));
+    margin: 0 auto;
+    padding: 18px 0 36px;
+}
+
+.mi-panel {
+    border: 1px solid var(--mi-border);
+    background: var(--mi-panel);
+    transition: background 0.15s ease;
+}
+
+.mi-panel:hover {
+    background: var(--mi-panel-hover);
+}
+
+.mi-section-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 20px 0 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--mi-border);
+    color: var(--mi-white);
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.8px;
+}
+
+.mi-section-title::before {
+    display: block;
+    width: 3px;
+    height: 14px;
+    background: var(--mi-amber);
+    content: "";
+}
+
+.mi-data-label {
+    color: var(--mi-muted);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.7px;
+}
+
+.mi-data-value {
+    color: var(--mi-white);
+    font-weight: 900;
+}
+
+/* ---------------------------------------------------------
+   5. Terminal Tables
+   --------------------------------------------------------- */
+.mi-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--mi-panel);
+    color: var(--mi-text);
+    font-size: 11px;
+}
+
+.mi-table th {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--mi-border);
+    background: #07111c;
+    color: var(--mi-muted);
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 0.65px;
+    text-align: left;
+}
+
+.mi-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--mi-border-soft);
+}
+
+.mi-table tbody tr:hover {
+    background: rgba(39, 199, 232, 0.05);
+}
+
+.mi-table .number {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------
+   6. Terminal Custom Scrollbar
+   --------------------------------------------------------- */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #040b12;
+}
+
+::-webkit-scrollbar-thumb {
+    border: 1px solid #040b12;
+    background: #1b4059;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #27647f;
+}
+
+/* ---------------------------------------------------------
+   7. Responsive Breakdown
+   --------------------------------------------------------- */
+@media (max-width: 768px) {
+    .mi-page {
+        width: calc(100% - 20px);
+        padding-top: 12px;
+    }
+    .mi-module-name {
+        padding-right: 12px;
+        font-size: 10px;
+    }
+    .mi-ticker {
+        min-width: 130px;
+        padding: 0 10px;
+    }
+    .mi-header-action {
+        display: none;
+    }
+    .mi-status-bar {
+        font-size: 8px;
+    }
+}
