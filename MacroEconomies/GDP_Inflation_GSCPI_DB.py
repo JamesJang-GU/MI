@@ -238,107 +238,147 @@ def fetch_world_bank_data(conn: sqlite3.Connection):
         conn.commit()
         logger.info(f"[COLLECT] {ind_key} 수집 완료 (적재 건수: {total_ingested}건)")
 
-def fetch_gscpi_data(conn: sqlite3.Connection):
+def fetch_gscpi_from_nyfed_csv():
     """
-    GSCPI 다계층 수집 (Triple-Fallback Engine)
-    1. NY Fed 공식 엑셀/CSV 다이렉트 엔드포인트 파싱
-    2. Playwright 브라우저 차트 JSON 스니핑
-    3. 기존 DB 캐시 유지 (Fail-Safe)
+    NY Fed 공식 GSCPI revision-vintage CSV에서
+    최신 유효 빈티지(vintage) 열을 선택하여 월별 시계열을 반환한다.
+
+    CSV 구조:
+    - Date: 실제 GSCPI 관측월
+    - Jan-22, Feb-22, ...: 각 발표 시점의 GSCPI 개정 빈티지
+
+    Returns:
+        list[dict]:
+        [
+            {"date": "1997-09", "value": -0.44},
+            ...
+        ]
     """
-    logger.info("[COLLECT] NY Fed GSCPI 공급망 압력 지수 수집 시작...")
-    cursor = conn.cursor()
-    records = []
+    csv_url = (
+        "https://www.newyorkfed.org/medialibrary/research/"
+        "interactives/data/gscpi/gscpi_interactive_data.csv"
+    )
 
-    # Strategy 1: Direct File Download
-    candidate_urls = [
-        "https://www.newyorkfed.org/medialibrary/media/research/policy/gscpi/gscpi_data.xlsx",
-        "https://www.newyorkfed.org/medialibrary/media/research/policy/gscpi/gscpi_data.xls",
-        "https://www.newyorkfed.org/medialibrary/media/research/policy/gscpi/gscpi_data.csv"
-    ]
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) "
+            "AppleWebKit/537.36 "
+            "Chrome/131.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/csv,text/plain,*/*",
+    }
 
-    for url in candidate_urls:
-        try:
-            res = requests.get(url, headers=headers, timeout=15)
-            if res.status_code == 200 and len(res.content) > 1000:
-                if url.endswith(".csv"):
-                    df = pd.read_csv(io.BytesIO(res.content))
-                else:
-                    df = pd.read_excel(io.BytesIO(res.content))
+    try:
+        log("[GSCPI] Strategy 1: NY Fed 공식 CSV 직접 수집 시작...")
 
-                for _, row in df.iterrows():
-                    d_raw = str(row.iloc[0]).strip()
-                    val_raw = row.iloc[1] if len(row) > 1 else None
-                    match = re.search(r"(\d{4})[-/.](\d{1,2})", d_raw)
-                    if match and pd.notnull(val_raw):
-                        try:
-                            d_fmt = f"{int(match.group(1)):04d}-{int(match.group(2)):02d}"
-                            v_float = float(val_raw)
-                            records.append((d_fmt, v_float))
-                        except (ValueError, TypeError):
-                            continue
+        response = requests.get(
+            csv_url,
+            headers=headers,
+            timeout=60
+        )
+        response.raise_for_status()
 
-                if records:
-                    logger.info(f"[GSCPI] Strategy 1 성공 (공식 데이터셋 {len(records)}건 확보)")
-                    break
-        except Exception as e:
-            logger.debug(f"[GSCPI] Strategy 1 ({url}) 시도 실패: {e}")
+        df = pd.read_csv(StringIO(response.text))
 
-    # Strategy 2: Playwright Sniffing
-    if not records:
-        try:
-            from playwright.sync_api import sync_playwright
-            logger.info("[GSCPI] Strategy 2: Playwright 브라우저 가동 및 네트워크 스니핑...")
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                page = browser.new_page()
-                intercepted_json = []
+        if "Date" not in df.columns:
+            raise ValueError(
+                f"NY Fed GSCPI CSV에 Date 컬럼이 없습니다: {df.columns.tolist()}"
+            )
 
-                def on_response(response):
-                    if "gscpi" in response.url.lower():
-                        try:
-                            if "json" in response.headers.get("content-type", ""):
-                                intercepted_json.append(response.json())
-                        except Exception:
-                            pass
+        # 첫 번째 열(Date)을 제외한 나머지는 개정 시점(vintage)별 값 열
+        vintage_columns = [col for col in df.columns if col != "Date"]
 
-                page.on("response", on_response)
-                page.goto(
-                    "https://www.newyorkfed.org/research/policy/gscpi#/interactive",
-                    wait_until="domcontentloaded",
-                    timeout=60000
-                )
+        if not vintage_columns:
+            raise ValueError("NY Fed GSCPI CSV에서 vintage 열을 찾지 못했습니다.")
 
-                # NY Fed SPA의 차트/API 호출 대기
-                page.wait_for_timeout(8000)
+        # 예: Jan-22, Feb-22, ..., Oct-26을 실제 날짜 기준으로 정렬
+        vintage_info = []
+        for col in vintage_columns:
+            vintage_date = pd.to_datetime(
+                str(col).strip(),
+                format="%b-%y",
+                errors="coerce"
+            )
 
-                for blob in intercepted_json:
+            if pd.notna(vintage_date):
+                valid_count = pd.to_numeric(
+                    df[col],
+                    errors="coerce"
+                ).notna().sum()
 
-                    if isinstance(blob, list):
-                        for item in blob:
-                            if isinstance(item, dict) and "date" in item and "gscpi" in item:
-                                records.append((str(item["date"])[:7], float(item["gscpi"])))
-            if records:
-                logger.info(f"[GSCPI] Strategy 2 성공 ({len(records)}건 포착)")
-        except Exception as e:
-            logger.warning(f"[GSCPI] Strategy 2 실행 예외: {e}")
+                # 값이 있는 열만 유효 vintage 후보로 포함
+                if valid_count > 0:
+                    vintage_info.append({
+                        "column": col,
+                        "vintage_date": vintage_date,
+                        "valid_count": int(valid_count),
+                    })
 
-    # Strategy 3: DB Cache Fallback & Persistence
-    if records:
-        for date_str, val in records:
-            cursor.execute("""
-                INSERT OR REPLACE INTO gscpi_series (date, value, updated_at)
-                VALUES (?, ?, CURRENT_TIMESTAMP)
-            """, (date_str, val))
-        conn.commit()
-        logger.info(f"[GSCPI] DB 적재 완료 ({len(records)}건)")
-    else:
-        cursor.execute("SELECT COUNT(*) FROM gscpi_series")
-        cached_count = cursor.fetchone()[0]
-        if cached_count > 0:
-            logger.warning(f"[GSCPI] 외부 신규 수집 실패 -> 기존 DB 캐시({cached_count}건)를 보존하여 서비스를 지속합니다.")
-        else:
-            logger.warning("[GSCPI] 수집 실패 및 기존 캐시 데이터가 없습니다.")
+        if not vintage_info:
+            raise ValueError("유효값을 가진 GSCPI vintage 열이 없습니다.")
+
+        # 최신 발표/개정 빈티지 선택
+        latest_vintage = max(
+            vintage_info,
+            key=lambda x: x["vintage_date"]
+        )
+
+        value_column = latest_vintage["column"]
+
+        log(
+            f"[GSCPI] 최신 vintage 선택: {value_column} "
+            f"(유효 관측치 {latest_vintage['valid_count']}건)"
+        )
+
+        parsed = pd.DataFrame({
+            "date": pd.to_datetime(
+                df["Date"],
+                format="%d-%b-%Y",
+                errors="coerce"
+            ),
+            "value": pd.to_numeric(
+                df[value_column],
+                errors="coerce"
+            ),
+        })
+
+        # CSV 하단의 빈 행과 아직 발표되지 않은 미래 월을 제거
+        parsed = parsed.dropna(subset=["date", "value"]).copy()
+
+        # 대시보드 및 SQLite의 표준 월 형식
+        parsed["date"] = parsed["date"].dt.strftime("%Y-%m")
+
+        # 중복 월 방지 및 시계열 정렬
+        parsed = (
+            parsed
+            .drop_duplicates(subset=["date"], keep="last")
+            .sort_values("date")
+            .reset_index(drop=True)
+        )
+
+        records = [
+            {
+                "date": row["date"],
+                "value": round(float(row["value"]), 4),
+            }
+            for _, row in parsed.iterrows()
+        ]
+
+        if not records:
+            raise ValueError("GSCPI CSV 파싱 후 유효한 시계열 데이터가 없습니다.")
+
+        log(
+            f"[GSCPI] NY Fed 공식 CSV 수집 성공: {len(records)}건 | "
+            f"범위: {records[0]['date']} ~ {records[-1]['date']} | "
+            f"최신값: {records[-1]['value']}"
+        )
+
+        return records
+
+    except Exception as exc:
+        log(f"[WARNING] [GSCPI] NY Fed 공식 CSV 수집 실패: {exc}")
+        return []
+
 
 # =========================================================
 # 4. JSON Export & Bloomberg Terminal HTML Generation
