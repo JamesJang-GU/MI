@@ -877,7 +877,16 @@ def get_snapshot_data(
     }
 
 def generate_dashboard_html(conn: sqlite3.Connection) -> None:
-    """SQLite 데이터를 기반으로 정적 HTML 대시보드를 생성한다."""
+    """
+    SQLite 데이터를 기반으로 MI Terminal 표준 정적 HTML 대시보드를 생성한다.
+
+    공통 CSS:
+    - ../assets/mi_terminal.css
+
+    데이터 원칙:
+    - fleet_snapshot의 완전한 5개 상태가 존재하는 날짜만 사용
+    - 최신 스냅샷 기준 Ships 내림차순으로 Watchlist 정렬
+    """
     completed_dates = sorted(get_completed_dates(conn))
 
     if not completed_dates:
@@ -894,11 +903,11 @@ def generate_dashboard_html(conn: sqlite3.Connection) -> None:
         else {}
     )
 
-    rows = conn.execute(
+    history_rows = conn.execute(
         """
         SELECT snapshot_date, ship_status, ships, teu
         FROM fleet_snapshot
-        ORDER BY snapshot_date, ship_status
+        ORDER BY snapshot_date ASC, ship_status ASC
         """
     ).fetchall()
 
@@ -907,7 +916,7 @@ def generate_dashboard_html(conn: sqlite3.Connection) -> None:
             "ships": row["ships"],
             "teu": row["teu"],
         }
-        for row in rows
+        for row in history_rows
     }
 
     teu_series: Dict[str, List[Optional[int]]] = {
@@ -920,14 +929,13 @@ def generate_dashboard_html(conn: sqlite3.Connection) -> None:
 
     for snapshot_date in completed_dates:
         for status in REQUIRED_STATUSES:
-            data = history_map.get((snapshot_date, status))
+            record = history_map.get((snapshot_date, status))
 
             teu_series[status].append(
-                data["teu"] if data else None
+                record["teu"] if record else None
             )
-
             ships_series[status].append(
-                data["ships"] if data else None
+                record["ships"] if record else None
             )
 
     sorted_statuses = sorted(
@@ -935,74 +943,6 @@ def generate_dashboard_html(conn: sqlite3.Connection) -> None:
         key=lambda status: latest_data.get(status, {}).get("ships", 0),
         reverse=True,
     )
-
-    table_rows = ""
-
-    for status in sorted_statuses:
-        latest = latest_data.get(status, {})
-        previous = previous_data.get(status, {})
-
-        table_rows += f"""
-        <tr>
-            <td class="status">{html.escape(status)}</td>
-            <td class="number">{format_number(latest.get("ships"))}</td>
-            <td class="number">{format_number(latest.get("teu"))}</td>
-            <td class="number">
-                {format_delta(latest.get("ships"), previous.get("ships"))}
-            </td>
-        </tr>
-        """
-
-    ticker_items = ""
-
-    for status in REQUIRED_STATUSES:
-        latest = latest_data.get(status, {})
-        previous = previous_data.get(status, {})
-
-        ships = latest.get("ships")
-        prior_ships = previous.get("ships")
-
-        delta = (
-            ships - prior_ships
-            if ships is not None and prior_ships is not None
-            else None
-        )
-
-        if delta is None:
-            delta_class = "neutral"
-            delta_text = "N/A"
-        elif delta > 0:
-            delta_class = "up"
-            delta_text = f"↗ +{delta:,}"
-        elif delta < 0:
-            delta_class = "down"
-            delta_text = f"↘ {delta:,}"
-        else:
-            delta_class = "neutral"
-            delta_text = "→ 0"
-
-        ticker_items += f"""
-        <div class="ticker-item">
-            <span class="ticker-label">{html.escape(status)}</span>
-            <span class="ticker-value">{format_number(ships)}</span>
-            <span class="ticker-delta {delta_class}">{delta_text}</span>
-        </div>
-        """
-
-    active_latest = latest_data.get("Active Ships", {})
-    active_previous = previous_data.get("Active Ships", {})
-
-    port_latest = latest_data.get("Ships at port", {})
-    port_previous = previous_data.get("Ships at port", {})
-
-    anchorage_latest = latest_data.get("Ships at anchorage", {})
-    anchorage_previous = previous_data.get("Ships at anchorage", {})
-
-    inactive_latest = latest_data.get("Inactive Ships", {})
-    inactive_previous = previous_data.get("Inactive Ships", {})
-
-    shipyard_latest = latest_data.get("Ships in shipyard", {})
-    shipyard_previous = previous_data.get("Ships in shipyard", {})
 
     total_latest_ships = sum(
         latest_data.get(status, {}).get("ships", 0)
@@ -1024,850 +964,665 @@ def generate_dashboard_html(conn: sqlite3.Connection) -> None:
         for status in REQUIRED_STATUSES
     )
 
-    heatmap_statuses = sorted(
-        REQUIRED_STATUSES,
-        key=lambda status: latest_data.get(status, {}).get("teu", 0),
-        reverse=True,
+    active_latest = latest_data.get("Active Ships", {})
+    active_previous = previous_data.get("Active Ships", {})
+
+    inactive_latest = latest_data.get("Inactive Ships", {})
+    inactive_previous = previous_data.get("Inactive Ships", {})
+
+    port_latest = latest_data.get("Ships at port", {})
+    port_previous = previous_data.get("Ships at port", {})
+
+    anchorage_latest = latest_data.get("Ships at anchorage", {})
+    shipyard_latest = latest_data.get("Ships in shipyard", {})
+
+    active_teu = active_latest.get("teu", 0)
+    inactive_teu = inactive_latest.get("teu", 0)
+    port_teu = port_latest.get("teu", 0)
+    anchorage_teu = anchorage_latest.get("teu", 0)
+    shipyard_teu = shipyard_latest.get("teu", 0)
+
+    active_share = (
+        (active_teu / total_latest_teu) * 100
+        if total_latest_teu > 0
+        else 0
     )
 
-    heatmap_rows = ""
-
-    max_teu = max(
-        [
-            latest_data.get(status, {}).get("teu", 0)
-            for status in REQUIRED_STATUSES
-        ]
-        or [1]
+    inactive_share = (
+        (inactive_teu / total_latest_teu) * 100
+        if total_latest_teu > 0
+        else 0
     )
 
-    for status in heatmap_statuses:
-        latest = latest_data.get(status, {})
-        previous = previous_data.get(status, {})
+    port_share = (
+        (port_teu / total_latest_teu) * 100
+        if total_latest_teu > 0
+        else 0
+    )
 
-        current_teu = latest.get("teu", 0)
-        previous_teu = previous.get("teu")
-
-        width = (
-            (current_teu / max_teu) * 100
-            if max_teu > 0
-            else 0
-        )
-
-        delta = (
-            current_teu - previous_teu
-            if previous_teu is not None
-            else None
-        )
-
-        if delta is None:
-            change_class = "neutral"
-            change_text = "N/A"
-        elif delta > 0:
-            change_class = "up"
-            change_text = f"+{delta:,}"
-        elif delta < 0:
-            change_class = "down"
-            change_text = f"{delta:,}"
-        else:
-            change_class = "neutral"
-            change_text = "0"
-
-        heatmap_rows += f"""
-        <div class="heatmap-row">
-            <div class="heatmap-header">
-                <span>{html.escape(status)}</span>
-                <span>{format_number(current_teu)} TEU</span>
-            </div>
-            <div class="heatmap-track">
-                <div class="heatmap-bar" style="width:{width:.1f}%"></div>
-            </div>
-            <div class="heatmap-footer">
-                <span class="{change_class}">MOM: {change_text}</span>
-                <span>{width:.1f}% OF MAX</span>
-            </div>
-        </div>
-        """
-
-    latest_active_teu = active_latest.get("teu")
-    previous_active_teu = active_previous.get("teu")
+    anchorage_share = (
+        (anchorage_teu / total_latest_teu) * 100
+        if total_latest_teu > 0
+        else 0
+    )
 
     active_teu_change = (
-        latest_active_teu - previous_active_teu
-        if latest_active_teu is not None
-        and previous_active_teu is not None
+        active_latest.get("teu", 0) - active_previous.get("teu", 0)
+        if active_previous.get("teu") is not None
         else None
     )
 
     inactive_teu_change = (
-        inactive_latest.get("teu") - inactive_previous.get("teu")
-        if inactive_latest.get("teu") is not None
-        and inactive_previous.get("teu") is not None
+        inactive_latest.get("teu", 0) - inactive_previous.get("teu", 0)
+        if inactive_previous.get("teu") is not None
         else None
     )
 
     port_teu_change = (
-        port_latest.get("teu") - port_previous.get("teu")
-        if port_latest.get("teu") is not None
-        and port_previous.get("teu") is not None
+        port_latest.get("teu", 0) - port_previous.get("teu", 0)
+        if port_previous.get("teu") is not None
         else None
     )
 
-    latest_active_share = (
-        (active_latest.get("teu", 0) / total_latest_teu) * 100
-        if total_latest_teu > 0
-        else 0
-    )
+    if active_teu_change is None:
+        active_signal = "STABLE"
+    elif active_teu_change > 0:
+        active_signal = "EXPANDING"
+    elif active_teu_change < 0:
+        active_signal = "CONTRACTING"
+    else:
+        active_signal = "STABLE"
 
-    latest_inactive_share = (
-        (inactive_latest.get("teu", 0) / total_latest_teu) * 100
-        if total_latest_teu > 0
-        else 0
-    )
+    if inactive_share >= 3:
+        risk_assessment = "ELEVATED"
+        risk_class = "down"
+    elif inactive_share >= 1:
+        risk_assessment = "MONITORED"
+        risk_class = "neutral"
+    else:
+        risk_assessment = "NORMAL"
+        risk_class = "up"
 
-    latest_port_share = (
-        (port_latest.get("teu", 0) / total_latest_teu) * 100
-        if total_latest_teu > 0
-        else 0
-    )
+    ticker_items = ""
 
-    active_trend_text = (
-        "ACTIVE FLEET CAPACITY EXPANDED MONTH-ON-MONTH."
-        if active_teu_change is not None and active_teu_change > 0
-        else (
-            "ACTIVE FLEET CAPACITY CONTRACTED MONTH-ON-MONTH."
-            if active_teu_change is not None and active_teu_change < 0
-            else "ACTIVE FLEET CAPACITY WAS BROADLY UNCHANGED."
-        )
-    )
+    for status in REQUIRED_STATUSES:
+        current_ships = latest_data.get(status, {}).get("ships")
+        previous_ships = previous_data.get(status, {}).get("ships")
 
-    port_trend_text = (
-        "PORT-BASED CAPACITY INCREASED, INDICATING HIGHER PORT INVENTORY."
-        if port_teu_change is not None and port_teu_change > 0
-        else (
-            "PORT-BASED CAPACITY DECLINED VERSUS THE PREVIOUS SNAPSHOT."
-            if port_teu_change is not None and port_teu_change < 0
-            else "PORT-BASED CAPACITY WAS BROADLY UNCHANGED."
-        )
-    )
+        if current_ships is None or previous_ships is None:
+            delta_class = "neutral"
+            delta_text = "N/A"
+        else:
+            delta = current_ships - previous_ships
 
-    inactive_trend_text = (
-        "INACTIVE CAPACITY ROSE, WARRANTING SUPPLY-SIDE MONITORING."
-        if inactive_teu_change is not None and inactive_teu_change > 0
-        else (
-            "INACTIVE CAPACITY DECLINED, SUPPORTING UTILIZATION CONDITIONS."
-            if inactive_teu_change is not None and inactive_teu_change < 0
-            else "INACTIVE CAPACITY WAS BROADLY UNCHANGED."
-        )
-    )
+            if delta > 0:
+                delta_class = "up"
+                delta_text = f"↗ +{delta:,}"
+            elif delta < 0:
+                delta_class = "down"
+                delta_text = f"↘ {delta:,}"
+            else:
+                delta_class = "neutral"
+                delta_text = "→ 0"
+
+        ticker_items += f"""
+        <div class="mi-ticker fleet-ticker">
+            <span class="fleet-ticker-label">{html.escape(status)}</span>
+            <strong class="fleet-ticker-value">{format_number(current_ships)}</strong>
+            <span class="{delta_class} fleet-ticker-delta">{delta_text}</span>
+        </div>
+        """
+
+    table_rows = ""
+
+    for status in sorted_statuses:
+        latest = latest_data.get(status, {})
+        previous = previous_data.get(status, {})
+
+        table_rows += f"""
+        <tr>
+            <td class="fleet-status-name">{html.escape(status)}</td>
+            <td>{format_number(latest.get("ships"))}</td>
+            <td>{format_number(latest.get("teu"))}</td>
+            <td>{format_delta(latest.get("ships"), previous.get("ships"))}</td>
+            <td>{format_delta(latest.get("teu"), previous.get("teu"))}</td>
+        </tr>
+        """
+
+    allocation_rows = ""
+
+    allocation_data = [
+        ("Active Ships", active_teu, active_share, "#31d0a0"),
+        ("Ships at port", port_teu, port_share, "#f5a623"),
+        ("Ships at anchorage", anchorage_teu, anchorage_share, "#4fa3ff"),
+        ("Inactive Ships", inactive_teu, inactive_share, "#ff5b68"),
+        ("Ships in shipyard", shipyard_teu,
+         (shipyard_teu / total_latest_teu * 100) if total_latest_teu else 0,
+         "#27c7e8"),
+    ]
+
+    for status, teu_value, share, color in allocation_data:
+        allocation_rows += f"""
+        <div class="fleet-allocation-row">
+            <div class="fleet-allocation-header">
+                <span>{html.escape(status)}</span>
+                <strong>{format_number(teu_value)} TEU</strong>
+            </div>
+            <div class="fleet-progress-track">
+                <span
+                    style="width:{min(share, 100):.2f}%; background:{color};"
+                ></span>
+            </div>
+            <div class="fleet-allocation-footer">
+                <span>{share:.1f}% OF OBSERVED CAPACITY</span>
+            </div>
+        </div>
+        """
+
+    generated_at = utc_now_string()
 
     dashboard_html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Linerlytica | MI Fleet Terminal</title>
+
+<title>Linerlytica | MI Terminal</title>
+
+<link rel="stylesheet" href="../assets/mi_terminal.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
 
 <style>
-:root {{
-    --bg-core: #02060b;
-    --bg-base: #040a11;
-    --panel: #07111c;
-    --panel-2: #0a1724;
-    --panel-3: #0d1d2b;
-    --line: #193348;
-    --line-strong: #294b66;
-
-    --text: #f3f7fb;
-    --text-soft: #b5c5d2;
-    --muted: #8298aa;
-    --dim: #4c6579;
-
-    --amber: #f6a623;
-    --amber-soft: #ffc05e;
-    --blue: #42a8f5;
-    --cyan: #37c7e0;
-    --green: #36ca82;
-    --red: #ff6666;
-    --yellow: #ffd166;
-    --purple: #b18cff;
-
-    --shadow:
-        0 6px 22px rgba(0, 0, 0, .58),
-        0 0 18px rgba(38, 127, 184, .08);
-}}
-
-* {{
-    box-sizing: border-box;
-}}
-
-html,
-body {{
-    min-height: 100%;
-}}
+/* =========================================================
+   Linerlytica Module Extension
+   공통 assets/mi_terminal.css 위에서만 동작하는 모듈 전용 보완 스타일
+   ========================================================= */
 
 body {{
-    margin: 0;
-    color: var(--text);
-    background:
-        radial-gradient(
-            circle at 50% -20%,
-            rgba(38, 112, 163, .15),
-            transparent 44%
-        ),
-        linear-gradient(
-            180deg,
-            rgba(246, 166, 35, .025),
-            transparent 250px
-        ),
-        var(--bg-core);
-    font-family:
-        "IBM Plex Mono",
-        "Roboto Mono",
-        "SFMono-Regular",
-        Consolas,
-        "Liberation Mono",
-        monospace;
-    font-size: 11px;
-    line-height: 1.35;
-    -webkit-font-smoothing: antialiased;
+    background: var(--mi-bg);
 }}
 
-.container {{
-    width: min(1920px, calc(100% - 16px));
-    max-width: 1920px;
-    margin: 8px auto 14px;
+.mi-page {{
+    width: min(1920px, calc(100% - 20px));
+    margin: 0 auto;
+    padding: 10px 0 18px;
 }}
 
-.terminal-header {{
-    min-height: 54px;
+.mi-terminal-header {{
     display: flex;
     align-items: stretch;
     justify-content: space-between;
-    gap: 14px;
-    overflow: hidden;
-    border: 1px solid var(--line-strong);
-    background:
-        linear-gradient(
-            180deg,
-            rgba(13, 32, 49, .98),
-            rgba(3, 9, 15, .98)
-        );
-    box-shadow: var(--shadow);
+    min-height: 56px;
+    border: 1px solid var(--mi-border);
+    background: var(--mi-header);
 }}
 
-.terminal-brand {{
-    min-width: 58px;
+.mi-terminal-brand {{
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #02060b;
-    background: var(--amber);
-    font-size: 13px;
-    font-weight: 900;
-    letter-spacing: .10em;
-    box-shadow: 0 0 16px rgba(246, 166, 35, .35);
-}}
-
-.terminal-title {{
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    min-width: 0;
-}}
-
-.terminal-title h1 {{
-    margin: 0;
-    color: #ffffff;
+    width: 62px;
+    flex: 0 0 62px;
+    color: var(--mi-bg-deep);
+    background: var(--mi-amber);
     font-size: 14px;
     font-weight: 900;
-    letter-spacing: .10em;
+    letter-spacing: .12em;
+}}
+
+.mi-terminal-title {{
+    flex: 1;
+    min-width: 0;
+    padding: 10px 14px;
+}}
+
+.mi-terminal-title h1 {{
+    margin: 0;
+    color: var(--mi-white);
+    font-size: 14px;
+    font-weight: 900;
+    letter-spacing: .08em;
     text-transform: uppercase;
 }}
 
-.terminal-title p {{
-    margin: 4px 0 0;
-    color: var(--muted);
-    font-size: 8px;
-    font-weight: 800;
-    letter-spacing: .07em;
-    text-transform: uppercase;
-}}
-
-.header-meta {{
-    min-width: 320px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 3px;
-    padding: 7px 14px;
-    color: var(--muted);
-    border-left: 1px solid var(--line);
-    font-size: 8px;
-    font-weight: 800;
+.mi-terminal-title p {{
+    margin: 5px 0 0;
+    color: var(--mi-text-muted);
+    font-size: 9px;
+    font-weight: 700;
     letter-spacing: .05em;
-    line-height: 1.5;
+    text-transform: uppercase;
+}}
+
+.mi-terminal-meta {{
+    min-width: 350px;
+    padding: 9px 14px;
+    border-left: 1px solid var(--mi-border);
+    color: var(--mi-text-muted);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    line-height: 1.7;
     text-align: right;
     text-transform: uppercase;
 }}
 
-.header-meta strong {{
-    color: var(--text-soft);
+.mi-terminal-meta strong {{
+    color: var(--mi-white);
 }}
 
-.ticker-bar {{
+.fleet-ticker-wrap {{
     display: flex;
     margin-top: 6px;
     overflow-x: auto;
-    border: 1px solid var(--line);
-    background: #02070d;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, .32);
+    border: 1px solid var(--mi-border);
+    background: var(--mi-bg-deep);
 }}
 
-.ticker-heading {{
-    min-width: 116px;
+.fleet-ticker-heading {{
     display: flex;
     align-items: center;
+    flex: 0 0 118px;
     padding: 0 12px;
-    color: #071018;
-    background: var(--amber);
-    font-size: 8px;
+    color: var(--mi-bg-deep);
+    background: var(--mi-amber);
+    font-size: 9px;
     font-weight: 900;
-    letter-spacing: .09em;
+    letter-spacing: .08em;
     text-transform: uppercase;
 }}
 
-.ticker-item {{
-    min-width: 230px;
+.fleet-ticker {{
+    min-width: 215px;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 1fr auto;
     gap: 3px 10px;
-    padding: 7px 12px;
-    border-right: 1px solid var(--line);
-    background:
-        linear-gradient(
-            180deg,
-            rgba(13, 29, 43, .68),
-            rgba(2, 8, 14, .88)
-        );
+    padding: 8px 12px;
+    border-right: 1px solid var(--mi-border);
 }}
 
-.ticker-label {{
+.fleet-ticker-label {{
     overflow: hidden;
-    color: var(--muted);
-    font-size: 8px;
-    font-weight: 800;
-    letter-spacing: .06em;
+    color: var(--mi-text-muted);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .04em;
     text-overflow: ellipsis;
     text-transform: uppercase;
     white-space: nowrap;
 }}
 
-.ticker-value {{
-    color: var(--text);
-    font-size: 11px;
-    font-weight: 800;
+.fleet-ticker-value {{
+    color: var(--mi-white);
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
     text-align: right;
 }}
 
-.ticker-delta {{
+.fleet-ticker-delta {{
     grid-column: 1 / -1;
     font-size: 9px;
     font-weight: 800;
     text-align: right;
 }}
 
-.dashboard-grid {{
+.fleet-grid {{
     display: grid;
     grid-template-columns: repeat(12, minmax(0, 1fr));
-    gap: 6px;
-    margin-top: 6px;
+    gap: 8px;
+    margin-top: 8px;
 }}
 
-.panel {{
+.fleet-panel {{
     min-width: 0;
     overflow: hidden;
-    border: 1px solid var(--line);
-    background:
-        linear-gradient(
-            145deg,
-            rgba(14, 33, 49, .76),
-            rgba(4, 11, 18, .98)
-        );
-    box-shadow: var(--shadow);
+    border: 1px solid var(--mi-border);
+    background: var(--mi-panel);
 }}
 
-.panel::before {{
-    display: block;
-    height: 2px;
-    content: "";
-    background: linear-gradient(
-        90deg,
-        var(--amber),
-        rgba(246, 166, 35, .18) 42%,
-        transparent 78%
-    );
-}}
-
-.panel-title {{
-    min-height: 31px;
+.fleet-panel-title {{
     display: flex;
     align-items: center;
     justify-content: space-between;
+    min-height: 33px;
     gap: 10px;
     margin: 0;
-    padding: 0 10px;
-    color: var(--amber);
-    border-bottom: 1px solid var(--line);
-    background:
-        linear-gradient(
-            180deg,
-            rgba(13, 31, 47, .94),
-            rgba(7, 17, 27, .90)
-        );
-    font-size: 9px;
+    padding: 0 11px;
+    color: var(--mi-amber);
+    border-bottom: 1px solid var(--mi-border);
+    background: var(--mi-header-2);
+    font-size: 10px;
     font-weight: 900;
-    letter-spacing: .09em;
+    letter-spacing: .07em;
     text-transform: uppercase;
 }}
 
-.panel-title span:last-child {{
-    color: var(--muted);
+.fleet-panel-title small {{
+    color: var(--mi-text-muted);
     font-size: 8px;
     font-weight: 700;
-    text-align: right;
 }}
 
-.kpi-grid {{
+.fleet-kpi-grid {{
     grid-column: span 12;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 6px;
+    gap: 8px;
 }}
 
-.kpi {{
-    min-height: 91px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    padding: 9px 10px;
-    border: 1px solid var(--line);
-    border-top: 2px solid var(--blue);
-    background:
-        linear-gradient(
-            135deg,
-            rgba(38, 108, 155, .18),
-            transparent 62%
-        ),
-        var(--panel);
-    box-shadow: var(--shadow);
+.fleet-kpi {{
+    min-height: 104px;
+    padding: 11px;
+    border: 1px solid var(--mi-border);
+    border-top: 3px solid var(--mi-cyan);
+    background: var(--mi-panel);
 }}
 
-.kpi:nth-child(2) {{
-    border-top-color: var(--green);
+.fleet-kpi:nth-child(2) {{
+    border-top-color: var(--mi-green);
 }}
 
-.kpi:nth-child(3) {{
-    border-top-color: var(--amber);
+.fleet-kpi:nth-child(3) {{
+    border-top-color: var(--mi-amber);
 }}
 
-.kpi:nth-child(4) {{
-    border-top-color: var(--purple);
+.fleet-kpi:nth-child(4) {{
+    border-top-color: var(--mi-blue);
 }}
 
-.kpi-label {{
-    color: var(--muted);
-    font-size: 8px;
+.fleet-kpi-label {{
+    color: var(--mi-text-muted);
+    font-size: 9px;
     font-weight: 800;
-    letter-spacing: .08em;
+    letter-spacing: .07em;
     text-transform: uppercase;
 }}
 
-.kpi-value {{
-    margin-top: 8px;
-    overflow: hidden;
-    color: #ffffff;
-    font-size: clamp(17px, 1.55vw, 25px);
+.fleet-kpi-value {{
+    margin-top: 13px;
+    color: var(--mi-white);
+    font-size: clamp(20px, 2vw, 29px);
     font-weight: 900;
     font-variant-numeric: tabular-nums;
-    letter-spacing: -.06em;
+    letter-spacing: -.05em;
     text-align: right;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }}
 
-.kpi-sub {{
-    min-height: 15px;
-    margin-top: 5px;
+.fleet-kpi-delta {{
+    min-height: 16px;
+    margin-top: 8px;
     font-size: 9px;
     font-weight: 800;
     text-align: right;
 }}
 
-.main-chart-panel {{
+.fleet-chart-panel {{
     grid-column: span 8;
 }}
 
-.watchlist-panel {{
+.fleet-watchlist-panel {{
     grid-column: span 4;
 }}
 
-.chart-wrap {{
+.fleet-chart-wrap {{
     position: relative;
-    min-height: 389px;
-    padding: 10px;
+    height: 392px;
+    padding: 12px;
 }}
 
-.watchlist-table {{
+.fleet-table {{
     width: 100%;
     border-collapse: collapse;
     font-size: 10px;
 }}
 
-.watchlist-table th {{
+.fleet-table th {{
     padding: 9px 10px;
-    color: var(--muted);
-    border-bottom: 1px solid var(--line);
-    background: rgba(2, 8, 14, .58);
+    color: var(--mi-text-muted);
+    border-bottom: 1px solid var(--mi-border);
+    background: var(--mi-bg-deep);
     font-size: 8px;
-    font-weight: 800;
-    letter-spacing: .06em;
+    letter-spacing: .05em;
     text-align: right;
     text-transform: uppercase;
 }}
 
-.watchlist-table th:first-child {{
-    text-align: left;
-}}
-
-.watchlist-table td {{
+.fleet-table td {{
     padding: 11px 10px;
-    color: var(--text-soft);
-    border-bottom: 1px solid rgba(39, 71, 95, .52);
+    color: var(--mi-text);
+    border-bottom: 1px solid var(--mi-border-soft);
     font-variant-numeric: tabular-nums;
     text-align: right;
 }}
 
-.watchlist-table td:first-child {{
+.fleet-table th:first-child,
+.fleet-table td:first-child {{
     text-align: left;
 }}
 
-.watchlist-table tr:hover {{
-    background: rgba(66, 168, 245, .05);
-}}
-
-.status {{
-    color: #ffffff !important;
+.fleet-status-name {{
+    color: var(--mi-white) !important;
     font-weight: 800;
 }}
 
-.number {{
-    color: var(--text) !important;
-}}
-
-.watchlist-note {{
+.fleet-note {{
     padding: 9px 10px;
-    color: var(--muted);
-    border-top: 1px solid var(--line);
-    background: rgba(2, 8, 14, .58);
+    color: var(--mi-text-muted);
+    background: var(--mi-header-2);
     font-size: 8px;
     font-weight: 700;
-    letter-spacing: .03em;
+    letter-spacing: .04em;
     line-height: 1.6;
     text-transform: uppercase;
 }}
 
-.heatmap-panel {{
+.fleet-allocation-panel {{
     grid-column: span 4;
 }}
 
-.news-panel {{
+.fleet-insight-panel {{
     grid-column: span 4;
 }}
 
-.risk-panel {{
+.fleet-risk-panel {{
     grid-column: span 4;
 }}
 
-.heatmap-content {{
-    padding: 9px 10px 10px;
+.fleet-allocation-content,
+.fleet-risk-content {{
+    padding: 10px;
 }}
 
-.heatmap-row {{
-    padding: 7px 0;
-    border-bottom: 1px solid rgba(39, 71, 95, .48);
+.fleet-allocation-row {{
+    padding: 8px 0;
+    border-bottom: 1px solid var(--mi-border-soft);
 }}
 
-.heatmap-row:last-child {{
+.fleet-allocation-row:last-child {{
     border-bottom: 0;
 }}
 
-.heatmap-header,
-.heatmap-footer {{
+.fleet-allocation-header,
+.fleet-allocation-footer {{
     display: flex;
-    align-items: center;
     justify-content: space-between;
     gap: 8px;
 }}
 
-.heatmap-header {{
-    color: var(--text-soft);
+.fleet-allocation-header {{
+    color: var(--mi-text);
     font-size: 9px;
     font-weight: 800;
 }}
 
-.heatmap-header span:last-child {{
-    color: #ffffff;
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-}}
-
-.heatmap-track {{
-    height: 6px;
-    margin: 6px 0;
-    overflow: hidden;
-    background: #02070d;
-    border: 1px solid #173249;
-}}
-
-.heatmap-bar {{
-    height: 100%;
-    min-width: 2px;
-    background:
-        linear-gradient(
-            90deg,
-            #1676b5,
-            var(--blue),
-            var(--cyan)
-        );
-    box-shadow: 0 0 10px rgba(55, 199, 224, .35);
-}}
-
-.heatmap-footer {{
-    color: var(--dim);
+.fleet-allocation-footer {{
+    margin-top: 5px;
+    color: var(--mi-text-muted);
     font-size: 8px;
-    font-weight: 700;
-    text-transform: uppercase;
 }}
 
-.terminal-list {{
-    min-height: 264px;
-    margin: 0;
-    padding: 7px 11px 10px 28px;
-    color: var(--text-soft);
-    background:
-        linear-gradient(
-            180deg,
-            rgba(4, 12, 20, .34),
-            rgba(2, 7, 12, .12)
-        );
-}}
-
-.terminal-list li {{
-    padding: 8px 2px;
-    border-bottom: 1px solid rgba(39, 71, 95, .52);
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: .01em;
-    line-height: 1.5;
-}}
-
-.terminal-list li:last-child {{
-    border-bottom: 0;
-}}
-
-.terminal-list li::marker {{
-    color: var(--amber);
-}}
-
-.risk-metrics {{
-    padding: 8px 10px 10px;
-}}
-
-.risk-row {{
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 9px 0;
-    border-bottom: 1px solid rgba(39, 71, 95, .52);
-}}
-
-.risk-row:last-child {{
-    border-bottom: 0;
-}}
-
-.risk-label {{
-    color: var(--muted);
-    font-size: 8px;
-    font-weight: 800;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-}}
-
-.risk-value {{
-    color: #ffffff;
-    font-size: 10px;
-    font-weight: 900;
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-}}
-
-.risk-meter {{
-    width: 82px;
-    height: 5px;
+.fleet-progress-track {{
+    height: 7px;
+    margin-top: 6px;
     overflow: hidden;
-    border: 1px solid #1c3a52;
-    background: #02070d;
+    border: 1px solid var(--mi-border);
+    background: var(--mi-bg-deep);
 }}
 
-.risk-meter span {{
+.fleet-progress-track span {{
     display: block;
     height: 100%;
-    background: var(--amber);
-    box-shadow: 0 0 9px rgba(246, 166, 35, .40);
 }}
 
-.footer-status {{
-    min-height: 30px;
-    grid-column: span 12;
+.fleet-insight-list {{
+    min-height: 278px;
+    margin: 0;
+    padding: 5px 15px 8px 30px;
+}}
+
+.fleet-insight-list li {{
+    padding: 9px 0;
+    color: var(--mi-text);
+    border-bottom: 1px solid var(--mi-border-soft);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1.55;
+}}
+
+.fleet-insight-list li::marker {{
+    color: var(--mi-amber);
+}}
+
+.fleet-risk-row {{
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 0 10px;
-    color: var(--muted);
-    border: 1px solid var(--line);
-    border-left: 3px solid var(--green);
-    background: #02070d;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--mi-border-soft);
+}}
+
+.fleet-risk-row:last-child {{
+    border-bottom: 0;
+}}
+
+.fleet-risk-label {{
+    color: var(--mi-text-muted);
     font-size: 8px;
     font-weight: 800;
-    letter-spacing: .06em;
+    letter-spacing: .05em;
     text-transform: uppercase;
 }}
 
-.footer-status strong {{
-    color: var(--text-soft);
+.fleet-risk-value {{
+    margin-top: 3px;
+    color: var(--mi-white);
+    font-size: 10px;
+    font-weight: 900;
+    text-align: right;
+}}
+
+.fleet-status-footer {{
+    grid-column: span 12;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 11px;
+    color: var(--mi-text-muted);
+    border: 1px solid var(--mi-border);
+    border-left: 3px solid var(--mi-green);
+    background: var(--mi-header-2);
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
 }}
 
 .up {{
-    color: var(--green) !important;
+    color: var(--mi-green) !important;
 }}
 
 .down {{
-    color: var(--red) !important;
+    color: var(--mi-red) !important;
 }}
 
 .neutral {{
-    color: var(--muted) !important;
+    color: var(--mi-text-muted) !important;
 }}
 
 @media (max-width: 1200px) {{
-    .terminal-header {{
+    .mi-terminal-header {{
         flex-wrap: wrap;
     }}
 
-    .header-meta {{
+    .mi-terminal-meta {{
         width: 100%;
         min-width: 100%;
-        border-top: 1px solid var(--line);
+        border-top: 1px solid var(--mi-border);
         border-left: 0;
         text-align: left;
     }}
 
-    .main-chart-panel {{
-        grid-column: span 12;
-    }}
-
-    .watchlist-panel {{
-        grid-column: span 12;
-    }}
-
-    .heatmap-panel,
-    .news-panel,
-    .risk-panel {{
+    .fleet-chart-panel,
+    .fleet-watchlist-panel,
+    .fleet-allocation-panel,
+    .fleet-insight-panel,
+    .fleet-risk-panel {{
         grid-column: span 12;
     }}
 }}
 
 @media (max-width: 760px) {{
-    .container {{
-        width: calc(100% - 10px);
-        margin-top: 5px;
-    }}
-
-    .terminal-brand {{
-        min-width: 46px;
-    }}
-
-    .terminal-title h1 {{
-        font-size: 11px;
-        letter-spacing: .06em;
-    }}
-
-    .terminal-title p {{
-        font-size: 7px;
-    }}
-
-    .kpi-grid {{
+    .fleet-kpi-grid {{
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }}
 
-    .ticker-heading {{
-        min-width: 95px;
-    }}
-
-    .ticker-item {{
-        min-width: 205px;
-    }}
-
-    .footer-status {{
-        align-items: flex-start;
+    .fleet-status-footer {{
         flex-direction: column;
-        justify-content: center;
-        padding: 7px 10px;
+    }}
+
+    .fleet-watchlist-panel {{
+        overflow-x: auto;
+    }}
+
+    .fleet-table {{
+        min-width: 700px;
     }}
 }}
 
 @media (max-width: 480px) {{
-    .kpi-grid {{
+    .fleet-kpi-grid {{
         grid-template-columns: 1fr;
     }}
 
-    .watchlist-panel {{
-        overflow-x: auto;
-    }}
-
-    .watchlist-table {{
-        min-width: 580px;
+    .mi-terminal-title h1 {{
+        font-size: 11px;
     }}
 }}
 </style>
 </head>
 
 <body>
-<div class="container">
+<div class="mi-page">
 
-    <header class="terminal-header">
-        <div class="terminal-brand">MI</div>
+    <header class="mi-terminal-header">
+        <div class="mi-terminal-brand">MI</div>
 
-        <div class="terminal-title">
-            <h1>Linerlytica Global Containership Fleet Terminal</h1>
+        <div class="mi-terminal-title">
+            <h1>Linerlytica | Global Containership Fleet</h1>
             <p>
-                Fleet Supply Intelligence | Monthly 17th Snapshot History |
-                Ships and Capacity Monitoring
+                Fleet Supply Intelligence · Monthly 17th Snapshot History ·
+                Ships &amp; Capacity Monitoring
             </p>
         </div>
 
-        <div class="header-meta">
+        <div class="mi-terminal-meta">
             <div>
-                LATEST SNAPSHOT:
+                DATA SNAPSHOT:
                 <strong>{html.escape(latest_date)}</strong>
             </div>
             <div>
-                PREVIOUS SNAPSHOT:
+                PREVIOUS:
                 <strong>{html.escape(previous_date or "N/A")}</strong>
             </div>
             <div>
@@ -1877,82 +1632,85 @@ body {{
         </div>
     </header>
 
-    <section class="ticker-bar">
-        <div class="ticker-heading">Fleet Ticker</div>
+    <section class="fleet-ticker-wrap">
+        <div class="fleet-ticker-heading">Fleet Ticker</div>
         {ticker_items}
     </section>
 
-    <main class="dashboard-grid">
+    <main class="fleet-grid">
 
-        <section class="kpi-grid">
-            <div class="kpi">
-                <div class="kpi-label">Total Fleet Ships</div>
-                <div class="kpi-value">
+        <section class="fleet-kpi-grid">
+            <article class="fleet-kpi">
+                <div class="fleet-kpi-label">Total Fleet Ships</div>
+                <div class="fleet-kpi-value">
                     {format_number(total_latest_ships)}
                 </div>
-                <div class="kpi-sub">
+                <div class="fleet-kpi-delta">
                     {format_delta(total_latest_ships, total_previous_ships)}
                 </div>
-            </div>
+            </article>
 
-            <div class="kpi">
-                <div class="kpi-label">Total Fleet Capacity</div>
-                <div class="kpi-value">
+            <article class="fleet-kpi">
+                <div class="fleet-kpi-label">Observed Fleet Capacity</div>
+                <div class="fleet-kpi-value">
                     {format_number(total_latest_teu)}
                 </div>
-                <div class="kpi-sub">
+                <div class="fleet-kpi-delta">
                     {format_delta(total_latest_teu, total_previous_teu)}
                 </div>
-            </div>
+            </article>
 
-            <div class="kpi">
-                <div class="kpi-label">Active Fleet Capacity</div>
-                <div class="kpi-value">
+            <article class="fleet-kpi">
+                <div class="fleet-kpi-label">Active Fleet Capacity</div>
+                <div class="fleet-kpi-value">
                     {format_number(active_latest.get("teu"))}
                 </div>
-                <div class="kpi-sub">
+                <div class="fleet-kpi-delta">
                     {format_delta(
                         active_latest.get("teu"),
                         active_previous.get("teu")
                     )}
                 </div>
-            </div>
+            </article>
 
-            <div class="kpi">
-                <div class="kpi-label">Historical Observations</div>
-                <div class="kpi-value">
+            <article class="fleet-kpi">
+                <div class="fleet-kpi-label">Historical Observations</div>
+                <div class="fleet-kpi-value">
                     {len(completed_dates)} MOS
                 </div>
-                <div class="kpi-sub">
+                <div class="fleet-kpi-delta">
                     <span class="neutral">17TH OF EACH MONTH</span>
                 </div>
-            </div>
+            </article>
         </section>
 
-        <section class="panel main-chart-panel">
-            <h2 class="panel-title">
+        <section class="fleet-panel fleet-chart-panel">
+            <h2 class="fleet-panel-title">
                 <span>01. Fleet Capacity Trend | TEU</span>
-                <span>{html.escape(completed_dates[0])} — {html.escape(latest_date)}</span>
+                <small>
+                    {html.escape(completed_dates[0])} — {html.escape(latest_date)}
+                </small>
             </h2>
 
-            <div class="chart-wrap">
+            <div class="fleet-chart-wrap">
                 <canvas id="teuChart"></canvas>
             </div>
         </section>
 
-        <section class="panel watchlist-panel">
-            <h2 class="panel-title">
+        <section class="fleet-panel fleet-watchlist-panel">
+            <h2 class="fleet-panel-title">
                 <span>02. Fleet Status Watchlist</span>
-                <span>Latest Snapshot</span>
+                <small>Latest Snapshot</small>
             </h2>
 
-            <table class="watchlist-table">
+            <table class="fleet-table">
                 <thead>
                     <tr>
                         <th>Fleet Segment</th>
                         <th>Ships</th>
                         <th>Capacity</th>
-                        <th>MoM Change</th>
+                        <th>Ships Δ</th>
+                        <th>TEU Δ</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1960,151 +1718,123 @@ body {{
                 </tbody>
             </table>
 
-            <div class="watchlist-note">
-                CHANGE METRIC REPRESENTS MONTH-ON-MONTH SHIP COUNT MOVEMENT.
-                CAPACITY VALUES ARE REPORTED IN TEU.
+            <div class="fleet-note">
+                DELTA VALUES COMPARE THE LATEST SNAPSHOT WITH THE IMMEDIATELY
+                PRECEDING COMPLETE MONTHLY SNAPSHOT.
             </div>
         </section>
 
-        <section class="panel heatmap-panel">
-            <h2 class="panel-title">
-                <span>03. Capacity Heatmap</span>
-                <span>TEU Distribution</span>
+        <section class="fleet-panel fleet-allocation-panel">
+            <h2 class="fleet-panel-title">
+                <span>03. Capacity Allocation</span>
+                <small>TEU Distribution</small>
             </h2>
 
-            <div class="heatmap-content">
-                {heatmap_rows}
+            <div class="fleet-allocation-content">
+                {allocation_rows}
             </div>
         </section>
 
-        <section class="panel news-panel">
-            <h2 class="panel-title">
+        <section class="fleet-panel fleet-insight-panel">
+            <h2 class="fleet-panel-title">
                 <span>04. Market Intelligence</span>
-                <span>Supply Narrative</span>
+                <small>Supply Narrative</small>
             </h2>
 
-            <ul class="terminal-list">
+            <ul class="fleet-insight-list">
                 <li>
                     ACTIVE FLEET REPRESENTS
-                    {latest_active_share:.1f}% OF THE LATEST OBSERVED
-                    FLEET CAPACITY.
+                    {active_share:.1f}% OF OBSERVED GLOBAL CONTAINERSHIP
+                    CAPACITY.
                 </li>
                 <li>
-                    {active_trend_text}
+                    ACTIVE CAPACITY SIGNAL:
+                    <strong>{active_signal}</strong>.
                 </li>
                 <li>
-                    {port_trend_text}
+                    PORT-BASED CAPACITY REPRESENTS
+                    {port_share:.1f}% OF TOTAL OBSERVED TEU.
                 </li>
                 <li>
-                    SHIPS AT ANCHORAGE ACCOUNT FOR
-                    {(anchorage_latest.get("teu", 0) / total_latest_teu * 100 if total_latest_teu > 0 else 0):.1f}%
-                    OF OBSERVED CAPACITY.
+                    ANCHORAGE CAPACITY REPRESENTS
+                    {anchorage_share:.1f}% OF TOTAL OBSERVED TEU.
                 </li>
                 <li>
                     SHIPYARD CAPACITY STANDS AT
-                    {format_number(shipyard_latest.get("teu"))} TEU.
+                    {format_number(shipyard_teu)} TEU.
                 </li>
             </ul>
         </section>
 
-        <section class="panel risk-panel">
-            <h2 class="panel-title">
+        <section class="fleet-panel fleet-risk-panel">
+            <h2 class="fleet-panel-title">
                 <span>05. Risk Indicators</span>
-                <span>Fleet Utilization Signals</span>
+                <small>Fleet Utilization Signals</small>
             </h2>
 
-            <div class="risk-metrics">
-                <div class="risk-row">
+            <div class="fleet-risk-content">
+                <div class="fleet-risk-row">
                     <div>
-                        <div class="risk-label">Active Capacity Share</div>
-                        <div class="risk-value">
-                            {latest_active_share:.1f}% OF TOTAL TEU
-                        </div>
-                    </div>
-                    <div class="risk-meter">
-                        <span style="width:{min(latest_active_share, 100):.1f}%"></span>
+                        <div class="fleet-risk-label">Active Capacity Share</div>
+                        <div class="fleet-risk-value">{active_share:.1f}% OF TEU</div>
                     </div>
                 </div>
 
-                <div class="risk-row">
+                <div class="fleet-risk-row">
                     <div>
-                        <div class="risk-label">Port Capacity Share</div>
-                        <div class="risk-value">
-                            {latest_port_share:.1f}% OF TOTAL TEU
-                        </div>
-                    </div>
-                    <div class="risk-meter">
-                        <span style="width:{min(latest_port_share, 100):.1f}%"></span>
+                        <div class="fleet-risk-label">Port Capacity Share</div>
+                        <div class="fleet-risk-value">{port_share:.1f}% OF TEU</div>
                     </div>
                 </div>
 
-                <div class="risk-row">
+                <div class="fleet-risk-row">
                     <div>
-                        <div class="risk-label">Inactive Capacity Share</div>
-                        <div class="risk-value">
-                            {latest_inactive_share:.1f}% OF TOTAL TEU
-                        </div>
-                    </div>
-                    <div class="risk-meter">
-                        <span style="width:{min(latest_inactive_share, 100):.1f}%"></span>
+                        <div class="fleet-risk-label">Inactive Capacity Share</div>
+                        <div class="fleet-risk-value">{inactive_share:.1f}% OF TEU</div>
                     </div>
                 </div>
 
-                <div class="risk-row">
+                <div class="fleet-risk-row">
                     <div>
-                        <div class="risk-label">Inactive Fleet Signal</div>
-                        <div class="risk-value">
-                            {format_number(inactive_latest.get("teu"))} TEU
+                        <div class="fleet-risk-label">Inactive Fleet Signal</div>
+                        <div class="fleet-risk-value">
+                            {format_number(inactive_teu)} TEU
                         </div>
-                    </div>
-                    <div class="risk-meter">
-                        <span style="width:{min(latest_inactive_share * 4, 100):.1f}%"></span>
                     </div>
                 </div>
 
-                <div class="risk-row">
+                <div class="fleet-risk-row">
                     <div>
-                        <div class="risk-label">Risk Assessment</div>
-                        <div class="risk-value">
-                            {"ELEVATED" if latest_inactive_share >= 3 else "MONITORED"}
+                        <div class="fleet-risk-label">Risk Assessment</div>
+                        <div class="fleet-risk-value {risk_class}">
+                            {risk_assessment}
                         </div>
-                    </div>
-                    <div class="risk-meter">
-                        <span style="width:{min(max(latest_inactive_share * 15, 18), 100):.1f}%"></span>
-                    </div>
-                </div>
-
-                <div class="risk-row">
-                    <div>
-                        <div class="risk-label">Capacity Signal</div>
-                        <div class="risk-value">
-                            {"EXPANDING" if active_teu_change is not None and active_teu_change > 0 else "CONTRACTING" if active_teu_change is not None and active_teu_change < 0 else "STABLE"}
-                        </div>
-                    </div>
-                    <div class="risk-meter">
-                        <span style="width:{70 if active_teu_change is not None and active_teu_change > 0 else 45 if active_teu_change is not None and active_teu_change < 0 else 55}%"></span>
                     </div>
                 </div>
             </div>
 
-            <div class="watchlist-note">
-                {inactive_trend_text}
+            <div class="fleet-note">
+                INACTIVE CAPACITY MONTH-ON-MONTH CHANGE:
+                {format_delta(
+                    inactive_latest.get("teu"),
+                    inactive_previous.get("teu")
+                )}
             </div>
         </section>
 
-        <footer class="footer-status">
+        <footer class="fleet-status-footer">
             <div>
                 SYSTEM STATUS:
                 <strong>NORMAL</strong>
-                | MARKET HEALTH:
-                <strong>MONITORED</strong>
-                | SENTIMENT:
-                <strong>DATA-DRIVEN</strong>
+                | DATASET:
+                <strong>COMPLETE MONTHLY SNAPSHOTS ONLY</strong>
             </div>
+
             <div>
-                ALERTS:
-                <strong>NO CRITICAL DATA EXCEPTIONS</strong>
-                | GENERATED FROM LINERLYTICA.DB
+                GENERATED:
+                <strong>{html.escape(generated_at)}</strong>
+                | SOURCE:
+                <strong>LINERLYTICA.DB</strong>
             </div>
         </footer>
 
@@ -2112,67 +1842,67 @@ body {{
 </div>
 
 <script>
-const labels = {json.dumps(completed_dates, ensure_ascii=False)};
+const fleetLabels = {json.dumps(completed_dates, ensure_ascii=False)};
 
 new Chart(document.getElementById("teuChart"), {{
     type: "line",
     data: {{
-        labels: labels,
+        labels: fleetLabels,
         datasets: [
             {{
                 label: "ACTIVE SHIPS",
                 data: {json.dumps(teu_series["Active Ships"])},
-                borderColor: "#36ca82",
-                backgroundColor: "rgba(54, 202, 130, .08)",
-                borderWidth: 2.5,
+                borderColor: "#31d0a0",
+                backgroundColor: "rgba(49, 208, 160, .08)",
+                borderWidth: 2.4,
                 pointRadius: 2,
                 pointHoverRadius: 4,
                 fill: true,
-                tension: 0.20
+                tension: .20
             }},
             {{
                 label: "SHIPS AT PORT",
                 data: {json.dumps(teu_series["Ships at port"])},
-                borderColor: "#f6a623",
+                borderColor: "#f5a623",
                 backgroundColor: "transparent",
                 borderWidth: 1.8,
                 pointRadius: 1.5,
                 pointHoverRadius: 3,
                 fill: false,
-                tension: 0.20
+                tension: .20
             }},
             {{
                 label: "SHIPS AT ANCHORAGE",
                 data: {json.dumps(teu_series["Ships at anchorage"])},
-                borderColor: "#42a8f5",
+                borderColor: "#4fa3ff",
                 backgroundColor: "transparent",
                 borderWidth: 1.7,
                 pointRadius: 1.5,
                 pointHoverRadius: 3,
                 fill: false,
-                tension: 0.20
+                tension: .20
             }},
             {{
                 label: "INACTIVE SHIPS",
                 data: {json.dumps(teu_series["Inactive Ships"])},
-                borderColor: "#ff6666",
+                borderColor: "#ff5b68",
                 backgroundColor: "transparent",
-                borderWidth: 1.6,
+                borderWidth: 1.7,
                 pointRadius: 1.5,
                 pointHoverRadius: 3,
                 fill: false,
-                tension: 0.20
+                tension: .20
             }},
             {{
                 label: "SHIPS IN SHIPYARD",
                 data: {json.dumps(teu_series["Ships in shipyard"])},
-                borderColor: "#ffd166",
+                borderColor: "#27c7e8",
                 backgroundColor: "transparent",
-                borderWidth: 1.6,
+                borderWidth: 1.7,
                 pointRadius: 1.5,
                 pointHoverRadius: 3,
                 fill: false,
-                tension: 0.20
+                tension: .20
             }}
         ]
     }},
@@ -2187,7 +1917,7 @@ new Chart(document.getElementById("teuChart"), {{
             legend: {{
                 position: "bottom",
                 labels: {{
-                    color: "#b5c5d2",
+                    color: "#b6c7d7",
                     boxWidth: 12,
                     boxHeight: 2,
                     padding: 14,
@@ -2199,21 +1929,12 @@ new Chart(document.getElementById("teuChart"), {{
                 }}
             }},
             tooltip: {{
-                backgroundColor: "rgba(5, 14, 23, .96)",
-                titleColor: "#f3f7fb",
-                bodyColor: "#b5c5d2",
-                borderColor: "#294b66",
+                backgroundColor: "rgba(3, 11, 19, .97)",
+                titleColor: "#f2f6fa",
+                bodyColor: "#b6c7d7",
+                borderColor: "#16334b",
                 borderWidth: 1,
                 padding: 10,
-                titleFont: {{
-                    family: "Consolas, monospace",
-                    size: 10,
-                    weight: "700"
-                }},
-                bodyFont: {{
-                    family: "Consolas, monospace",
-                    size: 10
-                }},
                 callbacks: {{
                     label: function(context) {{
                         if (
@@ -2232,7 +1953,7 @@ new Chart(document.getElementById("teuChart"), {{
         scales: {{
             x: {{
                 grid: {{
-                    color: "rgba(43, 80, 108, .32)",
+                    color: "rgba(22, 51, 75, .42)",
                     drawBorder: false
                 }},
                 ticks: {{
@@ -2247,7 +1968,7 @@ new Chart(document.getElementById("teuChart"), {{
             }},
             y: {{
                 grid: {{
-                    color: "rgba(43, 80, 108, .38)",
+                    color: "rgba(22, 51, 75, .42)",
                     drawBorder: false
                 }},
                 ticks: {{
