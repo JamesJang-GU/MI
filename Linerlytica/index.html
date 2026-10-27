@@ -196,11 +196,11 @@ body {
 }
 
 .fleet-kpi:nth-child(2) {
-    border-top-color: var(--mi-green);
+    border-top-color: var(--mi-amber);
 }
 
 .fleet-kpi:nth-child(3) {
-    border-top-color: var(--mi-amber);
+    border-top-color: var(--mi-red);
 }
 
 .fleet-kpi:nth-child(4) {
@@ -548,32 +548,32 @@ body {
 
         <section class="fleet-kpi-grid">
             <article class="fleet-kpi">
-                <div class="fleet-kpi-label">Total Fleet Ships</div>
-                <div class="fleet-kpi-value">
-                    8,157
-                </div>
-                <div class="fleet-kpi-delta">
-                    <span class="up">↗ +68 (+0.8%)</span>
-                </div>
-            </article>
-
-            <article class="fleet-kpi">
-                <div class="fleet-kpi-label">Observed Fleet Capacity</div>
-                <div class="fleet-kpi-value">
-                    35,320,218
-                </div>
-                <div class="fleet-kpi-delta">
-                    <span class="up">↗ +218,636 (+0.6%)</span>
-                </div>
-            </article>
-
-            <article class="fleet-kpi">
                 <div class="fleet-kpi-label">Active Fleet Capacity</div>
                 <div class="fleet-kpi-value">
                     24,488,025
                 </div>
                 <div class="fleet-kpi-delta">
                     <span class="up">↗ +1,218,741 (+5.2%)</span>
+                </div>
+            </article>
+
+            <article class="fleet-kpi">
+                <div class="fleet-kpi-label">Ships at Port</div>
+                <div class="fleet-kpi-value">
+                    1,129
+                </div>
+                <div class="fleet-kpi-delta">
+                    <span class="down">↘ -27 (-2.3%)</span>
+                </div>
+            </article>
+
+            <article class="fleet-kpi">
+                <div class="fleet-kpi-label">Inactive Fleet Capacity</div>
+                <div class="fleet-kpi-value">
+                    177,760
+                </div>
+                <div class="fleet-kpi-delta">
+                    <span class="up">↗ +7,177 (+4.2%)</span>
                 </div>
             </article>
 
@@ -683,11 +683,11 @@ body {
             </div>
             <div class="fleet-progress-track">
                 <span
-                    style="width:69.33%; background:#31d0a0;"
+                    style="width:100.00%; background:#31d0a0;"
                 ></span>
             </div>
             <div class="fleet-allocation-footer">
-                <span>69.3% OF OBSERVED CAPACITY</span>
+                <span>CAPACITY LEVEL (RELATIVE SCALE)</span>
             </div>
         </div>
         
@@ -698,11 +698,11 @@ body {
             </div>
             <div class="fleet-progress-track">
                 <span
-                    style="width:15.97%; background:#f5a623;"
+                    style="width:23.03%; background:#f5a623;"
                 ></span>
             </div>
             <div class="fleet-allocation-footer">
-                <span>16.0% OF OBSERVED CAPACITY</span>
+                <span>CAPACITY LEVEL (RELATIVE SCALE)</span>
             </div>
         </div>
         
@@ -713,11 +713,11 @@ body {
             </div>
             <div class="fleet-progress-track">
                 <span
-                    style="width:11.84%; background:#4fa3ff;"
+                    style="width:17.08%; background:#4fa3ff;"
                 ></span>
             </div>
             <div class="fleet-allocation-footer">
-                <span>11.8% OF OBSERVED CAPACITY</span>
+                <span>CAPACITY LEVEL (RELATIVE SCALE)</span>
             </div>
         </div>
         
@@ -728,11 +728,11 @@ body {
             </div>
             <div class="fleet-progress-track">
                 <span
-                    style="width:0.50%; background:#ff5b68;"
+                    style="width:0.73%; background:#ff5b68;"
                 ></span>
             </div>
             <div class="fleet-allocation-footer">
-                <span>0.5% OF OBSERVED CAPACITY</span>
+                <span>CAPACITY LEVEL (RELATIVE SCALE)</span>
             </div>
         </div>
         
@@ -743,11 +743,11 @@ body {
             </div>
             <div class="fleet-progress-track">
                 <span
-                    style="width:2.36%; background:#27c7e8;"
+                    style="width:3.40%; background:#27c7e8;"
                 ></span>
             </div>
             <div class="fleet-allocation-footer">
-                <span>2.4% OF OBSERVED CAPACITY</span>
+                <span>CAPACITY LEVEL (RELATIVE SCALE)</span>
             </div>
         </div>
         
@@ -762,21 +762,20 @@ body {
 
             <ul class="fleet-insight-list">
                 <li>
-                    ACTIVE FLEET REPRESENTS
-                    69.3% OF OBSERVED GLOBAL CONTAINERSHIP
-                    CAPACITY.
+                    ACTIVE FLEET CAPACITY STANDS AT
+                    24,488,025 TEU.
                 </li>
                 <li>
                     ACTIVE CAPACITY SIGNAL:
                     <strong>EXPANDING</strong>.
                 </li>
                 <li>
-                    PORT-BASED CAPACITY REPRESENTS
-                    16.0% OF TOTAL OBSERVED TEU.
+                    PORT-BASED CAPACITY STANDS AT
+                    5,639,764 TEU.
                 </li>
                 <li>
-                    ANCHORAGE CAPACITY REPRESENTS
-                    11.8% OF TOTAL OBSERVED TEU.
+                    ANCHORAGE CAPACITY STANDS AT
+                    4,182,132 TEU.
                 </li>
                 <li>
                     SHIPYARD CAPACITY STANDS AT
@@ -794,22 +793,22 @@ body {
             <div class="fleet-risk-content">
                 <div class="fleet-risk-row">
                     <div>
-                        <div class="fleet-risk-label">Active Capacity Share</div>
-                        <div class="fleet-risk-value">69.3% OF TEU</div>
+                        <div class="fleet-risk-label">Active Capacity</div>
+                        <div class="fleet-risk-value">24,488,025 TEU</div>
                     </div>
                 </div>
 
                 <div class="fleet-risk-row">
                     <div>
-                        <div class="fleet-risk-label">Port Capacity Share</div>
-                        <div class="fleet-risk-value">16.0% OF TEU</div>
+                        <div class="fleet-risk-label">Port Capacity</div>
+                        <div class="fleet-risk-value">5,639,764 TEU</div>
                     </div>
                 </div>
 
                 <div class="fleet-risk-row">
                     <div>
-                        <div class="fleet-risk-label">Inactive Capacity Share</div>
-                        <div class="fleet-risk-value">0.5% OF TEU</div>
+                        <div class="fleet-risk-label">Anchorage Capacity</div>
+                        <div class="fleet-risk-value">4,182,132 TEU</div>
                     </div>
                 </div>
 
@@ -848,7 +847,7 @@ body {
 
             <div>
                 GENERATED:
-                <strong>2026-10-27 06:30:00 UTC</strong>
+                <strong>2026-10-27 07:24:28 UTC</strong>
                 | SOURCE:
                 <strong>LINERLYTICA.DB</strong>
             </div>
