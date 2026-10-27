@@ -944,26 +944,6 @@ def generate_dashboard_html(conn: sqlite3.Connection) -> None:
         reverse=True,
     )
 
-    total_latest_ships = sum(
-        latest_data.get(status, {}).get("ships", 0)
-        for status in REQUIRED_STATUSES
-    )
-
-    total_previous_ships = sum(
-        previous_data.get(status, {}).get("ships", 0)
-        for status in REQUIRED_STATUSES
-    )
-
-    total_latest_teu = sum(
-        latest_data.get(status, {}).get("teu", 0)
-        for status in REQUIRED_STATUSES
-    )
-
-    total_previous_teu = sum(
-        previous_data.get(status, {}).get("teu", 0)
-        for status in REQUIRED_STATUSES
-    )
-
     active_latest = latest_data.get("Active Ships", {})
     active_previous = previous_data.get("Active Ships", {})
 
@@ -981,30 +961,6 @@ def generate_dashboard_html(conn: sqlite3.Connection) -> None:
     port_teu = port_latest.get("teu", 0)
     anchorage_teu = anchorage_latest.get("teu", 0)
     shipyard_teu = shipyard_latest.get("teu", 0)
-
-    active_share = (
-        (active_teu / total_latest_teu) * 100
-        if total_latest_teu > 0
-        else 0
-    )
-
-    inactive_share = (
-        (inactive_teu / total_latest_teu) * 100
-        if total_latest_teu > 0
-        else 0
-    )
-
-    port_share = (
-        (port_teu / total_latest_teu) * 100
-        if total_latest_teu > 0
-        else 0
-    )
-
-    anchorage_share = (
-        (anchorage_teu / total_latest_teu) * 100
-        if total_latest_teu > 0
-        else 0
-    )
 
     active_teu_change = (
         active_latest.get("teu", 0) - active_previous.get("teu", 0)
@@ -1033,10 +989,10 @@ def generate_dashboard_html(conn: sqlite3.Connection) -> None:
     else:
         active_signal = "STABLE"
 
-    if inactive_share >= 3:
+    if inactive_teu >= 1_000_000:
         risk_assessment = "ELEVATED"
         risk_class = "down"
-    elif inactive_share >= 1:
+    elif inactive_teu >= 500_000:
         risk_assessment = "MONITORED"
         risk_class = "neutral"
     else:
@@ -1089,19 +1045,26 @@ def generate_dashboard_html(conn: sqlite3.Connection) -> None:
         </tr>
         """
 
-    allocation_rows = ""
+    max_teu_val = max(
+        active_teu,
+        port_teu,
+        anchorage_teu,
+        inactive_teu,
+        shipyard_teu,
+        1,
+    )
 
     allocation_data = [
-        ("Active Ships", active_teu, active_share, "#31d0a0"),
-        ("Ships at port", port_teu, port_share, "#f5a623"),
-        ("Ships at anchorage", anchorage_teu, anchorage_share, "#4fa3ff"),
-        ("Inactive Ships", inactive_teu, inactive_share, "#ff5b68"),
-        ("Ships in shipyard", shipyard_teu,
-         (shipyard_teu / total_latest_teu * 100) if total_latest_teu else 0,
-         "#27c7e8"),
+        ("Active Ships", active_teu, (active_teu / max_teu_val) * 100, "#31d0a0"),
+        ("Ships at port", port_teu, (port_teu / max_teu_val) * 100, "#f5a623"),
+        ("Ships at anchorage", anchorage_teu, (anchorage_teu / max_teu_val) * 100, "#4fa3ff"),
+        ("Inactive Ships", inactive_teu, (inactive_teu / max_teu_val) * 100, "#ff5b68"),
+        ("Ships in shipyard", shipyard_teu, (shipyard_teu / max_teu_val) * 100, "#27c7e8"),
     ]
 
-    for status, teu_value, share, color in allocation_data:
+    allocation_rows = ""
+
+    for status, teu_value, width_pct, color in allocation_data:
         allocation_rows += f"""
         <div class="fleet-allocation-row">
             <div class="fleet-allocation-header">
@@ -1110,11 +1073,11 @@ def generate_dashboard_html(conn: sqlite3.Connection) -> None:
             </div>
             <div class="fleet-progress-track">
                 <span
-                    style="width:{min(share, 100):.2f}%; background:{color};"
+                    style="width:{min(width_pct, 100):.2f}%; background:{color};"
                 ></span>
             </div>
             <div class="fleet-allocation-footer">
-                <span>{share:.1f}% OF OBSERVED CAPACITY</span>
+                <span>CAPACITY LEVEL (RELATIVE SCALE)</span>
             </div>
         </div>
         """
@@ -1319,11 +1282,11 @@ body {{
 }}
 
 .fleet-kpi:nth-child(2) {{
-    border-top-color: var(--mi-green);
+    border-top-color: var(--mi-amber);
 }}
 
 .fleet-kpi:nth-child(3) {{
-    border-top-color: var(--mi-amber);
+    border-top-color: var(--mi-red);
 }}
 
 .fleet-kpi:nth-child(4) {{
@@ -1641,26 +1604,6 @@ body {{
 
         <section class="fleet-kpi-grid">
             <article class="fleet-kpi">
-                <div class="fleet-kpi-label">Total Fleet Ships</div>
-                <div class="fleet-kpi-value">
-                    {format_number(total_latest_ships)}
-                </div>
-                <div class="fleet-kpi-delta">
-                    {format_delta(total_latest_ships, total_previous_ships)}
-                </div>
-            </article>
-
-            <article class="fleet-kpi">
-                <div class="fleet-kpi-label">Observed Fleet Capacity</div>
-                <div class="fleet-kpi-value">
-                    {format_number(total_latest_teu)}
-                </div>
-                <div class="fleet-kpi-delta">
-                    {format_delta(total_latest_teu, total_previous_teu)}
-                </div>
-            </article>
-
-            <article class="fleet-kpi">
                 <div class="fleet-kpi-label">Active Fleet Capacity</div>
                 <div class="fleet-kpi-value">
                     {format_number(active_latest.get("teu"))}
@@ -1669,6 +1612,32 @@ body {{
                     {format_delta(
                         active_latest.get("teu"),
                         active_previous.get("teu")
+                    )}
+                </div>
+            </article>
+
+            <article class="fleet-kpi">
+                <div class="fleet-kpi-label">Ships at Port</div>
+                <div class="fleet-kpi-value">
+                    {format_number(port_latest.get("ships"))}
+                </div>
+                <div class="fleet-kpi-delta">
+                    {format_delta(
+                        port_latest.get("ships"),
+                        port_previous.get("ships")
+                    )}
+                </div>
+            </article>
+
+            <article class="fleet-kpi">
+                <div class="fleet-kpi-label">Inactive Fleet Capacity</div>
+                <div class="fleet-kpi-value">
+                    {format_number(inactive_latest.get("teu"))}
+                </div>
+                <div class="fleet-kpi-delta">
+                    {format_delta(
+                        inactive_latest.get("teu"),
+                        inactive_previous.get("teu")
                     )}
                 </div>
             </article>
@@ -1743,21 +1712,20 @@ body {{
 
             <ul class="fleet-insight-list">
                 <li>
-                    ACTIVE FLEET REPRESENTS
-                    {active_share:.1f}% OF OBSERVED GLOBAL CONTAINERSHIP
-                    CAPACITY.
+                    ACTIVE FLEET CAPACITY STANDS AT
+                    {format_number(active_teu)} TEU.
                 </li>
                 <li>
                     ACTIVE CAPACITY SIGNAL:
                     <strong>{active_signal}</strong>.
                 </li>
                 <li>
-                    PORT-BASED CAPACITY REPRESENTS
-                    {port_share:.1f}% OF TOTAL OBSERVED TEU.
+                    PORT-BASED CAPACITY STANDS AT
+                    {format_number(port_teu)} TEU.
                 </li>
                 <li>
-                    ANCHORAGE CAPACITY REPRESENTS
-                    {anchorage_share:.1f}% OF TOTAL OBSERVED TEU.
+                    ANCHORAGE CAPACITY STANDS AT
+                    {format_number(anchorage_teu)} TEU.
                 </li>
                 <li>
                     SHIPYARD CAPACITY STANDS AT
@@ -1775,22 +1743,22 @@ body {{
             <div class="fleet-risk-content">
                 <div class="fleet-risk-row">
                     <div>
-                        <div class="fleet-risk-label">Active Capacity Share</div>
-                        <div class="fleet-risk-value">{active_share:.1f}% OF TEU</div>
+                        <div class="fleet-risk-label">Active Capacity</div>
+                        <div class="fleet-risk-value">{format_number(active_teu)} TEU</div>
                     </div>
                 </div>
 
                 <div class="fleet-risk-row">
                     <div>
-                        <div class="fleet-risk-label">Port Capacity Share</div>
-                        <div class="fleet-risk-value">{port_share:.1f}% OF TEU</div>
+                        <div class="fleet-risk-label">Port Capacity</div>
+                        <div class="fleet-risk-value">{format_number(port_teu)} TEU</div>
                     </div>
                 </div>
 
                 <div class="fleet-risk-row">
                     <div>
-                        <div class="fleet-risk-label">Inactive Capacity Share</div>
-                        <div class="fleet-risk-value">{inactive_share:.1f}% OF TEU</div>
+                        <div class="fleet-risk-label">Anchorage Capacity</div>
+                        <div class="fleet-risk-value">{format_number(anchorage_teu)} TEU</div>
                     </div>
                 </div>
 
