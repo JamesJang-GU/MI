@@ -29,10 +29,24 @@ import sys
 import threading
 import time
 import webbrowser
+from io import StringIO
 from pathlib import Path
 
 import pandas as pd
 import requests
+
+# =========================================================
+# Common Logging Helper
+# =========================================================
+def log(message, level="INFO"):
+    """
+    파이프라인 공통 콘솔 로그 출력 (logger 및 직접 호출 호환).
+    """
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if isinstance(message, str) and message.startswith("["):
+        print(f"{timestamp} {message}", flush=True)
+    else:
+        print(f"{timestamp} [{level}] {message}", flush=True)
 
 # =========================================================
 # 1. Global Configurations & Path Definitions
@@ -173,8 +187,7 @@ def init_db(conn: sqlite3.Connection):
                   AND gscpi_value IS NOT NULL
             """)
 
-        cursor.execute("DROP TABLE gscpi_series_old")
-
+        cursor.execute("DROP TABLE IF EXISTS gscpi_series_old")
 
     # 3. meta 정보 테이블
     cursor.execute("""
@@ -364,7 +377,6 @@ def fetch_gscpi_from_nyfed_csv():
         log(f"[WARNING] [GSCPI] 공식 CSV 수집 실패: {exc}")
         return []
 
-
 def fetch_gscpi_data(conn):
     """
     NY Fed GSCPI 최신 vintage 데이터를 수집하고
@@ -423,7 +435,6 @@ def fetch_gscpi_data(conn):
     log(f"[GSCPI] SQLite 저장 완료: {len(gscpi_records)}건")
     return len(gscpi_records)
 
-
 # =========================================================
 # 4. JSON Export & Bloomberg Terminal HTML Generation
 # =========================================================
@@ -464,7 +475,6 @@ def export_assets(conn: sqlite3.Connection):
         FROM gscpi_series
         ORDER BY date ASC
     """)
-
 
     gscpi_rows = cursor.fetchall()
     gscpi_list = [{"date": r[0], "value": r[1]} for r in gscpi_rows]
