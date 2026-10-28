@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-27T08:34:17.211808",
+  "generated_at": "2026-10-28T01:31:36.747838",
   "shipping": {
     "scfi": {
       "price": "3,681.34",
@@ -62,7 +62,7 @@
     "top_forwarder": "DSV",
     "total_ocean_teu": "36,630,328 TEU",
     "total_air_tons": "15,670,405 MT",
-    "date": "2026-10-27"
+    "date": "2026-10-28"
   },
   "tac": {
     "date": "2026-09-01",
@@ -152,6 +152,6 @@
       "class": "down",
       "arrow": "▼"
     },
-    "date": "2026-10-27"
+    "date": "2026-10-28"
   }
 }
