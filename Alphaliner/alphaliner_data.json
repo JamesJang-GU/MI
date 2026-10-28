@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-28T01:31:25.246820",
+  "generated_at": "2026-10-28T07:35:48.526783",
   "dates": [
     "2026-10-28",
     "2026-10-27",
@@ -24,13 +24,13 @@
       "meta": {
         "snapshot_date": "2026-10-28",
         "global_ships": 7672,
-        "global_teu": 34178406,
-        "top100_teu": 34178406,
-        "top100_ships": 6621,
+        "global_teu": 34175834,
+        "top100_teu": 34175834,
+        "top100_ships": 6620,
         "top10_share": 86.42,
         "official_top10_share": 85.0,
         "orderbook_teu": 13642444,
-        "extracted_at": "2026-10-28T01:31:25.236653"
+        "extracted_at": "2026-10-28T07:35:48.516036"
       },
       "operators": [
         {
@@ -53,15 +53,15 @@
         {
           "rank": 2,
           "operator_name": "Maersk",
-          "total_teu": 4714743,
-          "total_ships": 748,
+          "total_teu": 4712171,
+          "total_ships": 747,
           "market_share": 13.6,
           "owned_teu": 2943996,
           "owned_ships": 359,
-          "owned_share": 62.44,
-          "chartered_teu": 1770747,
-          "chartered_ships": 389,
-          "chartered_share": 37.6,
+          "owned_share": 62.48,
+          "chartered_teu": 1768175,
+          "chartered_ships": 388,
+          "chartered_share": 37.5,
           "orderbook_teu": 1811602,
           "orderbook_ships": 138,
           "orderbook_share": 38.4,
