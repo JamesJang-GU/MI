@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-30T01:33:16.834444",
+  "generated_at": "2026-10-30T07:36:19.341924",
   "dates": [
     "2026-10-30",
     "2026-10-29",
@@ -26,30 +26,30 @@
       "meta": {
         "snapshot_date": "2026-10-30",
         "global_ships": 7672,
-        "global_teu": 34170786,
-        "top100_teu": 34170786,
-        "top100_ships": 6621,
-        "top10_share": 86.42,
+        "global_teu": 34187542,
+        "top100_teu": 34187542,
+        "top100_ships": 6623,
+        "top10_share": 86.43,
         "official_top10_share": 85.0,
         "orderbook_teu": 13660588,
-        "extracted_at": "2026-10-30T01:33:16.823587"
+        "extracted_at": "2026-10-30T07:36:19.330816"
       },
       "operators": [
         {
           "rank": 1,
           "operator_name": "Mediterranean Shg Co",
-          "total_teu": 7463394,
-          "total_ships": 1017,
+          "total_teu": 7470140,
+          "total_ships": 1018,
           "market_share": 21.5,
           "owned_teu": 4799455,
           "owned_ships": 767,
-          "owned_share": 64.31,
-          "chartered_teu": 2663939,
-          "chartered_ships": 250,
-          "chartered_share": 35.7,
+          "owned_share": 64.25,
+          "chartered_teu": 2670685,
+          "chartered_ships": 251,
+          "chartered_share": 35.8,
           "orderbook_teu": 3379018,
           "orderbook_ships": 183,
-          "orderbook_share": 45.3,
+          "orderbook_share": 45.2,
           "country": "CH"
         },
         {
@@ -89,18 +89,18 @@
         {
           "rank": 4,
           "operator_name": "COSCO Group",
-          "total_teu": 3673704,
-          "total_ships": 566,
+          "total_teu": 3683714,
+          "total_ships": 567,
           "market_share": 10.6,
           "owned_teu": 2226498,
           "owned_ships": 211,
-          "owned_share": 60.61,
-          "chartered_teu": 1447206,
-          "chartered_ships": 355,
-          "chartered_share": 39.4,
+          "owned_share": 60.44,
+          "chartered_teu": 1457216,
+          "chartered_ships": 356,
+          "chartered_share": 39.6,
           "orderbook_teu": 1884798,
           "orderbook_ships": 155,
-          "orderbook_share": 51.3,
+          "orderbook_share": 51.2,
           "country": "CN"
         },
         {
